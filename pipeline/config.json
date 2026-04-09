@@ -1,0 +1,26 @@
+{
+  "scan_roots": [
+    {
+      "path": "/requests/qa",
+      "label": "QA Package Results"
+    },
+    {
+      "path": "/requests/qm",
+      "label": "MIL QA Package Results"
+    },
+    {
+      "path": "/requests/qad",
+      "label": "QA Internal DP Data"
+    },
+    {
+      "path": "/requests/qmd",
+      "label": "MIL QA Internal DP Data"
+    }
+  ],
+  "registry_api_url": "http://localhost:8000",
+  "output_root": "/output",
+  "schema_path": "/pipeline/schema.json",
+  "overrides_path": "/pipeline/overrides.json",
+  "log_dir": "/pipeline/logs",
+  "db_path": "pipeline/registry.db"
+}
