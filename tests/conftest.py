@@ -14,8 +14,11 @@ def test_db():
 
     Initializes the schema and yields the connection for the test.
     Closes the connection after the test completes.
+
+    Uses check_same_thread=False to allow TestClient to use the connection
+    across multiple threads.
     """
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
     init_db(conn)
