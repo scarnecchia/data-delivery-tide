@@ -213,3 +213,150 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     row = cursor.fetchone()
 
     return dict(row) if row else None
+
+
+def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
+    """
+    Retrieve a delivery by ID.
+
+    Args:
+        conn: sqlite3.Connection
+        delivery_id: The delivery ID to retrieve
+
+    Returns:
+        dict: The delivery row as a dict, or None if not found
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
+    """
+    List deliveries with optional filtering.
+
+    Supported filter keys:
+    - dp_id, project, request_type, workplan_id, request_id, qa_status, scan_root: exact match with =
+    - converted: boolean, if True: parquet_converted_at IS NOT NULL, if False: IS NULL
+    - version: if "latest", returns highest version per (dp_id, workplan_id); otherwise exact match
+
+    All filters combine with AND. Empty filters dict returns all rows.
+
+    Args:
+        conn: sqlite3.Connection
+        filters: dict of filter keys and values
+
+    Returns:
+        list: List of delivery dicts
+    """
+    cursor = conn.cursor()
+
+    # Build WHERE clause dynamically
+    where_clauses = []
+    params = []
+
+    exact_match_fields = ["dp_id", "project", "request_type", "workplan_id", "request_id", "qa_status", "scan_root"]
+
+    for field in exact_match_fields:
+        if field in filters:
+            where_clauses.append(f"{field} = ?")
+            params.append(filters[field])
+
+    if "converted" in filters:
+        if filters["converted"]:
+            where_clauses.append("parquet_converted_at IS NOT NULL")
+        else:
+            where_clauses.append("parquet_converted_at IS NULL")
+
+    if "version" in filters:
+        if filters["version"] == "latest":
+            # Subquery to get highest version per (dp_id, workplan_id)
+            where_clauses.append(
+                "version = (SELECT MAX(d2.version) FROM deliveries d2 WHERE d2.dp_id = deliveries.dp_id AND d2.workplan_id = deliveries.workplan_id)"
+            )
+        else:
+            where_clauses.append("version = ?")
+            params.append(filters["version"])
+
+    # Build query
+    query = "SELECT * FROM deliveries"
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_actionable(conn: sqlite3.Connection) -> list[dict]:
+    """
+    Get actionable deliveries (passed QA but not yet converted to Parquet).
+
+    Returns all deliveries where qa_status='passed' AND parquet_converted_at IS NULL.
+
+    Args:
+        conn: sqlite3.Connection
+
+    Returns:
+        list: List of actionable delivery dicts
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM deliveries WHERE qa_status = 'passed' AND parquet_converted_at IS NULL"
+    )
+    rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -> dict | None:
+    """
+    Update a delivery by ID.
+
+    Allowed update keys: parquet_converted_at, output_path, qa_status, qa_passed_at.
+
+    If updates is empty, skips UPDATE and returns the current row via SELECT.
+
+    Args:
+        conn: sqlite3.Connection
+        delivery_id: The delivery ID to update
+        updates: dict of fields to update
+
+    Returns:
+        dict: The updated delivery row as a dict, or None if not found
+    """
+    cursor = conn.cursor()
+
+    # If updates is empty, just query and return the current row
+    if not updates:
+        cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    # Allowed update fields
+    allowed_fields = {"parquet_converted_at", "output_path", "qa_status", "qa_passed_at"}
+
+    # Filter updates to only allowed fields
+    update_dict = {k: v for k, v in updates.items() if k in allowed_fields}
+
+    if not update_dict:
+        # No allowed fields, just return current row
+        cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    # Build UPDATE statement
+    set_clauses = [f"{field} = ?" for field in update_dict.keys()]
+    set_clause = ", ".join(set_clauses)
+    params = list(update_dict.values()) + [delivery_id]
+
+    cursor.execute(
+        f"UPDATE deliveries SET {set_clause} WHERE delivery_id = ?",
+        params,
+    )
+    conn.commit()
+
+    # Fetch and return updated row
+    cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
+    row = cursor.fetchone()
+    return dict(row) if row else None

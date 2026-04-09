@@ -8,6 +8,10 @@ from pipeline.registry_api.db import (
     init_db,
     get_connection,
     upsert_delivery,
+    get_delivery,
+    list_deliveries,
+    get_actionable,
+    update_delivery,
 )
 
 
@@ -323,3 +327,328 @@ class TestUpsertDelivery:
         last_updated_at_2 = result2["last_updated_at"]
 
         assert last_updated_at_1 == last_updated_at_2, "last_updated_at should NOT be updated when fingerprint is unchanged"
+
+
+class TestGetDelivery:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_get_delivery_returns_existing_delivery(self, memory_db):
+        """Test that get_delivery returns correct row for existing delivery_id."""
+        data = {
+            "source_path": "/test/source",
+            "request_id": "req-123",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-456",
+            "dp_id": "dp-789",
+            "version": "v01",
+            "scan_root": "/scan",
+            "qa_status": "pending",
+            "fingerprint": "hash-abc",
+        }
+
+        upsert_delivery(memory_db, data)
+        delivery_id = make_delivery_id("/test/source")
+
+        result = get_delivery(memory_db, delivery_id)
+
+        assert result is not None
+        assert result["delivery_id"] == delivery_id
+        assert result["request_id"] == "req-123"
+
+    def test_get_delivery_returns_none_for_nonexistent(self, memory_db):
+        """Test that get_delivery returns None for nonexistent delivery_id."""
+        result = get_delivery(memory_db, "nonexistent-id")
+
+        assert result is None
+
+
+class TestListDeliveries:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    @pytest.fixture
+    def sample_deliveries(self, memory_db):
+        """Insert sample deliveries for testing filters."""
+        deliveries = [
+            {
+                "source_path": "/path/1",
+                "request_id": "req-1",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan/1",
+                "qa_status": "pending",
+                "fingerprint": "hash-1",
+            },
+            {
+                "source_path": "/path/2",
+                "request_id": "req-2",
+                "project": "proj-b",
+                "request_type": "partial",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-2",
+                "version": "v01",
+                "scan_root": "/scan/2",
+                "qa_status": "passed",
+                "parquet_converted_at": "2026-01-01T00:00:00+00:00",
+                "fingerprint": "hash-2",
+            },
+            {
+                "source_path": "/path/3",
+                "request_id": "req-3",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-200",
+                "dp_id": "dp-1",
+                "version": "v02",
+                "scan_root": "/scan/3",
+                "qa_status": "passed",
+                "fingerprint": "hash-3",
+            },
+            {
+                "source_path": "/path/4",
+                "request_id": "req-4",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-200",
+                "dp_id": "dp-1",
+                "version": "v03",
+                "scan_root": "/scan/3",
+                "qa_status": "pending",
+                "fingerprint": "hash-4",
+            },
+        ]
+        for d in deliveries:
+            upsert_delivery(memory_db, d)
+        return deliveries
+
+    def test_list_deliveries_empty_filters_returns_all(self, memory_db, sample_deliveries):
+        """Test AC2.8: Empty filter set returns all deliveries."""
+        results = list_deliveries(memory_db, {})
+
+        assert len(results) == 4
+
+    def test_list_deliveries_filter_by_dp_id(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by dp_id."""
+        results = list_deliveries(memory_db, {"dp_id": "dp-1"})
+
+        assert len(results) == 3
+        assert all(r["dp_id"] == "dp-1" for r in results)
+
+    def test_list_deliveries_filter_by_project(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by project."""
+        results = list_deliveries(memory_db, {"project": "proj-a"})
+
+        assert len(results) == 3
+        assert all(r["project"] == "proj-a" for r in results)
+
+    def test_list_deliveries_filter_by_request_type(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by request_type."""
+        results = list_deliveries(memory_db, {"request_type": "full"})
+
+        assert len(results) == 3
+        assert all(r["request_type"] == "full" for r in results)
+
+    def test_list_deliveries_filter_by_workplan_id(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by workplan_id."""
+        results = list_deliveries(memory_db, {"workplan_id": "wp-100"})
+
+        assert len(results) == 2
+        assert all(r["workplan_id"] == "wp-100" for r in results)
+
+    def test_list_deliveries_filter_by_request_id(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by request_id."""
+        results = list_deliveries(memory_db, {"request_id": "req-1"})
+
+        assert len(results) == 1
+        assert results[0]["request_id"] == "req-1"
+
+    def test_list_deliveries_filter_by_qa_status(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by qa_status."""
+        results = list_deliveries(memory_db, {"qa_status": "passed"})
+
+        assert len(results) == 2
+        assert all(r["qa_status"] == "passed" for r in results)
+
+    def test_list_deliveries_filter_by_scan_root(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by scan_root."""
+        results = list_deliveries(memory_db, {"scan_root": "/scan/1"})
+
+        assert len(results) == 1
+        assert results[0]["scan_root"] == "/scan/1"
+
+    def test_list_deliveries_filter_by_converted_true(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by converted=True."""
+        results = list_deliveries(memory_db, {"converted": True})
+
+        assert len(results) == 1
+        assert results[0]["parquet_converted_at"] is not None
+
+    def test_list_deliveries_filter_by_converted_false(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by converted=False."""
+        results = list_deliveries(memory_db, {"converted": False})
+
+        assert len(results) == 3
+        assert all(r["parquet_converted_at"] is None for r in results)
+
+    def test_list_deliveries_version_latest(self, memory_db, sample_deliveries):
+        """Test AC2.6: version=latest returns highest version per (dp_id, workplan_id)."""
+        results = list_deliveries(memory_db, {"version": "latest", "workplan_id": "wp-200", "dp_id": "dp-1"})
+
+        assert len(results) == 1
+        assert results[0]["version"] == "v03"
+
+    def test_list_deliveries_multiple_filters_and_semantics(self, memory_db, sample_deliveries):
+        """Test AC2.7: Multiple filters combine with AND semantics."""
+        results = list_deliveries(memory_db, {"project": "proj-a", "qa_status": "passed"})
+
+        assert len(results) == 1
+        assert results[0]["project"] == "proj-a"
+        assert results[0]["qa_status"] == "passed"
+
+
+class TestGetActionable:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_get_actionable_returns_passed_unconverted(self, memory_db):
+        """Test get_actionable returns only passed and unconverted deliveries."""
+        # passed, unconverted
+        upsert_delivery(memory_db, {
+            "source_path": "/path/1",
+            "request_id": "req-1",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-100",
+            "dp_id": "dp-1",
+            "version": "v01",
+            "scan_root": "/scan/1",
+            "qa_status": "passed",
+            "fingerprint": "hash-1",
+        })
+
+        results = get_actionable(memory_db)
+
+        assert len(results) == 1
+        assert results[0]["qa_status"] == "passed"
+        assert results[0]["parquet_converted_at"] is None
+
+    def test_get_actionable_excludes_pending(self, memory_db):
+        """Test get_actionable excludes deliveries with qa_status=pending."""
+        upsert_delivery(memory_db, {
+            "source_path": "/path/1",
+            "request_id": "req-1",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-100",
+            "dp_id": "dp-1",
+            "version": "v01",
+            "scan_root": "/scan/1",
+            "qa_status": "pending",
+            "fingerprint": "hash-1",
+        })
+
+        results = get_actionable(memory_db)
+
+        assert len(results) == 0
+
+    def test_get_actionable_excludes_converted(self, memory_db):
+        """Test get_actionable excludes deliveries already converted."""
+        upsert_delivery(memory_db, {
+            "source_path": "/path/1",
+            "request_id": "req-1",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-100",
+            "dp_id": "dp-1",
+            "version": "v01",
+            "scan_root": "/scan/1",
+            "qa_status": "passed",
+            "parquet_converted_at": "2026-01-01T00:00:00+00:00",
+            "fingerprint": "hash-1",
+        })
+
+        results = get_actionable(memory_db)
+
+        assert len(results) == 0
+
+
+class TestUpdateDelivery:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    @pytest.fixture
+    def sample_delivery(self, memory_db):
+        """Insert a sample delivery for testing."""
+        data = {
+            "source_path": "/test/source",
+            "request_id": "req-123",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-456",
+            "dp_id": "dp-789",
+            "version": "v01",
+            "scan_root": "/scan",
+            "qa_status": "pending",
+            "fingerprint": "hash-abc",
+        }
+        return upsert_delivery(memory_db, data)
+
+    def test_update_delivery_updates_specified_fields(self, memory_db, sample_delivery):
+        """Test update_delivery updates only specified fields."""
+        delivery_id = sample_delivery["delivery_id"]
+
+        result = update_delivery(memory_db, delivery_id, {
+            "qa_status": "passed",
+            "qa_passed_at": "2026-01-01T00:00:00+00:00",
+        })
+
+        assert result["qa_status"] == "passed"
+        assert result["qa_passed_at"] == "2026-01-01T00:00:00+00:00"
+        # Other fields unchanged
+        assert result["request_id"] == "req-123"
+
+    def test_update_delivery_returns_none_for_nonexistent(self, memory_db):
+        """Test update_delivery returns None for nonexistent delivery_id."""
+        result = update_delivery(memory_db, "nonexistent-id", {"qa_status": "passed"})
+
+        assert result is None
+
+    def test_update_delivery_empty_dict_is_noop(self, memory_db, sample_delivery):
+        """Test update_delivery with empty dict is a no-op (returns unchanged row)."""
+        delivery_id = sample_delivery["delivery_id"]
+        original_qa_status = sample_delivery["qa_status"]
+
+        result = update_delivery(memory_db, delivery_id, {})
+
+        assert result is not None
+        assert result["delivery_id"] == delivery_id
+        assert result["qa_status"] == original_qa_status
