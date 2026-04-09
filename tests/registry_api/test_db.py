@@ -40,7 +40,7 @@ class TestMakeDeliveryId:
 
         assert result == expected
         assert len(result) == 64  # SHA-256 hex is 64 chars
-        assert all(c in '0123456789abcdef' for c in result)
+        assert all(c in "0123456789abcdef" for c in result)
 
 
 class TestInitDb:
@@ -101,7 +101,9 @@ class TestInitDb:
         init_db(memory_db)  # Should not raise
 
         cursor = memory_db.cursor()
-        cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='deliveries'")
+        cursor.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='deliveries'"
+        )
         assert cursor.fetchone()[0] == 1
 
     def test_init_db_creates_indexes(self, memory_db):
@@ -221,7 +223,9 @@ class TestUpsertDelivery:
         assert result["first_seen_at"] is not None
         assert result["last_updated_at"] is not None
 
-    def test_upsert_delivery_preserves_first_seen_at_on_reinsert(self, memory_db, monkeypatch):
+    def test_upsert_delivery_preserves_first_seen_at_on_reinsert(
+        self, memory_db, monkeypatch
+    ):
         """Test AC2.2: Upsert preserves first_seen_at when re-inserting existing delivery."""
         data1 = {
             "source_path": "/test/source",
@@ -239,12 +243,16 @@ class TestUpsertDelivery:
         }
 
         # Mock first call to return timestamp T1
-        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00")
+        monkeypatch.setattr(
+            "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
+        )
         result1 = upsert_delivery(memory_db, data1)
         first_seen_at_1 = result1["first_seen_at"]
 
         # Mock second call to return a different timestamp T2
-        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00")
+        monkeypatch.setattr(
+            "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00"
+        )
 
         # Update the same delivery with different data
         data2 = {
@@ -256,9 +264,13 @@ class TestUpsertDelivery:
         result2 = upsert_delivery(memory_db, data2)
         first_seen_at_2 = result2["first_seen_at"]
 
-        assert first_seen_at_1 == first_seen_at_2, "first_seen_at should be preserved on reinsert"
+        assert first_seen_at_1 == first_seen_at_2, (
+            "first_seen_at should be preserved on reinsert"
+        )
 
-    def test_upsert_delivery_bumps_last_updated_at_when_fingerprint_changes(self, memory_db, monkeypatch):
+    def test_upsert_delivery_bumps_last_updated_at_when_fingerprint_changes(
+        self, memory_db, monkeypatch
+    ):
         """Test AC2.3: Upsert bumps last_updated_at when fingerprint changes."""
         data1 = {
             "source_path": "/test/source",
@@ -276,12 +288,16 @@ class TestUpsertDelivery:
         }
 
         # Mock first call to return timestamp T1
-        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00")
+        monkeypatch.setattr(
+            "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
+        )
         result1 = upsert_delivery(memory_db, data1)
         last_updated_at_1 = result1["last_updated_at"]
 
         # Mock second call to return a different timestamp T2
-        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00")
+        monkeypatch.setattr(
+            "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00"
+        )
 
         # Update with different fingerprint
         data2 = {
@@ -292,10 +308,14 @@ class TestUpsertDelivery:
         result2 = upsert_delivery(memory_db, data2)
         last_updated_at_2 = result2["last_updated_at"]
 
-        assert last_updated_at_1 != last_updated_at_2, "last_updated_at should be updated when fingerprint changes"
+        assert last_updated_at_1 != last_updated_at_2, (
+            "last_updated_at should be updated when fingerprint changes"
+        )
         assert last_updated_at_2 > last_updated_at_1, "last_updated_at should be newer"
 
-    def test_upsert_delivery_does_not_bump_last_updated_at_when_fingerprint_unchanged(self, memory_db, monkeypatch):
+    def test_upsert_delivery_does_not_bump_last_updated_at_when_fingerprint_unchanged(
+        self, memory_db, monkeypatch
+    ):
         """Test AC2.4: Upsert does NOT bump last_updated_at when fingerprint is unchanged."""
         data1 = {
             "source_path": "/test/source",
@@ -313,12 +333,16 @@ class TestUpsertDelivery:
         }
 
         # Mock first call to return timestamp T1
-        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00")
+        monkeypatch.setattr(
+            "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
+        )
         result1 = upsert_delivery(memory_db, data1)
         last_updated_at_1 = result1["last_updated_at"]
 
         # Mock second call to return a different timestamp T2
-        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00")
+        monkeypatch.setattr(
+            "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00"
+        )
 
         # Update with same fingerprint but different other fields
         data2 = {
@@ -330,7 +354,9 @@ class TestUpsertDelivery:
         result2 = upsert_delivery(memory_db, data2)
         last_updated_at_2 = result2["last_updated_at"]
 
-        assert last_updated_at_1 == last_updated_at_2, "last_updated_at should NOT be updated when fingerprint is unchanged"
+        assert last_updated_at_1 == last_updated_at_2, (
+            "last_updated_at should NOT be updated when fingerprint is unchanged"
+        )
 
 
 class TestGetDelivery:
@@ -442,7 +468,9 @@ class TestListDeliveries:
             upsert_delivery(memory_db, d)
         return deliveries
 
-    def test_list_deliveries_empty_filters_returns_all(self, memory_db, sample_deliveries):
+    def test_list_deliveries_empty_filters_returns_all(
+        self, memory_db, sample_deliveries
+    ):
         """Test AC2.8: Empty filter set returns all deliveries."""
         results = list_deliveries(memory_db, {})
 
@@ -497,14 +525,18 @@ class TestListDeliveries:
         assert len(results) == 1
         assert results[0]["scan_root"] == "/scan/1"
 
-    def test_list_deliveries_filter_by_converted_true(self, memory_db, sample_deliveries):
+    def test_list_deliveries_filter_by_converted_true(
+        self, memory_db, sample_deliveries
+    ):
         """Test AC2.5: list_deliveries filters by converted=True."""
         results = list_deliveries(memory_db, {"converted": True})
 
         assert len(results) == 1
         assert results[0]["parquet_converted_at"] is not None
 
-    def test_list_deliveries_filter_by_converted_false(self, memory_db, sample_deliveries):
+    def test_list_deliveries_filter_by_converted_false(
+        self, memory_db, sample_deliveries
+    ):
         """Test AC2.5: list_deliveries filters by converted=False."""
         results = list_deliveries(memory_db, {"converted": False})
 
@@ -513,14 +545,20 @@ class TestListDeliveries:
 
     def test_list_deliveries_version_latest(self, memory_db, sample_deliveries):
         """Test AC2.6: version=latest returns highest version per (dp_id, workplan_id)."""
-        results = list_deliveries(memory_db, {"version": "latest", "workplan_id": "wp-200", "dp_id": "dp-1"})
+        results = list_deliveries(
+            memory_db, {"version": "latest", "workplan_id": "wp-200", "dp_id": "dp-1"}
+        )
 
         assert len(results) == 1
         assert results[0]["version"] == "v03"
 
-    def test_list_deliveries_multiple_filters_and_semantics(self, memory_db, sample_deliveries):
+    def test_list_deliveries_multiple_filters_and_semantics(
+        self, memory_db, sample_deliveries
+    ):
         """Test AC2.7: Multiple filters combine with AND semantics."""
-        results = list_deliveries(memory_db, {"project": "proj-a", "qa_status": "passed"})
+        results = list_deliveries(
+            memory_db, {"project": "proj-a", "qa_status": "passed"}
+        )
 
         assert len(results) == 1
         assert results[0]["project"] == "proj-a"
@@ -540,18 +578,21 @@ class TestGetActionable:
     def test_get_actionable_returns_passed_unconverted(self, memory_db):
         """Test get_actionable returns only passed and unconverted deliveries."""
         # passed, unconverted
-        upsert_delivery(memory_db, {
-            "source_path": "/path/1",
-            "request_id": "req-1",
-            "project": "proj-a",
-            "request_type": "full",
-            "workplan_id": "wp-100",
-            "dp_id": "dp-1",
-            "version": "v01",
-            "scan_root": "/scan/1",
-            "qa_status": "passed",
-            "fingerprint": "hash-1",
-        })
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/path/1",
+                "request_id": "req-1",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan/1",
+                "qa_status": "passed",
+                "fingerprint": "hash-1",
+            },
+        )
 
         results = get_actionable(memory_db)
 
@@ -561,18 +602,21 @@ class TestGetActionable:
 
     def test_get_actionable_excludes_pending(self, memory_db):
         """Test get_actionable excludes deliveries with qa_status=pending."""
-        upsert_delivery(memory_db, {
-            "source_path": "/path/1",
-            "request_id": "req-1",
-            "project": "proj-a",
-            "request_type": "full",
-            "workplan_id": "wp-100",
-            "dp_id": "dp-1",
-            "version": "v01",
-            "scan_root": "/scan/1",
-            "qa_status": "pending",
-            "fingerprint": "hash-1",
-        })
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/path/1",
+                "request_id": "req-1",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan/1",
+                "qa_status": "pending",
+                "fingerprint": "hash-1",
+            },
+        )
 
         results = get_actionable(memory_db)
 
@@ -580,19 +624,22 @@ class TestGetActionable:
 
     def test_get_actionable_excludes_converted(self, memory_db):
         """Test get_actionable excludes deliveries already converted."""
-        upsert_delivery(memory_db, {
-            "source_path": "/path/1",
-            "request_id": "req-1",
-            "project": "proj-a",
-            "request_type": "full",
-            "workplan_id": "wp-100",
-            "dp_id": "dp-1",
-            "version": "v01",
-            "scan_root": "/scan/1",
-            "qa_status": "passed",
-            "parquet_converted_at": "2026-01-01T00:00:00+00:00",
-            "fingerprint": "hash-1",
-        })
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/path/1",
+                "request_id": "req-1",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan/1",
+                "qa_status": "passed",
+                "parquet_converted_at": "2026-01-01T00:00:00+00:00",
+                "fingerprint": "hash-1",
+            },
+        )
 
         results = get_actionable(memory_db)
 
@@ -630,10 +677,14 @@ class TestUpdateDelivery:
         """Test update_delivery updates only specified fields."""
         delivery_id = sample_delivery["delivery_id"]
 
-        result = update_delivery(memory_db, delivery_id, {
-            "qa_status": "passed",
-            "qa_passed_at": "2026-01-01T00:00:00+00:00",
-        })
+        result = update_delivery(
+            memory_db,
+            delivery_id,
+            {
+                "qa_status": "passed",
+                "qa_passed_at": "2026-01-01T00:00:00+00:00",
+            },
+        )
 
         assert result["qa_status"] == "passed"
         assert result["qa_passed_at"] == "2026-01-01T00:00:00+00:00"
