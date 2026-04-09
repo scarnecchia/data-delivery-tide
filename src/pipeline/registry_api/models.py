@@ -1,3 +1,5 @@
+# pattern: Functional Core
+
 from typing import Literal
 
 from pydantic import BaseModel

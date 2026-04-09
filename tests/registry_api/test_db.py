@@ -221,7 +221,7 @@ class TestUpsertDelivery:
         assert result["first_seen_at"] is not None
         assert result["last_updated_at"] is not None
 
-    def test_upsert_delivery_preserves_first_seen_at_on_reinsert(self, memory_db):
+    def test_upsert_delivery_preserves_first_seen_at_on_reinsert(self, memory_db, monkeypatch):
         """Test AC2.2: Upsert preserves first_seen_at when re-inserting existing delivery."""
         data1 = {
             "source_path": "/test/source",
@@ -238,12 +238,13 @@ class TestUpsertDelivery:
             "fingerprint": "hash-abc",
         }
 
+        # Mock first call to return timestamp T1
+        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00")
         result1 = upsert_delivery(memory_db, data1)
         first_seen_at_1 = result1["first_seen_at"]
 
-        # Sleep briefly to ensure timestamp would differ if set fresh
-        import time
-        time.sleep(0.01)
+        # Mock second call to return a different timestamp T2
+        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00")
 
         # Update the same delivery with different data
         data2 = {
@@ -257,7 +258,7 @@ class TestUpsertDelivery:
 
         assert first_seen_at_1 == first_seen_at_2, "first_seen_at should be preserved on reinsert"
 
-    def test_upsert_delivery_bumps_last_updated_at_when_fingerprint_changes(self, memory_db):
+    def test_upsert_delivery_bumps_last_updated_at_when_fingerprint_changes(self, memory_db, monkeypatch):
         """Test AC2.3: Upsert bumps last_updated_at when fingerprint changes."""
         data1 = {
             "source_path": "/test/source",
@@ -274,11 +275,13 @@ class TestUpsertDelivery:
             "fingerprint": "hash-aaa",
         }
 
+        # Mock first call to return timestamp T1
+        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00")
         result1 = upsert_delivery(memory_db, data1)
         last_updated_at_1 = result1["last_updated_at"]
 
-        import time
-        time.sleep(0.01)
+        # Mock second call to return a different timestamp T2
+        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00")
 
         # Update with different fingerprint
         data2 = {
@@ -292,7 +295,7 @@ class TestUpsertDelivery:
         assert last_updated_at_1 != last_updated_at_2, "last_updated_at should be updated when fingerprint changes"
         assert last_updated_at_2 > last_updated_at_1, "last_updated_at should be newer"
 
-    def test_upsert_delivery_does_not_bump_last_updated_at_when_fingerprint_unchanged(self, memory_db):
+    def test_upsert_delivery_does_not_bump_last_updated_at_when_fingerprint_unchanged(self, memory_db, monkeypatch):
         """Test AC2.4: Upsert does NOT bump last_updated_at when fingerprint is unchanged."""
         data1 = {
             "source_path": "/test/source",
@@ -309,11 +312,13 @@ class TestUpsertDelivery:
             "fingerprint": "hash-aaa",
         }
 
+        # Mock first call to return timestamp T1
+        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00")
         result1 = upsert_delivery(memory_db, data1)
         last_updated_at_1 = result1["last_updated_at"]
 
-        import time
-        time.sleep(0.01)
+        # Mock second call to return a different timestamp T2
+        monkeypatch.setattr("pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:01+00:00")
 
         # Update with same fingerprint but different other fields
         data2 = {
