@@ -23,5 +23,6 @@ htmlcov/
 
 # Project-specific
 output/
+!output/.gitkeep
 pipeline/registry.db
 pipeline/logs/
