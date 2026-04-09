@@ -40,7 +40,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Functional Core / Imperative Shell pattern (files annotated with `# pattern:` comment)
 - Delivery IDs are deterministic SHA-256 of source_path
 - Config loaded lazily via module-level `__getattr__` on `pipeline.config.settings`
-- QA status is binary: "pending" or "passed" (encoded by directory naming convention on the share)
+- QA status is tri-state: "pending", "passed", or "failed". Directories encode "pending" (msoc_new) and "passed" (msoc); "failed" is derived by the crawler when a newer version supersedes a pending delivery within the same workplan+dp_id
 
 ## Boundaries
 

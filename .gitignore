@@ -26,3 +26,6 @@ output/
 !output/.gitkeep
 pipeline/registry.db
 pipeline/logs/
+
+# Presentation drafts
+docs/decks/

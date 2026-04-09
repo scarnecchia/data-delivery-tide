@@ -90,6 +90,21 @@ class TestDeliveryCreate:
                 source_path="/source",
             )
 
+    def test_delivery_create_accepts_failed_qa_status(self):
+        """Test DeliveryCreate accepts 'failed' qa_status."""
+        model = DeliveryCreate(
+            request_id="req-123",
+            project="proj-a",
+            request_type="full",
+            workplan_id="wp-456",
+            dp_id="dp-789",
+            version="v01",
+            scan_root="/scan",
+            qa_status="failed",
+            source_path="/source",
+        )
+        assert model.qa_status == "failed"
+
     def test_delivery_create_rejects_invalid_qa_status(self):
         """Test AC3.2 (model layer): DeliveryCreate with invalid qa_status value raises ValidationError."""
         with pytest.raises(ValidationError):
@@ -101,7 +116,7 @@ class TestDeliveryCreate:
                 dp_id="dp-789",
                 version="v01",
                 scan_root="/scan",
-                qa_status="failed",  # Invalid: only "pending" or "passed" allowed
+                qa_status="rejected",  # Invalid: only "pending", "passed", or "failed" allowed
                 source_path="/source",
             )
 
@@ -157,10 +172,15 @@ class TestDeliveryUpdate:
         assert model.qa_status == "passed"
         assert model.qa_passed_at == "2026-01-01T00:00:00+00:00"
 
+    def test_delivery_update_accepts_failed_qa_status(self):
+        """Test DeliveryUpdate accepts 'failed' qa_status."""
+        model = DeliveryUpdate(qa_status="failed")
+        assert model.qa_status == "failed"
+
     def test_delivery_update_rejects_invalid_qa_status(self):
         """Test DeliveryUpdate with invalid qa_status raises ValidationError."""
         with pytest.raises(ValidationError):
-            DeliveryUpdate(qa_status="failed")
+            DeliveryUpdate(qa_status="rejected")
 
     def test_delivery_update_accepts_none_values_explicitly(self):
         """Test DeliveryUpdate with explicitly set None values."""
@@ -292,12 +312,15 @@ class TestDeliveryFilters:
             DeliveryFilters(qa_status="invalid")
 
     def test_delivery_filters_accepts_valid_qa_statuses(self):
-        """Test DeliveryFilters accepts both valid qa_status values."""
+        """Test DeliveryFilters accepts all valid qa_status values."""
         model1 = DeliveryFilters(qa_status="pending")
         assert model1.qa_status == "pending"
 
         model2 = DeliveryFilters(qa_status="passed")
         assert model2.qa_status == "passed"
+
+        model3 = DeliveryFilters(qa_status="failed")
+        assert model3.qa_status == "failed"
 
     def test_delivery_filters_boolean_converted_field(self):
         """Test DeliveryFilters with boolean converted field."""
