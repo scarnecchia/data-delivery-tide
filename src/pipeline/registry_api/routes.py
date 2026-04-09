@@ -1,3 +1,4 @@
+# pattern: Imperative Shell
 from fastapi import APIRouter, HTTPException, Depends
 
 from pipeline.registry_api.db import (

@@ -1,6 +1,3 @@
-import pytest
-
-
 def make_delivery_payload(**overrides):
     """
     Helper to create a valid DeliveryCreate payload with sensible defaults.
@@ -206,7 +203,7 @@ class TestActionableDeliveries:
             qa_status="passed",
         )
 
-        post1 = client.post("/deliveries", json=payload_actionable)
+        client.post("/deliveries", json=payload_actionable)
         client.post("/deliveries", json=payload_pending)
         post3 = client.post("/deliveries", json=payload_for_converted)
 
