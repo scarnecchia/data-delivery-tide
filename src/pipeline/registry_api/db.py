@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends
@@ -112,3 +113,103 @@ def get_db():
 
 
 DbDep = Annotated[sqlite3.Connection, Depends(get_db)]
+
+
+def _get_iso_now() -> str:
+    """Get current timestamp as ISO 8601 string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
+    """
+    Insert or update a delivery record.
+
+    On insert: sets all fields including first_seen_at and last_updated_at to current timestamp.
+    On conflict: updates all mutable fields but preserves first_seen_at and conditionally
+    updates last_updated_at only when fingerprint changes.
+
+    Args:
+        conn: sqlite3.Connection
+        data: dict with delivery data. Must contain 'source_path'.
+
+    Returns:
+        dict: The full row as a dict (with sqlite3.Row converted to dict).
+    """
+    delivery_id = make_delivery_id(data["source_path"])
+    now = _get_iso_now()
+
+    cursor = conn.cursor()
+
+    # INSERT ... ON CONFLICT statement
+    cursor.execute(
+        """
+        INSERT INTO deliveries (
+            delivery_id,
+            request_id,
+            project,
+            request_type,
+            workplan_id,
+            dp_id,
+            version,
+            scan_root,
+            qa_status,
+            first_seen_at,
+            qa_passed_at,
+            parquet_converted_at,
+            file_count,
+            total_bytes,
+            source_path,
+            output_path,
+            fingerprint,
+            last_updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(delivery_id) DO UPDATE SET
+            request_id = excluded.request_id,
+            project = excluded.project,
+            request_type = excluded.request_type,
+            workplan_id = excluded.workplan_id,
+            dp_id = excluded.dp_id,
+            version = excluded.version,
+            scan_root = excluded.scan_root,
+            qa_status = excluded.qa_status,
+            first_seen_at = COALESCE(deliveries.first_seen_at, excluded.first_seen_at),
+            qa_passed_at = excluded.qa_passed_at,
+            parquet_converted_at = excluded.parquet_converted_at,
+            file_count = excluded.file_count,
+            total_bytes = excluded.total_bytes,
+            output_path = excluded.output_path,
+            fingerprint = excluded.fingerprint,
+            last_updated_at = CASE
+                WHEN excluded.fingerprint != deliveries.fingerprint THEN excluded.last_updated_at
+                ELSE deliveries.last_updated_at
+            END
+        """,
+        (
+            delivery_id,
+            data.get("request_id"),
+            data.get("project"),
+            data.get("request_type"),
+            data.get("workplan_id"),
+            data.get("dp_id"),
+            data.get("version"),
+            data.get("scan_root"),
+            data.get("qa_status"),
+            now,
+            data.get("qa_passed_at"),
+            data.get("parquet_converted_at"),
+            data.get("file_count"),
+            data.get("total_bytes"),
+            data.get("source_path"),
+            data.get("output_path"),
+            data.get("fingerprint"),
+            now,
+        ),
+    )
+
+    conn.commit()
+
+    # Fetch and return the row
+    cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
+    row = cursor.fetchone()
+
+    return dict(row) if row else None
