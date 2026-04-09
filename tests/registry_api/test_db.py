@@ -1,7 +1,6 @@
 import hashlib
 import sqlite3
 import pytest
-from datetime import datetime
 
 from pipeline.registry_api.db import (
     make_delivery_id,

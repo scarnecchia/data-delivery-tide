@@ -1,3 +1,5 @@
+# pattern: Imperative Shell
+
 import hashlib
 import sqlite3
 from datetime import datetime, timezone
@@ -102,9 +104,8 @@ def get_db():
 
     Yields a database connection that is automatically closed after the request.
     """
-    from pipeline.config import load_config
+    from pipeline.config import settings
 
-    settings = load_config()
     conn = get_connection(settings.db_path)
     try:
         yield conn
