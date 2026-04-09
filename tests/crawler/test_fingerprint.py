@@ -1,5 +1,3 @@
-import pytest
-
 from pipeline.crawler.fingerprint import FileEntry, compute_fingerprint
 
 

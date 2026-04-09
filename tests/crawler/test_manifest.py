@@ -1,12 +1,8 @@
 import hashlib
 from datetime import datetime, timezone
 
-import pytest
-
 from pipeline.crawler.fingerprint import FileEntry
 from pipeline.crawler.manifest import (
-    CrawlManifest,
-    ErrorManifest,
     build_error_manifest,
     build_manifest,
     make_delivery_id,
