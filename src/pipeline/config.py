@@ -1,3 +1,4 @@
+# pattern: Imperative Shell
 import json
 import os
 from dataclasses import dataclass

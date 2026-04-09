@@ -1,7 +1,5 @@
 import json
-import os
 import pytest
-from pathlib import Path
 
 from pipeline.config import load_config, PipelineConfig, ScanRoot
 
@@ -26,6 +24,8 @@ class TestLoadConfig:
 
         config = load_config(str(config_file))
 
+        assert isinstance(config, PipelineConfig)
+        assert isinstance(config.scan_roots[0], ScanRoot)
         assert config.registry_api_url == "http://test:8000"
         assert config.output_root == "/test/output"
         assert config.schema_path == "/test/schema.json"
