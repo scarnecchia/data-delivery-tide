@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pipeline"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+registry = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.34,<1",
+]
+converter = [
+    "pyreadstat>=1.2,<2",
+    "pyarrow>=18,<19",
+]
+dev = [
+    "pytest>=8,<9",
+    "httpx>=0.28,<1",
+]
+
+[project.scripts]
+registry-api = "pipeline.registry_api.main:run"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipeline"]
