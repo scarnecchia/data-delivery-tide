@@ -72,6 +72,19 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS idx_request_id ON deliveries (request_id)"
         )
 
+        # Create the tokens table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tokens (
+                token_hash   TEXT PRIMARY KEY,
+                username     TEXT NOT NULL UNIQUE,
+                role         TEXT NOT NULL CHECK (role IN ('admin', 'write', 'read')),
+                created_at   TEXT NOT NULL,
+                revoked_at   TEXT
+            )
+            """
+        )
+
         # Enable WAL mode only for file-based databases
         if isinstance(db_path_or_conn, str):
             cursor.execute("PRAGMA journal_mode=WAL;")
