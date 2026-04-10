@@ -1,4 +1,3 @@
-import pytest
 
 from pipeline.crawler.parser import ParsedDelivery, ParseError, parse_path, derive_qa_statuses
 

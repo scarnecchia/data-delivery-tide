@@ -113,6 +113,16 @@ def parse_path(
     )
 
 
+def _group_key(delivery: ParsedDelivery) -> tuple[str, str]:
+    """Extract grouping key from delivery: (workplan_id, dp_id)."""
+    return (delivery.workplan_id, delivery.dp_id)
+
+
+def _version_sort_key(delivery: ParsedDelivery) -> str:
+    """Extract version for descending sort."""
+    return delivery.version
+
+
 def derive_qa_statuses(deliveries: list[ParsedDelivery]) -> list[ParsedDelivery]:
     """Derive 'failed' status for pending deliveries superseded by newer versions.
 
@@ -125,17 +135,16 @@ def derive_qa_statuses(deliveries: list[ParsedDelivery]) -> list[ParsedDelivery]
         return []
 
     result = []
-    key_fn = lambda d: (d.workplan_id, d.dp_id)
-    sorted_deliveries = sorted(deliveries, key=key_fn)
+    sorted_deliveries = sorted(deliveries, key=_group_key)
 
-    for _key, group in groupby(sorted_deliveries, key=key_fn):
+    for _key, group in groupby(sorted_deliveries, key=_group_key):
         group_list = list(group)
         if len(group_list) == 1:
             result.append(group_list[0])
             continue
 
         # Sort by version descending to find the highest
-        by_version = sorted(group_list, key=lambda d: d.version, reverse=True)
+        by_version = sorted(group_list, key=_version_sort_key, reverse=True)
         highest_version = by_version[0].version
 
         for delivery in group_list:

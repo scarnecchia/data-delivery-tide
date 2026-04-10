@@ -3,13 +3,12 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 from pipeline.config import settings
 from pipeline.json_logging import get_logger
 from pipeline.crawler.parser import parse_path, derive_qa_statuses, ParsedDelivery, ParseError
 from pipeline.crawler.fingerprint import compute_fingerprint, FileEntry
-from pipeline.crawler.manifest import build_manifest, build_error_manifest, make_delivery_id
+from pipeline.crawler.manifest import build_manifest, build_error_manifest
 from pipeline.crawler.http import post_delivery, RegistryUnreachableError
 
 

@@ -1,9 +1,8 @@
 import json
-import os
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone
+from datetime import datetime
 
 from pipeline.config import ScanRoot
 from pipeline.crawler.main import walk_roots, inventory_files, crawl
