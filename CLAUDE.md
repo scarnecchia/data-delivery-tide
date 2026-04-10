@@ -49,6 +49,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Config fields `dp_id_exclusions`, `crawl_manifest_dir`, and `crawler_version` control crawler behaviour
 - API authentication uses SHA-256 hashed bearer tokens with role hierarchy: admin > write > read
 - Routes split into public (health) and protected (all delivery endpoints require auth; mutating endpoints require write role)
+- `ScanRoot` has `path`, `label`, and `target` fields; `target` (default `"packages"`) controls which subdirectory the crawler enters under each dpid during traversal
 
 ## Boundaries
 

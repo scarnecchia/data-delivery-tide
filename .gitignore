@@ -24,7 +24,7 @@ htmlcov/
 # Project-specific
 output/
 !output/.gitkeep
-pipeline/registry.db
+pipeline/registry.db*
 pipeline/logs/
 
 # Presentation drafts

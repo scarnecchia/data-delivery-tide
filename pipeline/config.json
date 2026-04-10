@@ -2,19 +2,23 @@
   "scan_roots": [
     {
       "path": "/requests/qa",
-      "label": "QA Package Results"
+      "label": "QA Package Results",
+      "target": "packages"
     },
     {
       "path": "/requests/qm",
-      "label": "MIL QA Package Results"
+      "label": "MIL QA Package Results",
+      "target": "packages"
     },
     {
       "path": "/requests/qad",
-      "label": "QA Internal DP Data"
+      "label": "QA Internal DP Data",
+      "target": "packages"
     },
     {
       "path": "/requests/qmd",
-      "label": "MIL QA Internal DP Data"
+      "label": "MIL QA Internal DP Data",
+      "target": "packages"
     }
   ],
   "registry_api_url": "http://localhost:8000",

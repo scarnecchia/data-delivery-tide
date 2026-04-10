@@ -65,7 +65,11 @@ def make_crawler_config(tmp_path):
         config_dict.update(overrides)
 
         scan_roots_objs = [
-            ScanRoot(path=sr["path"], label=sr.get("label", "default"))
+            ScanRoot(
+                path=sr["path"],
+                label=sr.get("label", "default"),
+                target=sr.get("target", "packages"),
+            )
             for sr in config_dict["scan_roots"]
         ]
 
