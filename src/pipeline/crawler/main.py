@@ -30,22 +30,68 @@ def inventory_files(source_path: str) -> list[FileEntry]:
     return files
 
 
-def walk_roots(scan_roots: list) -> list[tuple[str, str]]:
+def walk_roots(scan_roots: list, logger=None) -> list[tuple[str, str]]:
     """Find all msoc/msoc_new directories under configured scan roots.
 
+    Descends exactly 5 levels following the canonical structure:
+    scan_root / <dpid> / <target> / <request_id> / <version_dir> / {msoc|msoc_new}
+
     Returns list of (source_path, scan_root_path) tuples.
-    Skips non-existent scan roots (checked by caller before this is called).
+    Skips non-existent scan roots.
     """
     results = []
     for root in scan_roots:
         root_path = root.path
+        target = root.target
         if not os.path.isdir(root_path):
             continue
-        for dirpath, dirnames, _ in os.walk(root_path):
-            basename = os.path.basename(dirpath)
-            if basename in ("msoc", "msoc_new"):
-                results.append((dirpath, root_path))
-                dirnames.clear()  # don't descend further
+
+        # Level 1: dpid directories
+        try:
+            dpid_entries = list(os.scandir(root_path))
+        except OSError:
+            continue
+        for dpid_entry in dpid_entries:
+            if not dpid_entry.is_dir(follow_symlinks=False):
+                continue
+
+            # Level 2: only enter the target directory
+            target_path = os.path.join(dpid_entry.path, target)
+            if not os.path.isdir(target_path):
+                if logger:
+                    logger.warning(
+                        f"dpid missing target directory: {dpid_entry.name}/{target}",
+                        extra={"scan_root": root_path, "dpid": dpid_entry.name, "target": target},
+                    )
+                continue
+
+            # Level 3: request_id directories
+            try:
+                request_entries = list(os.scandir(target_path))
+            except OSError:
+                continue
+            for request_entry in request_entries:
+                if not request_entry.is_dir(follow_symlinks=False):
+                    continue
+
+                # Level 4: version directories
+                try:
+                    version_entries = list(os.scandir(request_entry.path))
+                except OSError:
+                    continue
+                for version_entry in version_entries:
+                    if not version_entry.is_dir(follow_symlinks=False):
+                        continue
+
+                    # Level 5: check for msoc or msoc_new only
+                    try:
+                        terminal_entries = list(os.scandir(version_entry.path))
+                    except OSError:
+                        continue
+                    for terminal_entry in terminal_entries:
+                        if terminal_entry.is_dir(follow_symlinks=False) and terminal_entry.name in ("msoc", "msoc_new"):
+                            results.append((terminal_entry.path, root_path))
+
     return results
 
 
@@ -75,7 +121,7 @@ def crawl(config, logger) -> int:
                 extra={"scan_root": root.path},
             )
 
-    candidates = walk_roots(config.scan_roots)
+    candidates = walk_roots(config.scan_roots, logger)
     logger.info(f"found {len(candidates)} delivery candidates")
 
     # --- Pass 1: Parse, inventory, fingerprint, write manifests ---
