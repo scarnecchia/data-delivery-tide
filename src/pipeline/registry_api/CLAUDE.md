@@ -21,7 +21,7 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 ## Dependencies
 
 - **Uses**: `pipeline.config.settings` for db_path
-- **Used by**: crawler (will POST deliveries), converter (will GET actionable + PATCH after conversion)
+- **Used by**: crawler (POSTs deliveries with derived qa_status), converter (will GET actionable + PATCH after conversion)
 - **Boundary**: no imports from crawler or converter
 
 ## Key Decisions
