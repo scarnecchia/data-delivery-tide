@@ -1,6 +1,7 @@
 # pattern: Imperative Shell
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
+from pipeline.registry_api.auth import AuthDep, TokenInfo, require_auth, require_role
 from pipeline.registry_api.db import (
     DbDep,
     upsert_delivery,
@@ -16,17 +17,22 @@ from pipeline.registry_api.models import (
     DeliveryFilters,
 )
 
-router = APIRouter()
+public_router = APIRouter()
+protected_router = APIRouter(dependencies=[Depends(require_auth)])
 
 
-@router.get("/health")
+@public_router.get("/health")
 async def health():
     """Health check endpoint."""
     return {"status": "ok"}
 
 
-@router.post("/deliveries", response_model=DeliveryResponse, status_code=200)
-async def create_delivery(data: DeliveryCreate, db: DbDep):
+@protected_router.post("/deliveries", response_model=DeliveryResponse, status_code=200)
+async def create_delivery(
+    data: DeliveryCreate,
+    db: DbDep,
+    token: TokenInfo = require_role("write"),
+):
     """
     Create or upsert a delivery.
 
@@ -37,7 +43,7 @@ async def create_delivery(data: DeliveryCreate, db: DbDep):
     return result
 
 
-@router.get("/deliveries", response_model=list[DeliveryResponse])
+@protected_router.get("/deliveries", response_model=list[DeliveryResponse])
 async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
     """
     List deliveries with optional filtering.
@@ -51,7 +57,7 @@ async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
     return results
 
 
-@router.get("/deliveries/actionable", response_model=list[DeliveryResponse])
+@protected_router.get("/deliveries/actionable", response_model=list[DeliveryResponse])
 async def get_actionable_deliveries(db: DbDep):
     """
     Get actionable deliveries (passed QA but not yet converted to Parquet).
@@ -62,7 +68,7 @@ async def get_actionable_deliveries(db: DbDep):
     return results
 
 
-@router.get("/deliveries/{delivery_id}", response_model=DeliveryResponse)
+@protected_router.get("/deliveries/{delivery_id}", response_model=DeliveryResponse)
 async def get_single_delivery(delivery_id: str, db: DbDep):
     """
     Retrieve a delivery by ID.
@@ -75,8 +81,13 @@ async def get_single_delivery(delivery_id: str, db: DbDep):
     return result
 
 
-@router.patch("/deliveries/{delivery_id}", response_model=DeliveryResponse)
-async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbDep):
+@protected_router.patch("/deliveries/{delivery_id}", response_model=DeliveryResponse)
+async def update_single_delivery(
+    delivery_id: str,
+    data: DeliveryUpdate,
+    db: DbDep,
+    token: TokenInfo = require_role("write"),
+):
     """
     Partially update a delivery.
 

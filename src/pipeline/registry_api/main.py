@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from pipeline.config import settings
 from pipeline.registry_api.db import init_db
-from pipeline.registry_api.routes import router
+from pipeline.registry_api.routes import public_router, protected_router
 
 
 @asynccontextmanager
@@ -21,7 +21,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="QA Registry", lifespan=lifespan)
-app.include_router(router)
+app.include_router(public_router)
+app.include_router(protected_router)
 
 
 def run():
