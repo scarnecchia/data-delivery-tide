@@ -15,7 +15,7 @@ class DeliveryCreate(BaseModel):
     dp_id: str
     version: str
     scan_root: str
-    qa_status: Literal["pending", "passed"]
+    qa_status: Literal["pending", "passed", "failed"]
     source_path: str
     qa_passed_at: str | None = None
     file_count: int | None = None
@@ -28,7 +28,7 @@ class DeliveryUpdate(BaseModel):
 
     parquet_converted_at: str | None = None
     output_path: str | None = None
-    qa_status: Literal["pending", "passed"] | None = None
+    qa_status: Literal["pending", "passed", "failed"] | None = None
     qa_passed_at: str | None = None
 
 
@@ -63,7 +63,7 @@ class DeliveryFilters(BaseModel):
     request_type: str | None = None
     workplan_id: str | None = None
     request_id: str | None = None
-    qa_status: Literal["pending", "passed"] | None = None
+    qa_status: Literal["pending", "passed", "failed"] | None = None
     converted: bool | None = None
     version: str | None = None
     scan_root: str | None = None

@@ -94,3 +94,44 @@ class TestLoadConfig:
         """Test that FileNotFoundError is raised for nonexistent paths."""
         with pytest.raises(FileNotFoundError):
             load_config("/nonexistent/path/config.json")
+
+    def test_load_config_with_dp_id_exclusions(self, tmp_path):
+        """Test loading config with dp_id_exclusions field."""
+        config_data = {
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+            "dp_id_exclusions": ["nsdp", "excluded"],
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.dp_id_exclusions == ["nsdp", "excluded"]
+
+    def test_load_config_dp_id_exclusions_defaults_to_empty_list(self, tmp_path):
+        """Test that dp_id_exclusions defaults to empty list if absent."""
+        config_data = {
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.dp_id_exclusions == []

@@ -20,6 +20,9 @@ class PipelineConfig:
     overrides_path: str
     log_dir: str
     db_path: str
+    dp_id_exclusions: list[str]
+    crawl_manifest_dir: str
+    crawler_version: str
 
 
 def load_config(path: str | None = None) -> PipelineConfig:
@@ -45,6 +48,9 @@ def load_config(path: str | None = None) -> PipelineConfig:
         overrides_path=data["overrides_path"],
         log_dir=data["log_dir"],
         db_path=data["db_path"],
+        dp_id_exclusions=data.get("dp_id_exclusions", []),
+        crawl_manifest_dir=data.get("crawl_manifest_dir", "pipeline/crawl_manifests"),
+        crawler_version=data.get("crawler_version", "1.0.0"),
     )
 
 

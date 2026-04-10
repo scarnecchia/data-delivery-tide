@@ -21,7 +21,7 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 ## Dependencies
 
 - **Uses**: `pipeline.config.settings` for db_path
-- **Used by**: crawler (will POST deliveries), converter (will GET actionable + PATCH after conversion)
+- **Used by**: crawler (POSTs deliveries with derived qa_status), converter (will GET actionable + PATCH after conversion)
 - **Boundary**: no imports from crawler or converter
 
 ## Key Decisions
@@ -35,7 +35,7 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 
 - delivery_id = SHA-256 of source_path (never random, never sequential)
 - source_path has UNIQUE constraint; one delivery per path
-- qa_status is always "pending" or "passed" (CHECK constraint)
+- qa_status is always "pending", "passed", or "failed" (CHECK constraint)
 - first_seen_at is immutable after initial insert (COALESCE preserves it on conflict)
 - actionable = qa_status "passed" AND parquet_converted_at IS NULL
 

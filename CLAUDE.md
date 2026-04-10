@@ -1,6 +1,7 @@
 # QA Registry Pipeline
 
 Last verified: 2026-04-09
+Last context update: 2026-04-09
 
 ## Purpose
 
@@ -25,8 +26,9 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 
 - `src/pipeline/` -- main package
   - `config.py` -- config loading with env var override (`PIPELINE_CONFIG`)
+  - `json_logging.py` -- JSON structured logging (JsonFormatter + file/stderr handlers)
   - `registry_api/` -- FastAPI app, SQLite db, Pydantic models, routes
-  - `crawler/` -- filesystem crawler (placeholder)
+  - `crawler/` -- filesystem crawler (see `src/pipeline/crawler/CLAUDE.md`)
   - `converter/` -- SAS-to-Parquet converter (placeholder)
 - `pipeline/` -- runtime config and scripts
   - `config.json` -- default pipeline configuration
@@ -40,7 +42,9 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Functional Core / Imperative Shell pattern (files annotated with `# pattern:` comment)
 - Delivery IDs are deterministic SHA-256 of source_path
 - Config loaded lazily via module-level `__getattr__` on `pipeline.config.settings`
-- QA status is binary: "pending" or "passed" (encoded by directory naming convention on the share)
+- QA status is tri-state: "pending", "passed", or "failed". Directories encode "pending" (msoc_new) and "passed" (msoc); "failed" is derived by the crawler when a newer version supersedes a pending delivery within the same workplan+dp_id
+- Crawler uses a two-pass approach: (1) walk/parse/fingerprint/write manifests, (2) derive failed statuses then POST to registry
+- Config fields `dp_id_exclusions`, `crawl_manifest_dir`, and `crawler_version` control crawler behaviour
 
 ## Boundaries
 

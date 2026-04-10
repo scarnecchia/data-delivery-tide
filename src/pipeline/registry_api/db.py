@@ -47,7 +47,7 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
                 dp_id                TEXT NOT NULL,
                 version              TEXT NOT NULL,
                 scan_root            TEXT NOT NULL,
-                qa_status            TEXT NOT NULL CHECK (qa_status IN ('pending', 'passed')),
+                qa_status            TEXT NOT NULL CHECK (qa_status IN ('pending', 'passed', 'failed')),
                 first_seen_at        TEXT NOT NULL,
                 qa_passed_at         TEXT,
                 parquet_converted_at TEXT,

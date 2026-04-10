@@ -22,5 +22,8 @@
   "schema_path": "/pipeline/schema.json",
   "overrides_path": "/pipeline/overrides.json",
   "log_dir": "/pipeline/logs",
-  "db_path": "pipeline/registry.db"
+  "db_path": "pipeline/registry.db",
+  "dp_id_exclusions": ["nsdp"],
+  "crawl_manifest_dir": "pipeline/crawl_manifests",
+  "crawler_version": "1.0.0"
 }
