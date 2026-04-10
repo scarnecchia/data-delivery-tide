@@ -115,3 +115,71 @@ class TestLoadConfig:
         config = load_config(str(config_file))
 
         assert config.dp_id_exclusions == []
+
+    def test_load_config_target_explicit_packages(self, tmp_path):
+        """Test that scan root with explicit target='packages' loads correctly (AC1.1)."""
+        config_data = {
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "target": "packages"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.scan_roots[0].target == "packages"
+
+    def test_load_config_target_defaults_to_packages(self, tmp_path):
+        """Test that scan root without target field defaults to 'packages' (AC1.2)."""
+        config_data = {
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.scan_roots[0].target == "packages"
+
+    def test_load_config_target_non_default(self, tmp_path):
+        """Test that scan root with non-default target='compare' loads correctly (AC1.3)."""
+        config_data = {
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "target": "compare"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.scan_roots[0].target == "compare"
+
+    def test_load_config_default_json_all_targets_packages(self, monkeypatch):
+        """Test that real config.json loads without target field and all roots default to 'packages' (AC1.4)."""
+        monkeypatch.delenv("PIPELINE_CONFIG", raising=False)
+
+        config = load_config()
+
+        assert all(root.target == "packages" for root in config.scan_roots)

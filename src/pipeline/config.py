@@ -9,6 +9,7 @@ from pathlib import Path
 class ScanRoot:
     path: str
     label: str
+    target: str = "packages"
 
 
 @dataclass
@@ -38,7 +39,14 @@ def load_config(path: str | None = None) -> PipelineConfig:
     with open(config_path) as f:
         data = json.load(f)
 
-    scan_roots = [ScanRoot(path=root["path"], label=root["label"]) for root in data["scan_roots"]]
+    scan_roots = [
+        ScanRoot(
+            path=root["path"],
+            label=root["label"],
+            target=root.get("target", "packages"),
+        )
+        for root in data["scan_roots"]
+    ]
 
     return PipelineConfig(
         scan_roots=scan_roots,
