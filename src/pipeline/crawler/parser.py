@@ -1,6 +1,7 @@
 # pattern: Functional Core
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from itertools import groupby
 
 
 @dataclass(frozen=True)
@@ -110,3 +111,37 @@ def parse_path(
         source_path=path,
         scan_root=scan_root,
     )
+
+
+def derive_qa_statuses(deliveries: list[ParsedDelivery]) -> list[ParsedDelivery]:
+    """Derive 'failed' status for pending deliveries superseded by newer versions.
+
+    Within each (workplan_id, dp_id) group, any pending delivery that is NOT
+    the highest version is marked as failed. Passed deliveries are never changed.
+
+    Returns a new list — does not mutate the input.
+    """
+    if not deliveries:
+        return []
+
+    result = []
+    key_fn = lambda d: (d.workplan_id, d.dp_id)
+    sorted_deliveries = sorted(deliveries, key=key_fn)
+
+    for _key, group in groupby(sorted_deliveries, key=key_fn):
+        group_list = list(group)
+        if len(group_list) == 1:
+            result.append(group_list[0])
+            continue
+
+        # Sort by version descending to find the highest
+        by_version = sorted(group_list, key=lambda d: d.version, reverse=True)
+        highest_version = by_version[0].version
+
+        for delivery in group_list:
+            if delivery.qa_status == "pending" and delivery.version != highest_version:
+                result.append(replace(delivery, qa_status="failed"))
+            else:
+                result.append(delivery)
+
+    return result
