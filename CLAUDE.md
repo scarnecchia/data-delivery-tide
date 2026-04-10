@@ -1,7 +1,7 @@
 # QA Registry Pipeline
 
-Last verified: 2026-04-09
-Last context update: 2026-04-09
+Last verified: 2026-04-10
+Last context update: 2026-04-10
 
 ## Purpose
 
@@ -45,6 +45,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - QA status is tri-state: "pending", "passed", or "failed". Directories encode "pending" (msoc_new) and "passed" (msoc); "failed" is derived by the crawler when a newer version supersedes a pending delivery within the same workplan+dp_id
 - Crawler uses a two-pass approach: (1) walk/parse/fingerprint/write manifests, (2) derive failed statuses then POST to registry
 - Config fields `dp_id_exclusions`, `crawl_manifest_dir`, and `crawler_version` control crawler behaviour
+- `ScanRoot` has `path`, `label`, and `target` fields; `target` (default `"packages"`) controls which subdirectory the crawler enters under each dpid during traversal
 
 ## Boundaries
 
