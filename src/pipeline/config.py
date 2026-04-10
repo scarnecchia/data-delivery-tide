@@ -29,7 +29,7 @@ def load_config(path: str | None = None) -> PipelineConfig:
     if path is None:
         path = os.getenv("PIPELINE_CONFIG")
         if path is None:
-            path = "pipeline/config.json"
+            path = str(Path(__file__).resolve().parents[2] / "pipeline" / "config.json")
 
     config_path = Path(path)
     if not config_path.exists():

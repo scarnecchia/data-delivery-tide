@@ -61,34 +61,14 @@ class TestLoadConfig:
         assert config.output_root == "/env/output"
         assert config.scan_roots[0].path == "/env/qa"
 
-    def test_load_config_falls_back_to_default(self, monkeypatch, tmp_path):
-        """Test fallback to pipeline/config.json when no env var is set."""
-        # Change to a temp directory that has a pipeline/config.json
-        config_dir = tmp_path / "pipeline"
-        config_dir.mkdir()
-        config_file = config_dir / "config.json"
-
-        config_data = {
-            "scan_roots": [
-                {"path": "/default/qa", "label": "Default QA"},
-            ],
-            "registry_api_url": "http://default:8000",
-            "output_root": "/default/output",
-            "schema_path": "/default/schema.json",
-            "overrides_path": "/default/overrides.json",
-            "log_dir": "/default/logs",
-            "db_path": "default/registry.db",
-        }
-        config_file.write_text(json.dumps(config_data))
-
+    def test_load_config_falls_back_to_default(self, monkeypatch):
+        """Test fallback to pipeline/config.json relative to package root when no env var is set."""
         monkeypatch.delenv("PIPELINE_CONFIG", raising=False)
-        monkeypatch.chdir(tmp_path)
 
         config = load_config()
 
-        assert config.registry_api_url == "http://default:8000"
-        assert config.output_root == "/default/output"
-        assert config.scan_roots[0].path == "/default/qa"
+        assert config.registry_api_url == "http://localhost:8000"
+        assert len(config.scan_roots) > 0
 
     def test_load_config_missing_file_raises(self):
         """Test that FileNotFoundError is raised for nonexistent paths."""
