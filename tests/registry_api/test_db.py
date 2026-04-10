@@ -178,6 +178,74 @@ class TestGetConnection:
         conn.close()
 
 
+class TestTokensTable:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database for testing."""
+        conn = sqlite3.connect(":memory:")
+        yield conn
+        conn.close()
+
+    def test_init_db_creates_tokens_table(self, memory_db):
+        """Test init_db creates the tokens table."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='tokens'"
+        )
+        result = cursor.fetchone()
+
+        assert result is not None
+        assert result[0] == "tokens"
+
+    def test_tokens_table_has_expected_columns(self, memory_db):
+        """Test tokens table has all expected columns."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute("PRAGMA table_info(tokens)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        expected_columns = {
+            "token_hash",
+            "username",
+            "role",
+            "created_at",
+            "revoked_at",
+        }
+
+        assert columns == expected_columns
+
+    def test_tokens_table_role_check_constraint(self, memory_db):
+        """Test tokens table rejects invalid role values."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+                ("hash1", "user1", "superadmin", "2026-01-01T00:00:00+00:00"),
+            )
+
+    def test_tokens_table_username_unique_constraint(self, memory_db):
+        """Test tokens table enforces unique username."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+            ("hash1", "user1", "read", "2026-01-01T00:00:00+00:00"),
+        )
+        memory_db.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+                ("hash2", "user1", "write", "2026-01-01T00:00:00+00:00"),
+            )
+
+
 class TestUpsertDelivery:
     @pytest.fixture
     def memory_db(self):
