@@ -320,3 +320,65 @@ class TestUpdateDelivery:
         assert response.status_code == 200
         data = response.json()
         assert data["parquet_converted_at"] == "2026-04-09T15:30:00+00:00"
+
+
+class TestHealthNoAuth:
+    """Test that /health is accessible without authentication."""
+
+    def test_health_no_auth_header_returns_200(self, client):
+        """registry-auth.AC1.6: /health returns 200 with no Authorization header."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+
+class TestAuthEnforcement:
+    """Test authentication and authorization enforcement on delivery routes."""
+
+    def test_get_deliveries_no_auth_returns_401(self, client):
+        """GET /deliveries without auth returns 401."""
+        response = client.get("/deliveries")
+        assert response.status_code == 401
+
+    def test_post_deliveries_no_auth_returns_401(self, client):
+        """POST /deliveries without auth returns 401."""
+        payload = make_delivery_payload()
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 401
+
+    def test_patch_delivery_no_auth_returns_401(self, client):
+        """PATCH /deliveries/{id} without auth returns 401."""
+        response = client.patch(
+            "/deliveries/some-id",
+            json={"qa_status": "passed"},
+        )
+        assert response.status_code == 401
+
+    def test_get_actionable_no_auth_returns_401(self, client):
+        """GET /deliveries/actionable without auth returns 401."""
+        response = client.get("/deliveries/actionable")
+        assert response.status_code == 401
+
+    def test_read_token_can_get_deliveries(self, client, read_auth_headers):
+        """registry-auth.AC2.4: Read token can GET deliveries."""
+        response = client.get("/deliveries", headers=read_auth_headers)
+        assert response.status_code == 200
+
+    def test_read_token_cannot_post_deliveries(self, client, read_auth_headers):
+        """registry-auth.AC2.5: Read token on POST /deliveries returns 403."""
+        payload = make_delivery_payload()
+        response = client.post("/deliveries", json=payload, headers=read_auth_headers)
+        assert response.status_code == 403
+
+    def test_read_token_cannot_patch_deliveries(self, client, auth_headers, read_auth_headers):
+        """registry-auth.AC2.6: Read token on PATCH /deliveries/{id} returns 403."""
+        payload = make_delivery_payload(source_path="/data/role-test")
+        post_response = client.post("/deliveries", json=payload, headers=auth_headers)
+        delivery_id = post_response.json()["delivery_id"]
+
+        response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "passed"},
+            headers=read_auth_headers,
+        )
+        assert response.status_code == 403
