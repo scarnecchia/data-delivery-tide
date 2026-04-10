@@ -374,3 +374,16 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
     return dict(row) if row else None
+
+
+def get_token_by_hash(conn: sqlite3.Connection, token_hash: str) -> dict | None:
+    """
+    Look up a token by its SHA-256 hash.
+
+    Returns the token row as a dict if found, or None if not found.
+    Does NOT filter by revoked_at — caller decides how to handle revoked tokens.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM tokens WHERE token_hash = ?", (token_hash,))
+    row = cursor.fetchone()
+    return dict(row) if row else None
