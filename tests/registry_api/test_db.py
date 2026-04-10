@@ -11,6 +11,7 @@ from pipeline.registry_api.db import (
     list_deliveries,
     get_actionable,
     update_delivery,
+    get_token_by_hash,
 )
 
 
@@ -244,6 +245,54 @@ class TestTokensTable:
                 "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
                 ("hash2", "user1", "write", "2026-01-01T00:00:00+00:00"),
             )
+
+
+class TestGetTokenByHash:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_get_token_by_hash_returns_existing_token(self, memory_db):
+        """Test that get_token_by_hash returns correct row for existing hash."""
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+            ("abc123hash", "testuser", "read", "2026-01-01T00:00:00+00:00"),
+        )
+        memory_db.commit()
+
+        result = get_token_by_hash(memory_db, "abc123hash")
+
+        assert result is not None
+        assert result["token_hash"] == "abc123hash"
+        assert result["username"] == "testuser"
+        assert result["role"] == "read"
+        assert result["revoked_at"] is None
+
+    def test_get_token_by_hash_returns_none_for_nonexistent(self, memory_db):
+        """Test that get_token_by_hash returns None for nonexistent hash."""
+        result = get_token_by_hash(memory_db, "nonexistent")
+
+        assert result is None
+
+    def test_get_token_by_hash_returns_revoked_tokens(self, memory_db):
+        """Test that get_token_by_hash returns revoked tokens (caller filters)."""
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at, revoked_at) VALUES (?, ?, ?, ?, ?)",
+            ("revokedhash", "olduser", "write", "2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00"),
+        )
+        memory_db.commit()
+
+        result = get_token_by_hash(memory_db, "revokedhash")
+
+        assert result is not None
+        assert result["revoked_at"] is not None
 
 
 class TestUpsertDelivery:
