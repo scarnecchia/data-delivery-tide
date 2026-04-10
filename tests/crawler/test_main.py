@@ -3,6 +3,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from datetime import datetime
+import logging
 
 from pipeline.config import ScanRoot
 from pipeline.crawler.main import walk_roots, inventory_files, crawl
@@ -75,6 +76,151 @@ class TestWalkRoots:
         # Should only find the existing root's delivery
         assert len(results) == 1
         assert str(v1_path) in results[0][0]
+
+    def test_ac2_3_msoc_in_sibling_not_discovered(self, tmp_path):
+        """AC2.3: msoc inside a sibling of target (e.g. compare/) is not discovered."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create msoc under 'compare' directory, not under 'packages' (target)
+        compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        compare_msoc.mkdir(parents=True)
+
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        results = walk_roots(scan_roots)
+
+        # Result should be empty — the msoc under 'compare' should not be discovered
+        assert len(results) == 0
+
+    def test_ac2_4_msoc_at_wrong_depth_not_discovered(self, tmp_path):
+        """AC2.4: msoc directly under dpid (no target/request/version levels) is not discovered."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create msoc directly under dpid, bypassing canonical structure
+        msoc_wrong_depth = scan_root / "mkscnr" / "msoc"
+        msoc_wrong_depth.mkdir(parents=True)
+
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        results = walk_roots(scan_roots)
+
+        # Result should be empty
+        assert len(results) == 0
+
+    def test_ac2_5_msoc_nested_too_deep_not_discovered(self, tmp_path):
+        """AC2.5: msoc nested too deep (extra level between version_dir and msoc) is not discovered."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create msoc with an extra nesting level
+        msoc_nested = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "subdir" / "msoc"
+        msoc_nested.mkdir(parents=True)
+
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        results = walk_roots(scan_roots)
+
+        # Result should be empty
+        assert len(results) == 0
+
+    def test_ac2_6_multiple_dpids_discovered(self, tmp_path):
+        """AC2.6: Multiple dpids under the same scan root are all traversed."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create two dpids with valid msoc at canonical depth
+        dpid1_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        dpid1_msoc.mkdir(parents=True)
+
+        dpid2_msoc = scan_root / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc"
+        dpid2_msoc.mkdir(parents=True)
+
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        results = walk_roots(scan_roots)
+
+        # Both should be discovered
+        assert len(results) == 2
+        paths = [r[0] for r in results]
+        assert str(dpid1_msoc) in paths
+        assert str(dpid2_msoc) in paths
+
+    def test_ac2_7_multiple_version_dirs_discovered(self, tmp_path):
+        """AC2.7: Multiple version directories under the same request_id are all discovered."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create one dpid with one request_id containing two version directories
+        v1_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        v1_msoc.mkdir(parents=True)
+
+        v2_msoc_new = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc_new"
+        v2_msoc_new.mkdir(parents=True)
+
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        results = walk_roots(scan_roots)
+
+        # Both should be discovered
+        assert len(results) == 2
+        paths = [r[0] for r in results]
+        assert str(v1_msoc) in paths
+        assert str(v2_msoc_new) in paths
+
+    def test_ac3_1_warning_when_target_missing(self, tmp_path):
+        """AC3.1: Warning logged when a dpid directory is missing its target subdirectory."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create dpid directory without the target subdirectory
+        dpid_dir = scan_root / "mkscnr"
+        dpid_dir.mkdir(parents=True)
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        results = walk_roots(scan_roots, logger)
+
+        # Assert warning was logged
+        assert logger.warning.called
+        call_args = logger.warning.call_args
+        assert "dpid missing target directory" in call_args[0][0]
+        assert call_args[1]["extra"]["dpid"] == "mkscnr"
+        assert call_args[1]["extra"]["target"] == "packages"
+
+        # Result should be empty
+        assert len(results) == 0
+
+    def test_ac3_2_no_warning_when_target_exists(self, tmp_path):
+        """AC3.2: No warning logged when target subdirectory exists."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create valid delivery with target directory
+        msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        msoc.mkdir(parents=True)
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        results = walk_roots(scan_roots, logger)
+
+        # Assert warning was NOT logged
+        assert not logger.warning.called
+
+        # Result should have one delivery
+        assert len(results) == 1
+
+    def test_custom_target_directory(self, tmp_path):
+        """Custom target: Create msoc under non-default target and verify discovery."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create msoc under 'compare' directory (custom target)
+        compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        compare_msoc.mkdir(parents=True)
+
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="compare")]
+        results = walk_roots(scan_roots)
+
+        # Should discover msoc under custom target
+        assert len(results) == 1
+        assert (str(compare_msoc), str(scan_root)) in results
 
 
 class TestInventoryFiles:
