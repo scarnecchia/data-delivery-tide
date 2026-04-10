@@ -1,7 +1,7 @@
 # pattern: Imperative Shell
 from fastapi import APIRouter, Depends, HTTPException
 
-from pipeline.registry_api.auth import AuthDep, TokenInfo, require_auth, require_role
+from pipeline.registry_api.auth import TokenInfo, require_auth, require_role
 from pipeline.registry_api.db import (
     DbDep,
     upsert_delivery,
