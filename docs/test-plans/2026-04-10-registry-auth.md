@@ -7,7 +7,8 @@ Generated from implementation plan: `docs/implementation-plans/2026-04-10-regist
 - Registry API deployed and accessible (e.g., `http://localhost:8000`)
 - `registry-auth` CLI entrypoint installed and on PATH
 - Both CLI and API pointing at the same SQLite database (verify via `PIPELINE_CONFIG` or default `pipeline/config.json`)
-- All automated tests passing: `uv run pytest` (206 passed)
+- Package installed in the environment: `pip install -e ".[registry,dev]"`
+- All automated tests passing: `pytest` (206 passed)
 
 ## Phase 1: CLI Default Role Verification
 
