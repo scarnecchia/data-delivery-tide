@@ -25,7 +25,7 @@ def _make_lexicons(tmp_path, lexicon_id="soc.qar"):
 class TestLoadConfig:
     def test_load_config_from_explicit_path(self, tmp_path):
         """Test loading config from an explicitly provided path."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -63,7 +63,7 @@ class TestLoadConfig:
 
     def test_load_config_from_env_var(self, tmp_path, monkeypatch):
         """Test loading config from PIPELINE_CONFIG env var."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -104,7 +104,7 @@ class TestLoadConfig:
 
     def test_load_config_with_dp_id_exclusions(self, tmp_path):
         """Test loading config with dp_id_exclusions field."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -128,7 +128,7 @@ class TestLoadConfig:
 
     def test_load_config_dp_id_exclusions_defaults_to_empty_list(self, tmp_path):
         """Test that dp_id_exclusions defaults to empty list if absent."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -151,7 +151,7 @@ class TestLoadConfig:
 
     def test_load_config_target_explicit_packages(self, tmp_path):
         """Test that scan root with explicit target='packages' loads correctly (AC1.1)."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -174,7 +174,7 @@ class TestLoadConfig:
 
     def test_load_config_target_defaults_to_packages(self, tmp_path):
         """Test that scan root without target field defaults to 'packages' (AC1.2)."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -197,7 +197,7 @@ class TestLoadConfig:
 
     def test_load_config_target_non_default(self, tmp_path):
         """Test that scan root with non-default target='compare' loads correctly (AC1.3)."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -229,7 +229,7 @@ class TestLoadConfig:
     # AC2.1-AC2.3 tests
     def test_load_config_valid_lexicon_reference(self, tmp_path):
         """AC2.1: Scan root with valid lexicon reference loads successfully."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
@@ -252,7 +252,7 @@ class TestLoadConfig:
 
     def test_load_config_invalid_lexicon_reference(self, tmp_path):
         """AC2.2: Scan root referencing non-existent lexicon ID fails at startup."""
-        lexicons_dir = _make_lexicons(tmp_path, "soc.qar")
+        _make_lexicons(tmp_path, "soc.qar")
 
         config_data = {
             "lexicons_dir": "lexicons",
