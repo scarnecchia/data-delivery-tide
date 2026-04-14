@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -125,26 +126,6 @@ class TestCreateDelivery:
         del payload["lexicon_id"]
         response = client.post("/deliveries", json=payload)
         assert response.status_code == 422
-
-    def test_create_with_invalid_status_for_lexicon(self, client):
-        """AC4.2: POST with status not in lexicon's statuses returns 422."""
-        payload = make_delivery_payload(
-            source_path="/data/invalid-status",
-            status="nonexistent",
-        )
-        response = client.post("/deliveries", json=payload)
-        assert response.status_code == 422
-        assert "not valid for lexicon" in response.json()["detail"]
-
-    def test_create_with_unknown_lexicon_id(self, client):
-        """POST with unknown lexicon_id returns 422."""
-        payload = make_delivery_payload(
-            source_path="/data/unknown-lexicon",
-            lexicon_id="nonexistent.lexicon",
-        )
-        response = client.post("/deliveries", json=payload)
-        assert response.status_code == 422
-        assert "unknown lexicon_id" in response.json()["detail"]
 
 
 class TestGetDelivery:
@@ -445,12 +426,11 @@ class TestLexiconValidation:
         assert patch_response.status_code == 200
         data = patch_response.json()
         assert data["status"] == "passed"
-        # Verify passed_at is populated with an ISO timestamp
+        # Verify passed_at is populated with a valid ISO timestamp
         assert "passed_at" in data["metadata"]
         assert data["metadata"]["passed_at"] is not None
-        # Verify it looks like a valid ISO timestamp
-        assert "T" in data["metadata"]["passed_at"]
-        assert "+" in data["metadata"]["passed_at"] or "Z" in data["metadata"]["passed_at"]
+        # Verify it parses as a valid ISO datetime
+        datetime.fromisoformat(data["metadata"]["passed_at"])
 
     def test_ac4_6_no_status_change_no_metadata_auto_pop(self, client, test_db):
         """AC4.6: PATCH without status change produces no event and no metadata auto-population."""

@@ -28,6 +28,18 @@ from pipeline.registry_api.events import manager
 router = APIRouter()
 
 
+def _deserialize_metadata(row: dict) -> dict:
+    """Deserialize metadata field from JSON string if needed.
+
+    Modifies the row in place and returns it for chaining.
+    If metadata is already a dict, leaves it unchanged.
+    If metadata is a string, parses it as JSON.
+    """
+    if isinstance(row.get("metadata"), str):
+        row["metadata"] = json.loads(row["metadata"])
+    return row
+
+
 @router.get("/health")
 async def health():
     """Health check endpoint."""
@@ -63,12 +75,12 @@ async def create_delivery(data: DeliveryCreate, db: DbDep, request: Request):
     is_new = not delivery_exists(db, delivery_id)
 
     db_data = data.model_dump()
-    db_data["metadata"] = json.dumps(db_data.get("metadata") or {})
+    db_data["metadata"] = json.dumps(db_data.get("metadata") if db_data.get("metadata") is not None else {})
 
     result = upsert_delivery(db, db_data)
 
-    if result and isinstance(result.get("metadata"), str):
-        result["metadata"] = json.loads(result["metadata"])
+    if result:
+        _deserialize_metadata(result)
 
     if is_new:
         response = DeliveryResponse(**result)
@@ -90,8 +102,7 @@ async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
     """
     results = list_deliveries(db, filters.model_dump(exclude_none=True))
     for r in results:
-        if isinstance(r.get("metadata"), str):
-            r["metadata"] = json.loads(r["metadata"])
+        _deserialize_metadata(r)
     return results
 
 
@@ -111,8 +122,7 @@ async def get_actionable_deliveries(db: DbDep, request: Request):
     }
     results = get_actionable(db, lexicon_actionable)
     for r in results:
-        if isinstance(r.get("metadata"), str):
-            r["metadata"] = json.loads(r["metadata"])
+        _deserialize_metadata(r)
     return results
 
 
@@ -126,8 +136,7 @@ async def get_single_delivery(delivery_id: str, db: DbDep):
     result = get_delivery(db, delivery_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    if isinstance(result.get("metadata"), str):
-        result["metadata"] = json.loads(result["metadata"])
+    _deserialize_metadata(result)
     return result
 
 
@@ -192,8 +201,7 @@ async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbD
     if result is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
 
-    if isinstance(result.get("metadata"), str):
-        result["metadata"] = json.loads(result["metadata"])
+    _deserialize_metadata(result)
 
     actual_new_status = result["status"]
     if actual_new_status != old_status:
