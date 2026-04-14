@@ -3,6 +3,9 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from pipeline.registry_api.db import (
     DbDep,
+    delivery_exists,
+    insert_event,
+    make_delivery_id,
     upsert_delivery,
     get_delivery,
     list_deliveries,
@@ -15,6 +18,7 @@ from pipeline.registry_api.models import (
     DeliveryResponse,
     DeliveryFilters,
 )
+from pipeline.registry_api.events import manager
 
 router = APIRouter()
 
@@ -32,8 +36,20 @@ async def create_delivery(data: DeliveryCreate, db: DbDep):
 
     If a delivery with the same source_path already exists, updates its fields
     while preserving first_seen_at. Returns the created or updated delivery.
+
+    Emits a delivery.created event if this is a genuinely new delivery
+    (not a re-crawl of an existing one).
     """
+    delivery_id = make_delivery_id(data.source_path)
+    is_new = not delivery_exists(db, delivery_id)
+
     result = upsert_delivery(db, data.model_dump())
+
+    if is_new:
+        response = DeliveryResponse(**result)
+        event = insert_event(db, "delivery.created", delivery_id, response.model_dump())
+        await manager.broadcast(event)
+
     return result
 
 
@@ -82,8 +98,23 @@ async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbD
 
     Only provided fields are updated. Empty body is a valid no-op.
     Returns 404 if delivery not found.
+
+    Emits a delivery.status_changed event if qa_status transitions
+    to a different value.
     """
+    old = get_delivery(db, delivery_id)
+    if old is None:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+
+    old_status = old["qa_status"]
     result = update_delivery(db, delivery_id, data.model_dump(exclude_none=True))
     if result is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
+
+    new_status = result["qa_status"]
+    if new_status != old_status:
+        response = DeliveryResponse(**result)
+        event = insert_event(db, "delivery.status_changed", delivery_id, response.model_dump())
+        await manager.broadcast(event)
+
     return result

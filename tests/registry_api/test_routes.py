@@ -1,3 +1,6 @@
+import json
+
+
 def make_delivery_payload(**overrides):
     """
     Helper to create a valid DeliveryCreate payload with sensible defaults.
@@ -17,6 +20,17 @@ def make_delivery_payload(**overrides):
     }
     defaults.update(overrides)
     return defaults
+
+
+def get_events(db):
+    """Helper to fetch all events from the test database."""
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM events ORDER BY seq ASC")
+    rows = cursor.fetchall()
+    return [
+        {**dict(row), "payload": json.loads(dict(row)["payload"])}
+        for row in rows
+    ]
 
 
 class TestHealth:
@@ -316,3 +330,190 @@ class TestUpdateDelivery:
         assert response.status_code == 200
         data = response.json()
         assert data["parquet_converted_at"] == "2026-04-09T15:30:00+00:00"
+
+
+class TestDeliveryCreatedEvents:
+    """Test delivery.created event emission on POST /deliveries."""
+
+    def test_new_delivery_creates_event(self, client, test_db):
+        """event-stream.AC1.1: POST new delivery creates delivery.created event."""
+        payload = make_delivery_payload(source_path="/data/new-event-test")
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Query events table directly
+        events = get_events(test_db)
+
+        assert len(events) == 1
+        event = events[0]
+        assert event["event_type"] == "delivery.created"
+        assert event["delivery_id"] == delivery_id
+        assert event["payload"]["delivery_id"] == delivery_id
+        assert event["payload"]["source_path"] == "/data/new-event-test"
+        assert event["payload"]["qa_status"] == "pending"
+
+    def test_recrawl_no_event(self, client, test_db):
+        """event-stream.AC1.3: Re-crawl of existing delivery produces no event."""
+        payload = make_delivery_payload(source_path="/data/recrawl-test")
+
+        # First POST - creates event
+        response1 = client.post("/deliveries", json=payload)
+        assert response1.status_code == 200
+
+        events_after_first = get_events(test_db)
+        assert len(events_after_first) == 1
+
+        # Second POST with same source_path and fingerprint - should not create event
+        response2 = client.post("/deliveries", json=payload)
+        assert response2.status_code == 200
+
+        events_after_second = get_events(test_db)
+        assert len(events_after_second) == 1  # Still only one event
+
+    def test_backward_compatibility_response(self, client):
+        """event-stream.AC7.1: POST response unchanged after adding event emission."""
+        payload = make_delivery_payload(source_path="/data/compat-test")
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify all expected fields are present
+        assert data["delivery_id"]
+        assert data["request_id"] == "req-001"
+        assert data["project"] == "test-project"
+        assert data["source_path"] == "/data/compat-test"
+        assert data["qa_status"] == "pending"
+        assert data["first_seen_at"]
+
+
+class TestDeliveryStatusChangedEvents:
+    """Test delivery.status_changed event emission on PATCH /deliveries/{id}."""
+
+    def test_status_pending_to_passed_creates_event(self, client, test_db):
+        """event-stream.AC2.1: PATCH with qa_status pending→passed creates event."""
+        payload = make_delivery_payload(
+            source_path="/data/status-change-1",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH to change status
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        # Should have exactly one more event (the status_changed)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 1
+        event = new_events[0]
+        assert event["event_type"] == "delivery.status_changed"
+        assert event["delivery_id"] == delivery_id
+        assert event["payload"]["qa_status"] == "passed"
+
+    def test_status_pending_to_failed_creates_event(self, client, test_db):
+        """event-stream.AC2.2: PATCH with qa_status pending→failed creates event."""
+        payload = make_delivery_payload(
+            source_path="/data/status-change-2",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH to change status to failed
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "failed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 1
+        event = new_events[0]
+        assert event["event_type"] == "delivery.status_changed"
+        assert event["delivery_id"] == delivery_id
+        assert event["payload"]["qa_status"] == "failed"
+
+    def test_event_payload_reflects_new_status(self, client, test_db):
+        """event-stream.AC2.3: Event payload contains updated delivery record."""
+        payload = make_delivery_payload(
+            source_path="/data/payload-test",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH to change status and output_path
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "passed", "output_path": "/new/output"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 1
+        event = new_events[0]
+        # Payload should reflect new status
+        assert event["payload"]["qa_status"] == "passed"
+        assert event["payload"]["output_path"] == "/new/output"
+
+    def test_no_event_on_non_status_update(self, client, test_db):
+        """event-stream.AC2.4: PATCH non-status field produces no event."""
+        payload = make_delivery_payload(source_path="/data/non-status-test")
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH only parquet_converted_at (no status change)
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"parquet_converted_at": "2026-04-09T10:00:00+00:00"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        # Filter for events after the POST event
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 0  # No event should be created for non-status changes
+
+    def test_no_event_on_same_status_patch(self, client, test_db):
+        """event-stream.AC2.5: PATCH with same qa_status value produces no event."""
+        payload = make_delivery_payload(
+            source_path="/data/same-status-test",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH with same status value
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "pending"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 0  # No event should be created
