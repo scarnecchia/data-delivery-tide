@@ -22,7 +22,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 
 ## Key Files
 
-- `parser.py` -- path parsing and QA status derivation (Functional Core)
+- `parser.py` -- path parsing and status derivation (Functional Core)
 - `fingerprint.py` -- deterministic SHA-256 fingerprint from file inventory (Functional Core)
 - `manifest.py` -- builds crawl manifest and error manifest dicts, generates delivery_id (Functional Core)
 - `http.py` -- registry API client with exponential backoff retry (Imperative Shell)
