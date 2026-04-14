@@ -1,6 +1,32 @@
 # QA Registry Pipeline
 
-SAS-to-Parquet data pipeline for healthcare data on a network share. Crawls directory structures that encode metadata (project, workplan, version, QA status), registers deliveries in SQLite, and converts SAS7BDAT files to Parquet.
+Data delivery tracking and event pipeline for file-based deliveries on a network share. Crawls directory structures that encode metadata (project, workplan, version, QA status), registers deliveries in a SQLite-backed registry API, streams lifecycle events over WebSocket, and converts SAS7BDAT files to Parquet.
+
+## How it works
+
+```
+Network Share                 Crawler                    Registry API
+┌──────────────┐         ┌──────────────┐          ┌──────────────────┐
+│ /project/    │         │              │  POST    │                  │
+│   /workplan/ │ crawl   │  Walk dirs,  │─────────▶│  SQLite registry │
+│     /dp_id/  │────────▶│  parse meta, │          │  (deliveries +   │
+│       /v1/   │         │  fingerprint │          │   events tables) │
+│         *.sas│         │              │          │                  │
+└──────────────┘         └──────────────┘          └────────┬─────────┘
+                                                           │
+                                              ┌────────────┼────────────┐
+                                              │            │            │
+                                              ▼            ▼            ▼
+                                        REST API     WebSocket     GET /events
+                                        (query)      /ws/events    (catch-up)
+                                              │       (live)            │
+                                              ▼            ▼            ▼
+                                         ┌─────────────────────────────────┐
+                                         │     Downstream consumers       │
+                                         └─────────────────────────────────┘
+```
+
+The crawler walks configured `scan_roots`, parses project/workplan/version/QA status from the directory structure, and POSTs each delivery to the registry API. The API persists deliveries in SQLite and emits lifecycle events (`delivery.created`, `delivery.status_changed`) to connected WebSocket clients. Consumers can listen in real time or catch up on missed events via REST.
 
 ## Requirements
 
@@ -12,13 +38,13 @@ SAS-to-Parquet data pipeline for healthcare data on a network share. Crawls dire
 ### With pip
 
 ```bash
-pip install -e ".[registry,dev]"
+pip install -e ".[registry,consumer,dev]"
 ```
 
 ### With uv
 
 ```bash
-uv pip install -e ".[registry,dev]"
+uv pip install -e ".[registry,consumer,dev]"
 ```
 
 The `registry` extra installs FastAPI and Uvicorn. The `converter` extra installs pyreadstat and pyarrow for SAS-to-Parquet conversion. The `consumer` extra installs websockets and httpx for event stream consumption. The `dev` extra adds pytest and httpx.
@@ -65,21 +91,17 @@ pytest
 uv run pytest
 ```
 
-## For consumers of the output
+## For consumers
 
-The pipeline produces two things downstream systems can use:
+The pipeline exposes three integration points:
 
-### 1. Parquet files
-
-Converted SAS7BDAT data lands under the configured `output_root`. File paths mirror the source directory structure, so you can derive the project, workplan, and version from the path.
-
-### 2. Registry API
+### 1. Registry API
 
 The registry API exposes delivery metadata over HTTP. Each delivery has a deterministic ID (SHA-256 of the source path), QA status (`pending`, `passed`, or `failed`), and the metadata parsed from the directory structure.
 
 Query the API at the configured `registry_api_url` (default `http://localhost:8000`). Standard HTTP — use `requests`, `httpx`, `curl`, or whatever your stack prefers.
 
-### 3. Event stream (optional)
+### 2. Event stream
 
 Instead of polling the registry API, you can subscribe to real-time delivery lifecycle events via WebSocket. The API broadcasts `delivery.created` and `delivery.status_changed` events to all connected clients at `/ws/events`. A REST catch-up endpoint (`GET /events?after=<seq>`) lets you retrieve any events missed during a disconnection.
 
@@ -98,3 +120,7 @@ async def handle_event(event: dict) -> None:
 consumer = EventConsumer("http://localhost:8000", on_event=handle_event)
 await consumer.run()
 ```
+
+### 3. Parquet files
+
+Converted SAS7BDAT data lands under the configured `output_root`. File paths mirror the source directory structure, so you can derive the project, workplan, and version from the path.
