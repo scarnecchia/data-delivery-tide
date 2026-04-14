@@ -120,7 +120,7 @@ class TestCreateDelivery:
         response = client.post("/deliveries", json=payload)
         assert response.status_code == 422
 
-    def test_create_invalid_qa_status(self, client):
+    def test_create_missing_lexicon_id(self, client):
         """AC3.2: POST /deliveries without required lexicon_id returns 422."""
         payload = make_delivery_payload()
         del payload["lexicon_id"]
@@ -167,7 +167,7 @@ class TestListDeliveries:
         data = response.json()
         assert len(data) == 2
 
-    def test_list_filtered_by_qa_status(self, client):
+    def test_list_filtered_by_status(self, client):
         """GET /deliveries?status=pending filters by status."""
         payload_pending = make_delivery_payload(
             source_path="/data/filter-pending",

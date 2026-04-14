@@ -526,7 +526,7 @@ class TestListDeliveries:
         assert len(results) == 1
         assert results[0]["request_id"] == "req-1"
 
-    def test_list_deliveries_filter_by_qa_status(self, memory_db, sample_deliveries):
+    def test_list_deliveries_filter_by_status(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by status."""
         results = list_deliveries(memory_db, {"status": "passed"})
 
