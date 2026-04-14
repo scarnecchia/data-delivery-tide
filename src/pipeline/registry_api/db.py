@@ -139,6 +139,21 @@ def _get_iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _deserialize_metadata(row_dict: dict) -> dict:
+    """
+    Deserialize metadata JSON field in a delivery row.
+
+    Converts the metadata field from JSON string to dict.
+    Modifies the dict in-place.
+    """
+    if "metadata" in row_dict and isinstance(row_dict["metadata"], str):
+        try:
+            row_dict["metadata"] = json.loads(row_dict["metadata"])
+        except (json.JSONDecodeError, TypeError):
+            row_dict["metadata"] = {}
+    return row_dict
+
+
 def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     """
     Insert or update a delivery record.
@@ -156,6 +171,13 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     """
     delivery_id = make_delivery_id(data["source_path"])
     now = _get_iso_now()
+
+    # Serialize metadata to JSON if it's a dict
+    metadata = data.get("metadata")
+    if metadata is not None and isinstance(metadata, dict):
+        metadata = json.dumps(metadata)
+    elif metadata is None:
+        metadata = "{}"
 
     cursor = conn.cursor()
 
@@ -216,7 +238,7 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             data.get("scan_root"),
             data.get("lexicon_id"),
             data.get("status"),
-            data.get("metadata", "{}"),
+            metadata,
             now,
             data.get("parquet_converted_at"),
             data.get("file_count"),
@@ -234,7 +256,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
 
-    return dict(row) if row else None
+    if row:
+        row_dict = dict(row)
+        return _deserialize_metadata(row_dict)
+    return None
 
 
 def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
@@ -251,7 +276,10 @@ def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
-    return dict(row) if row else None
+    if row:
+        row_dict = dict(row)
+        return _deserialize_metadata(row_dict)
+    return None
 
 
 def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
@@ -308,7 +336,7 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
-    return [dict(row) for row in rows]
+    return [_deserialize_metadata(dict(row)) for row in rows]
 
 
 def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]) -> list[dict]:
@@ -346,7 +374,7 @@ def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[
     )
 
     rows = cursor.fetchall()
-    return [dict(row) for row in rows]
+    return [_deserialize_metadata(dict(row)) for row in rows]
 
 
 def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -> dict | None:
@@ -371,7 +399,9 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     if not updates:
         cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if row:
+            return _deserialize_metadata(dict(row))
+        return None
 
     # Allowed update fields
     allowed_fields = {"parquet_converted_at", "output_path", "status", "metadata"}
@@ -383,7 +413,15 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
         # No allowed fields, just return current row
         cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if row:
+            return _deserialize_metadata(dict(row))
+        return None
+
+    # Serialize metadata if present
+    if "metadata" in update_dict:
+        metadata = update_dict["metadata"]
+        if isinstance(metadata, dict):
+            update_dict["metadata"] = json.dumps(metadata)
 
     # Build UPDATE statement
     set_clauses = [f"{field} = ?" for field in update_dict.keys()]
@@ -399,7 +437,9 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     # Fetch and return updated row
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
-    return dict(row) if row else None
+    if row:
+        return _deserialize_metadata(dict(row))
+    return None
 
 
 def insert_event(
