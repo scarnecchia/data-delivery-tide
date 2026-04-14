@@ -61,7 +61,7 @@ async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
     List deliveries with optional filtering.
 
     Query parameters:
-    - dp_id, project, request_type, workplan_id, request_id, qa_status, scan_root: exact match
+    - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match
     - converted: boolean, True = converted, False = not converted
     - version: exact match or "latest" for highest version per (dp_id, workplan_id)
     """
@@ -108,12 +108,12 @@ async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbD
     if old is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
 
-    old_status = old["qa_status"]
+    old_status = old["status"]
     result = update_delivery(db, delivery_id, data.model_dump(exclude_none=True))
     if result is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
 
-    new_status = result["qa_status"]
+    new_status = result["status"]
     if new_status != old_status:
         response = DeliveryResponse(**result)
         event = insert_event(db, "delivery.status_changed", delivery_id, response.model_dump())
