@@ -4,27 +4,27 @@ Last verified: 2026-04-14
 
 ## Purpose
 
-Single source of truth for delivery state. Tracks which data partner deliveries have been seen, passed QA, and converted to Parquet. The crawler writes here; the converter reads actionable items from here. Emits lifecycle events via WebSocket broadcast and persists them in SQLite for consumer catch-up.
+Single source of truth for delivery state. Tracks which data partner deliveries have been seen, validated according to lexicon rules, and converted to Parquet. The crawler writes here; the converter reads actionable items from here. Emits lifecycle events via WebSocket broadcast and persists them in SQLite for consumer catch-up.
 
 ## Contracts
 
 - **Exposes**: REST API on port 8000 via FastAPI
   - `POST /deliveries` -- upsert a delivery (idempotent, keyed on source_path)
-  - `GET /deliveries` -- list with filters (dp_id, project, qa_status, version="latest", etc.)
-  - `GET /deliveries/actionable` -- passed QA but not yet converted
+  - `GET /deliveries` -- list with filters (dp_id, project, status, lexicon_id, version="latest", etc.)
+  - `GET /deliveries/actionable` -- status matches lexicon's actionable_statuses and not yet converted
   - `GET /deliveries/{delivery_id}` -- single delivery by ID
-  - `PATCH /deliveries/{delivery_id}` -- partial update (parquet_converted_at, output_path, qa_status, qa_passed_at only)
+  - `PATCH /deliveries/{delivery_id}` -- partial update (parquet_converted_at, output_path, metadata only)
   - `GET /health` -- health check
   - `WS /ws/events` -- one-way WebSocket broadcast of delivery lifecycle events
   - `GET /events?after={seq}&limit={n}` -- catch-up endpoint for events after a sequence number (limit default 100, max 1000)
-- **Event types**: `delivery.created` (new delivery, not re-crawl), `delivery.status_changed` (qa_status transition)
+- **Event types**: `delivery.created` (new delivery, not re-crawl), `delivery.status_changed` (status transition)
 - **Guarantees**: delivery_id is SHA-256 of source_path (deterministic, stable). first_seen_at is never overwritten on upsert. last_updated_at only changes when fingerprint changes. Event seq is monotonically increasing (SQLite INTEGER PRIMARY KEY).
-- **Expects**: SQLite database path from config. Callers provide valid Pydantic models.
+- **Expects**: SQLite database path from config. Callers provide valid Pydantic models. Lexicons loaded via `pipeline.config.settings.lexicons`.
 
 ## Dependencies
 
-- **Uses**: `pipeline.config.settings` for db_path
-- **Used by**: crawler (POSTs deliveries with derived qa_status), converter (will GET actionable + PATCH after conversion), EventConsumer (`pipeline.events.consumer`)
+- **Uses**: `pipeline.config.settings` for db_path and lexicons
+- **Used by**: crawler (POSTs deliveries with lexicon_id and derived status), converter (will GET actionable + PATCH after conversion), EventConsumer (`pipeline.events.consumer`)
 - **Boundary**: no imports from crawler, converter, or events consumer
 
 ## Key Decisions
@@ -33,18 +33,21 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 - Upsert with fingerprint-based change detection: avoids unnecessary last_updated_at churn on re-crawls
 - FastAPI dependency injection for db connections: per-request connections, closed automatically
 - WAL mode: enables concurrent reads during writes
+- Status validation is runtime (no CHECK constraint) -- queried against lexicon.allowed_statuses at request time
 
 ## Invariants
 
 - delivery_id = SHA-256 of source_path (never random, never sequential)
 - source_path has UNIQUE constraint; one delivery per path
-- qa_status is always "pending", "passed", or "failed" (CHECK constraint)
+- status values are validated at request time against lexicon.allowed_statuses
+- lexicon_id must exist in loaded lexicons; unknown lexicons are rejected at POST time
 - first_seen_at is immutable after initial insert (COALESCE preserves it on conflict)
-- actionable = qa_status "passed" AND parquet_converted_at IS NULL
+- metadata is JSON-serialized dict (nullable, defaults to {})
+- actionable = status matches lexicon.actionable_statuses AND parquet_converted_at IS NULL
 - event_type is constrained to "delivery.created" or "delivery.status_changed" (CHECK constraint)
 - event seq is auto-incrementing INTEGER PRIMARY KEY (monotonic, gap-free under normal operation)
 - delivery.created fires only on genuinely new deliveries (not idempotent re-crawls)
-- delivery.status_changed fires only when qa_status actually transitions to a different value
+- delivery.status_changed fires only when status actually transitions to a different value
 
 ## Key Files
 
