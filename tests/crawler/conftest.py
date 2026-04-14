@@ -1,4 +1,6 @@
 import pytest
+import json
+from pathlib import Path
 
 from pipeline.config import ScanRoot, PipelineConfig
 
@@ -42,7 +44,38 @@ def delivery_tree(tmp_path):
 
 
 @pytest.fixture
-def make_crawler_config(tmp_path):
+def lexicons_dir(tmp_path):
+    """Set up lexicons directory with standard test lexicons."""
+    lexicons_dir = tmp_path / "lexicons"
+    lexicons_dir.mkdir()
+
+    # Create soc.qar lexicon with standard dir_map
+    soc_qar = {
+        "id": "soc.qar",
+        "statuses": ["pending", "passed", "failed"],
+        "transitions": {
+            "pending": ["passed", "failed"],
+            "passed": [],
+            "failed": []
+        },
+        "dir_map": {
+            "msoc": "passed",
+            "msoc_new": "pending"
+        },
+        "actionable_statuses": ["passed", "failed"],
+        "metadata_fields": {},
+        "derive_hook": None
+    }
+
+    soc_qar_path = lexicons_dir / "soc.qar.json"
+    with open(soc_qar_path, "w") as f:
+        json.dump(soc_qar, f)
+
+    return str(lexicons_dir)
+
+
+@pytest.fixture
+def make_crawler_config(tmp_path, lexicons_dir):
     """Factory for creating config objects for crawler tests."""
     def _make(scan_roots=None, manifest_dir=None, **overrides):
         if scan_roots is None:
@@ -85,7 +118,7 @@ def make_crawler_config(tmp_path):
             dp_id_exclusions=config_dict["dp_id_exclusions"],
             crawl_manifest_dir=config_dict["crawl_manifest_dir"],
             crawler_version=config_dict["crawler_version"],
-            lexicons_dir=str(tmp_path / "lexicons"),
+            lexicons_dir=lexicons_dir,
         )
 
     return _make

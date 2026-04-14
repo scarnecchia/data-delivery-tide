@@ -29,7 +29,7 @@ class TestWalkRoots:
         )
 
         scan_roots = [ScanRoot(path=scan_root, label="qa", lexicon="soc.qar")]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
         paths = [r[0] for r in results]
@@ -52,7 +52,7 @@ class TestWalkRoots:
             ScanRoot(path=str(scan_root1), label="qa", lexicon="soc.qar"),
             ScanRoot(path=str(scan_root2), label="qm", lexicon="soc.qar"),
         ]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
         assert (str(v1_path), str(scan_root1)) in results
@@ -71,7 +71,7 @@ class TestWalkRoots:
             ScanRoot(path=str(existing_root), label="qa", lexicon="soc.qar"),
             ScanRoot(path=str(missing_root), label="missing", lexicon="soc.qar"),
         ]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Should only find the existing root's delivery
         assert len(results) == 1
@@ -87,7 +87,7 @@ class TestWalkRoots:
         compare_msoc.mkdir(parents=True)
 
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty — the msoc under 'compare' should not be discovered
         assert len(results) == 0
@@ -102,7 +102,7 @@ class TestWalkRoots:
         msoc_wrong_depth.mkdir(parents=True)
 
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
         assert len(results) == 0
@@ -117,7 +117,7 @@ class TestWalkRoots:
         msoc_nested.mkdir(parents=True)
 
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
         assert len(results) == 0
@@ -135,7 +135,7 @@ class TestWalkRoots:
         dpid2_msoc.mkdir(parents=True)
 
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
         assert len(results) == 2
@@ -156,7 +156,7 @@ class TestWalkRoots:
         v2_msoc_new.mkdir(parents=True)
 
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
         assert len(results) == 2
@@ -175,7 +175,7 @@ class TestWalkRoots:
 
         logger = MagicMock(spec=logging.Logger)
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots, logger)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger)
 
         # Assert warning was logged
         assert logger.warning.called
@@ -198,7 +198,7 @@ class TestWalkRoots:
 
         logger = MagicMock(spec=logging.Logger)
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots, logger)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger)
 
         # Assert warning was NOT logged
         assert not logger.warning.called
@@ -216,7 +216,7 @@ class TestWalkRoots:
         compare_msoc.mkdir(parents=True)
 
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="compare")]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Should discover msoc under custom target
         assert len(results) == 1
@@ -306,7 +306,8 @@ class TestCrawl:
         assert payload["workplan_id"] == "wp001"
         assert payload["dp_id"] == "mkscnr"
         assert payload["version"] == "v01"
-        assert payload["qa_status"] == "passed"
+        assert payload["status"] == "passed"
+        assert payload["lexicon_id"] == "soc.qar"
         assert payload["source_path"] == source_path
         assert payload["file_count"] == 1
         assert payload["total_bytes"] == 1024
@@ -316,7 +317,7 @@ class TestCrawl:
     def test_ac2_7_pending_superseded_by_newer_version_marked_failed(
         self, mock_post, tmp_path, make_crawler_config
     ):
-        """AC2.7: Pending delivery with newer version for same workplan+dp_id is POSTed with qa_status=failed."""
+        """AC2.7: Pending delivery with newer version for same workplan+dp_id is POSTed with status=failed."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
@@ -344,8 +345,8 @@ class TestCrawl:
         v1_payload = next(p for p in payloads if p["version"] == "v01")
         v2_payload = next(p for p in payloads if p["version"] == "v02")
 
-        assert v1_payload["qa_status"] == "failed"
-        assert v2_payload["qa_status"] == "pending"
+        assert v1_payload["status"] == "failed"
+        assert v2_payload["status"] == "pending"
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_ac3_4_re_crawling_same_delivery_overwrites_manifest_idempotent(
