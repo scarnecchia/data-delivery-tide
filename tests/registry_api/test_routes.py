@@ -1,4 +1,8 @@
+import asyncio
 import json
+from unittest.mock import AsyncMock
+
+import pytest
 
 
 def make_delivery_payload(**overrides):
@@ -387,6 +391,114 @@ class TestDeliveryCreatedEvents:
         assert data["source_path"] == "/data/compat-test"
         assert data["qa_status"] == "pending"
         assert data["first_seen_at"]
+
+
+class TestWebSocketBroadcast:
+    """Test WebSocket broadcast of events on POST /deliveries."""
+
+    @pytest.mark.asyncio
+    async def test_ws_client_receives_delivery_created_event(self, client):
+        """AC1.2: POST /deliveries broadcasts delivery.created to connected WS client."""
+        from pipeline.registry_api.events import manager
+
+        received_events = []
+
+        async def ws_client_session():
+            """Simulate a WebSocket client connecting and waiting for events."""
+            # Create a mock WebSocket
+            mock_ws = AsyncMock()
+            mock_ws.send_json = AsyncMock()
+
+            # Add it to the connection manager
+            manager.active_connections.add(mock_ws)
+
+            try:
+                # Wait a moment for the HTTP request to complete and broadcast
+                await asyncio.sleep(0.1)
+
+                # Check what was sent
+                if mock_ws.send_json.called:
+                    # Get the first call's arguments
+                    call_args = mock_ws.send_json.call_args[0][0]
+                    received_events.append(call_args)
+            finally:
+                manager.active_connections.discard(mock_ws)
+
+        # Start the WS client in a background task
+        client_task = asyncio.create_task(ws_client_session())
+
+        # Give the client time to "connect"
+        await asyncio.sleep(0.05)
+
+        # POST a new delivery via the HTTP client
+        payload = make_delivery_payload(source_path="/data/ws-broadcast-test")
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Wait for the client to receive and process
+        await client_task
+
+        # Verify the WS client received the event
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event["event_type"] == "delivery.created"
+        assert event["delivery_id"] == delivery_id
+
+
+class TestAPIRestartDeliveryDistinction:
+    """Test that API restart distinguishes new vs existing deliveries."""
+
+    def test_post_after_restart_no_event_for_existing(self, client, test_db):
+        """AC1.4: POST same source_path after restart (DB state persists) produces no event."""
+        from pipeline.registry_api.db import upsert_delivery
+
+        source_path = "/data/restart-existing"
+
+        # Simulate pre-restart state: insert delivery directly into DB
+        payload = make_delivery_payload(source_path=source_path, qa_status="pending")
+        pre_restart_delivery = upsert_delivery(test_db, payload)
+        test_db.commit()
+
+        # Clear events that might exist
+        events = get_events(test_db)
+        initial_event_count = len(events)
+
+        # Now POST the same source_path (simulating API restart then re-crawl)
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 200
+
+        # Check events table
+        events_after = get_events(test_db)
+        # Should still be the same count (no new event)
+        assert len(events_after) == initial_event_count
+
+    def test_post_after_restart_event_for_new(self, client, test_db):
+        """AC1.4: POST new delivery after restart produces delivery.created event."""
+        from pipeline.registry_api.db import upsert_delivery
+
+        # Insert one delivery (simulating pre-restart state)
+        payload1 = make_delivery_payload(source_path="/data/restart-old")
+        upsert_delivery(test_db, payload1)
+        test_db.commit()
+
+        # Clear the events table to simulate fresh API start
+        cursor = test_db.cursor()
+        cursor.execute("DELETE FROM events")
+        test_db.commit()
+
+        # POST a genuinely new delivery
+        payload2 = make_delivery_payload(source_path="/data/restart-new")
+        response = client.post("/deliveries", json=payload2)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Check events
+        events = get_events(test_db)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "delivery.created"
+        assert events[0]["delivery_id"] == delivery_id
 
 
 class TestDeliveryStatusChangedEvents:
