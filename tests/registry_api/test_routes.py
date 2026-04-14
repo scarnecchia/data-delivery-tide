@@ -772,6 +772,161 @@ class TestDeliveryStatusChangedEvents:
         assert len(new_events) == 0  # No event should be created
 
 
+class TestEventPayloadShape:
+    """Test event payload shape contains new lexicon system fields (AC6.1-AC6.3)."""
+
+    def test_ac6_1_delivery_created_contains_lexicon_id_status_metadata(self, client, test_db):
+        """AC6.1: delivery.created event payload contains lexicon_id, status, metadata."""
+        payload = make_delivery_payload(
+            source_path="/data/ac6-1-test",
+            lexicon_id="soc.qar",
+            status="pending",
+            metadata={"custom_field": "custom_value"},
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Query events
+        events = get_events(test_db)
+        assert len(events) >= 1
+
+        # Find the delivery.created event
+        created_event = None
+        for event in events:
+            if event["event_type"] == "delivery.created" and event["delivery_id"] == delivery_id:
+                created_event = event
+                break
+
+        assert created_event is not None, "No delivery.created event found"
+
+        # Verify payload contains required fields
+        payload_dict = created_event["payload"]
+        assert "lexicon_id" in payload_dict
+        assert "status" in payload_dict
+        assert "metadata" in payload_dict
+
+        # Verify values
+        assert payload_dict["lexicon_id"] == "soc.qar"
+        assert payload_dict["status"] == "pending"
+        assert isinstance(payload_dict["metadata"], dict)
+        assert payload_dict["metadata"].get("custom_field") == "custom_value"
+
+    def test_ac6_2_delivery_status_changed_contains_status_and_metadata(self, client, test_db):
+        """AC6.2: delivery.status_changed event payload contains updated status and metadata."""
+        # Create with pending status
+        payload = make_delivery_payload(
+            source_path="/data/ac6-2-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # PATCH to change status to passed
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        # Query events
+        events = get_events(test_db)
+
+        # Find the delivery.status_changed event
+        status_changed_event = None
+        for event in events:
+            if (
+                event["event_type"] == "delivery.status_changed"
+                and event["delivery_id"] == delivery_id
+            ):
+                status_changed_event = event
+                break
+
+        assert status_changed_event is not None, "No delivery.status_changed event found"
+
+        # Verify payload contains required fields
+        payload_dict = status_changed_event["payload"]
+        assert "status" in payload_dict
+        assert "metadata" in payload_dict
+
+        # Verify values
+        assert payload_dict["status"] == "passed"
+        assert isinstance(payload_dict["metadata"], dict)
+        # Verify passed_at was populated by set_on rule
+        assert "passed_at" in payload_dict["metadata"]
+        assert payload_dict["metadata"]["passed_at"] is not None
+        # Verify it's a valid ISO timestamp
+        datetime.fromisoformat(payload_dict["metadata"]["passed_at"])
+
+    def test_ac6_3_delivery_created_does_not_contain_old_field_names(self, client, test_db):
+        """AC6.3: delivery.created event payload does not contain qa_status or qa_passed_at."""
+        payload = make_delivery_payload(
+            source_path="/data/ac6-3-created-test",
+            status="pending",
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Query events
+        events = get_events(test_db)
+
+        # Find the delivery.created event
+        created_event = None
+        for event in events:
+            if event["event_type"] == "delivery.created" and event["delivery_id"] == delivery_id:
+                created_event = event
+                break
+
+        assert created_event is not None
+
+        # Verify old field names are NOT present
+        payload_dict = created_event["payload"]
+        assert "qa_status" not in payload_dict
+        assert "qa_passed_at" not in payload_dict
+
+    def test_ac6_3_delivery_status_changed_does_not_contain_old_field_names(self, client, test_db):
+        """AC6.3: delivery.status_changed event payload does not contain qa_status or qa_passed_at."""
+        # Create with pending status
+        payload = make_delivery_payload(
+            source_path="/data/ac6-3-changed-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # PATCH to change status
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        # Query events
+        events = get_events(test_db)
+
+        # Find the delivery.status_changed event
+        status_changed_event = None
+        for event in events:
+            if (
+                event["event_type"] == "delivery.status_changed"
+                and event["delivery_id"] == delivery_id
+            ):
+                status_changed_event = event
+                break
+
+        assert status_changed_event is not None
+
+        # Verify old field names are NOT present
+        payload_dict = status_changed_event["payload"]
+        assert "qa_status" not in payload_dict
+        assert "qa_passed_at" not in payload_dict
+
+
 class TestCatchUpEndpoint:
     """Test GET /events catch-up endpoint."""
 
