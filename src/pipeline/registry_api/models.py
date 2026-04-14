@@ -15,9 +15,10 @@ class DeliveryCreate(BaseModel):
     dp_id: str
     version: str
     scan_root: str
-    qa_status: Literal["pending", "passed", "failed"]
+    lexicon_id: str
+    status: str
     source_path: str
-    qa_passed_at: str | None = None
+    metadata: dict | None = None
     file_count: int | None = None
     total_bytes: int | None = None
     fingerprint: str | None = None
@@ -28,8 +29,8 @@ class DeliveryUpdate(BaseModel):
 
     parquet_converted_at: str | None = None
     output_path: str | None = None
-    qa_status: Literal["pending", "passed", "failed"] | None = None
-    qa_passed_at: str | None = None
+    status: str | None = None
+    metadata: dict | None = None
 
 
 class DeliveryResponse(BaseModel):
@@ -43,9 +44,10 @@ class DeliveryResponse(BaseModel):
     dp_id: str
     version: str
     scan_root: str
-    qa_status: str
+    lexicon_id: str
+    status: str
+    metadata: dict | None = None
     first_seen_at: str
-    qa_passed_at: str | None = None
     parquet_converted_at: str | None = None
     file_count: int | None = None
     total_bytes: int | None = None
@@ -63,7 +65,8 @@ class DeliveryFilters(BaseModel):
     request_type: str | None = None
     workplan_id: str | None = None
     request_id: str | None = None
-    qa_status: Literal["pending", "passed", "failed"] | None = None
+    status: str | None = None
+    lexicon_id: str | None = None
     converted: bool | None = None
     version: str | None = None
     scan_root: str | None = None
