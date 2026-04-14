@@ -19,7 +19,7 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
   - `GET /events?after={seq}&limit={n}` -- catch-up endpoint for events after a sequence number (limit default 100, max 1000)
 - **Event types**: `delivery.created` (new delivery, not re-crawl), `delivery.status_changed` (status transition)
 - **Guarantees**: delivery_id is SHA-256 of source_path (deterministic, stable). first_seen_at is never overwritten on upsert. last_updated_at only changes when fingerprint changes. Event seq is monotonically increasing (SQLite INTEGER PRIMARY KEY).
-- **Expects**: SQLite database path from config. Callers provide valid Pydantic models. Lexicons loaded via `pipeline.config.settings.lexicons`.
+- **Expects**: SQLite database path from config. Callers provide valid Pydantic models. Lexicons loaded at startup via `load_all_lexicons(settings.lexicons_dir)` and stored on `app.state.lexicons`.
 
 ## Dependencies
 
@@ -33,13 +33,13 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 - Upsert with fingerprint-based change detection: avoids unnecessary last_updated_at churn on re-crawls
 - FastAPI dependency injection for db connections: per-request connections, closed automatically
 - WAL mode: enables concurrent reads during writes
-- Status validation is runtime (no CHECK constraint) -- queried against lexicon.allowed_statuses at request time
+- Status validation is runtime (no CHECK constraint) -- queried against lexicon.statuses at request time
 
 ## Invariants
 
 - delivery_id = SHA-256 of source_path (never random, never sequential)
 - source_path has UNIQUE constraint; one delivery per path
-- status values are validated at request time against lexicon.allowed_statuses
+- status values are validated at request time against lexicon.statuses
 - lexicon_id must exist in loaded lexicons; unknown lexicons are rejected at POST time
 - first_seen_at is immutable after initial insert (COALESCE preserves it on conflict)
 - metadata is JSON-serialized dict (nullable, defaults to {})
