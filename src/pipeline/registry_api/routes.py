@@ -1,5 +1,8 @@
 # pattern: Imperative Shell
-from fastapi import APIRouter, HTTPException, Depends
+import json
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from pipeline.registry_api.db import (
     DbDep,
@@ -32,20 +35,40 @@ async def health():
 
 
 @router.post("/deliveries", response_model=DeliveryResponse, status_code=200)
-async def create_delivery(data: DeliveryCreate, db: DbDep):
+async def create_delivery(data: DeliveryCreate, db: DbDep, request: Request):
     """
     Create or upsert a delivery.
 
     If a delivery with the same source_path already exists, updates its fields
     while preserving first_seen_at. Returns the created or updated delivery.
 
+    Validates that the status is valid for the specified lexicon.
+    Serializes metadata to JSON for database storage.
+
     Emits a delivery.created event if this is a genuinely new delivery
     (not a re-crawl of an existing one).
     """
+    lexicons = request.app.state.lexicons
+    lexicon = lexicons.get(data.lexicon_id)
+    if lexicon is None:
+        raise HTTPException(status_code=422, detail=f"unknown lexicon_id: {data.lexicon_id}")
+
+    if data.status not in lexicon.statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"status '{data.status}' not valid for lexicon '{data.lexicon_id}'",
+        )
+
     delivery_id = make_delivery_id(data.source_path)
     is_new = not delivery_exists(db, delivery_id)
 
-    result = upsert_delivery(db, data.model_dump())
+    db_data = data.model_dump()
+    db_data["metadata"] = json.dumps(db_data.get("metadata") or {})
+
+    result = upsert_delivery(db, db_data)
+
+    if result and isinstance(result.get("metadata"), str):
+        result["metadata"] = json.loads(result["metadata"])
 
     if is_new:
         response = DeliveryResponse(**result)
@@ -66,17 +89,30 @@ async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
     - version: exact match or "latest" for highest version per (dp_id, workplan_id)
     """
     results = list_deliveries(db, filters.model_dump(exclude_none=True))
+    for r in results:
+        if isinstance(r.get("metadata"), str):
+            r["metadata"] = json.loads(r["metadata"])
     return results
 
 
 @router.get("/deliveries/actionable", response_model=list[DeliveryResponse])
-async def get_actionable_deliveries(db: DbDep):
+async def get_actionable_deliveries(db: DbDep, request: Request):
     """
-    Get actionable deliveries (passed QA but not yet converted to Parquet).
+    Get actionable deliveries (not yet converted to Parquet) based on lexicon definitions.
 
-    Returns all deliveries where qa_status='passed' AND parquet_converted_at IS NULL.
+    Returns all deliveries where status is in the lexicon's actionable_statuses
+    AND parquet_converted_at IS NULL.
     """
-    results = get_actionable(db)
+    lexicons = request.app.state.lexicons
+    lexicon_actionable = {
+        lid: list(lex.actionable_statuses)
+        for lid, lex in lexicons.items()
+        if lex.actionable_statuses
+    }
+    results = get_actionable(db, lexicon_actionable)
+    for r in results:
+        if isinstance(r.get("metadata"), str):
+            r["metadata"] = json.loads(r["metadata"])
     return results
 
 
@@ -90,31 +126,74 @@ async def get_single_delivery(delivery_id: str, db: DbDep):
     result = get_delivery(db, delivery_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
+    if isinstance(result.get("metadata"), str):
+        result["metadata"] = json.loads(result["metadata"])
     return result
 
 
 @router.patch("/deliveries/{delivery_id}", response_model=DeliveryResponse)
-async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbDep):
+async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbDep, request: Request):
     """
     Partially update a delivery.
 
     Only provided fields are updated. Empty body is a valid no-op.
     Returns 404 if delivery not found.
 
-    Emits a delivery.status_changed event if qa_status transitions
+    Validates status transitions against lexicon definitions.
+    Auto-populates metadata fields marked with set_on when status transitions.
+
+    Emits a delivery.status_changed event if status transitions
     to a different value.
     """
     old = get_delivery(db, delivery_id)
     if old is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
 
+    lexicons = request.app.state.lexicons
+    lexicon = lexicons.get(old["lexicon_id"])
+
+    updates = data.model_dump(exclude_none=True)
     old_status = old["status"]
-    result = update_delivery(db, delivery_id, data.model_dump(exclude_none=True))
+    new_status = updates.get("status")
+
+    if new_status is not None and new_status != old_status:
+        if lexicon is None:
+            raise HTTPException(status_code=422, detail=f"unknown lexicon_id: {old['lexicon_id']}")
+        if new_status not in lexicon.statuses:
+            raise HTTPException(
+                status_code=422,
+                detail=f"status '{new_status}' not valid for lexicon '{old['lexicon_id']}'",
+            )
+        allowed_transitions = lexicon.transitions.get(old_status, ())
+        if new_status not in allowed_transitions:
+            raise HTTPException(
+                status_code=422,
+                detail=f"transition from '{old_status}' to '{new_status}' not allowed for lexicon '{old['lexicon_id']}'",
+            )
+
+        existing_metadata = json.loads(old.get("metadata", "{}"))
+        for field_name, field_def in lexicon.metadata_fields.items():
+            if field_def.set_on == new_status:
+                if field_def.type == "datetime":
+                    existing_metadata[field_name] = datetime.now(timezone.utc).isoformat()
+                elif field_def.type == "boolean":
+                    existing_metadata[field_name] = True
+                elif field_def.type == "string":
+                    existing_metadata[field_name] = new_status
+        updates["metadata"] = json.dumps(existing_metadata)
+
+    elif "metadata" in updates:
+        updates["metadata"] = json.dumps(updates["metadata"])
+
+    result = update_delivery(db, delivery_id, updates)
     if result is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
 
-    new_status = result["status"]
-    if new_status != old_status:
+    if isinstance(result.get("metadata"), str):
+        result["metadata"] = json.loads(result["metadata"])
+
+    actual_new_status = result["status"]
+    if actual_new_status != old_status:
         response = DeliveryResponse(**result)
         event = insert_event(db, "delivery.status_changed", delivery_id, response.model_dump())
         await manager.broadcast(event)
