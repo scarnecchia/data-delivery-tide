@@ -12,7 +12,7 @@ class ParsedDelivery:
     workplan_id: str
     dp_id: str
     version: str
-    qa_status: str
+    status: str
     source_path: str
     scan_root: str
 
@@ -33,6 +33,7 @@ def parse_path(
     path: str,
     scan_root: str,
     exclusions: set[str],
+    dir_map: dict[str, str],
 ) -> ParsedDelivery | ParseError | None:
     """Parse a delivery directory path into structured metadata.
 
@@ -41,29 +42,27 @@ def parse_path(
         None if dp_id is in the exclusion set (expected, not an error),
         ParseError if the path cannot be parsed.
     """
-    # Determine QA status from terminal directory
-    if path.endswith("/msoc"):
-        qa_status = "passed"
-    elif path.endswith("/msoc_new"):
-        qa_status = "pending"
-    else:
-        return ParseError(
-            raw_path=path,
-            scan_root=scan_root,
-            reason="path does not end with msoc or msoc_new",
-        )
-
-    # Walk up to the version directory (parent of msoc/msoc_new)
-    # path: .../soc_qar_wp001_mkscnr_v01/msoc
-    # version_dir_name: soc_qar_wp001_mkscnr_v01
+    # Determine status from terminal directory using dir_map
     parts = path.rstrip("/").split("/")
-    # terminal is msoc or msoc_new, version dir is one level up
     if len(parts) < 2:
         return ParseError(
             raw_path=path,
             scan_root=scan_root,
             reason="path too short to contain version directory",
         )
+
+    terminal_dir = parts[-1]
+    if terminal_dir not in dir_map:
+        return ParseError(
+            raw_path=path,
+            scan_root=scan_root,
+            reason=f"terminal directory '{terminal_dir}' not in dir_map",
+        )
+    status = dir_map[terminal_dir]
+
+    # Walk up to the version directory (parent of msoc/msoc_new)
+    # path: .../soc_qar_wp001_mkscnr_v01/msoc
+    # version_dir_name: soc_qar_wp001_mkscnr_v01
 
     version_dir_name = parts[-2]
 
@@ -107,7 +106,7 @@ def parse_path(
         workplan_id=workplan_id,
         dp_id=dp_id,
         version=version,
-        qa_status=qa_status,
+        status=status,
         source_path=path,
         scan_root=scan_root,
     )
@@ -123,14 +122,23 @@ def _version_sort_key(delivery: ParsedDelivery) -> str:
     return delivery.version
 
 
-def derive_qa_statuses(deliveries: list[ParsedDelivery]) -> list[ParsedDelivery]:
-    """Derive 'failed' status for pending deliveries superseded by newer versions.
+def derive_statuses(
+    deliveries: list[ParsedDelivery],
+    lexicon,
+) -> list[ParsedDelivery]:
+    """Apply lexicon derivation hook if defined.
 
-    Within each (workplan_id, dp_id) group, any pending delivery that is NOT
-    the highest version is marked as failed. Passed deliveries are never changed.
+    If lexicon.derive_hook is set, delegates to the hook function.
+    If lexicon.derive_hook is None, applies the inline QA supersession
+    logic (pending non-highest versions → failed). This inline logic
+    will be removed in Phase 6 when the hook module is created.
 
     Returns a new list — does not mutate the input.
     """
+    if lexicon.derive_hook is not None:
+        return lexicon.derive_hook(deliveries, lexicon)
+
+    # Inline fallback: QA supersession logic (kept until Phase 6 extracts it)
     if not deliveries:
         return []
 
@@ -148,8 +156,8 @@ def derive_qa_statuses(deliveries: list[ParsedDelivery]) -> list[ParsedDelivery]
         highest_version = by_version[0].version
 
         for delivery in group_list:
-            if delivery.qa_status == "pending" and delivery.version != highest_version:
-                result.append(replace(delivery, qa_status="failed"))
+            if delivery.status == "pending" and delivery.version != highest_version:
+                result.append(replace(delivery, status="failed"))
             else:
                 result.append(delivery)
 

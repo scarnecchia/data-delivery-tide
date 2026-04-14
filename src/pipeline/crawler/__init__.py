@@ -1,6 +1,6 @@
 from pipeline.crawler.parser import (
     parse_path as parse_path,
-    derive_qa_statuses as derive_qa_statuses,
+    derive_statuses as derive_statuses,
     ParsedDelivery as ParsedDelivery,
     ParseError as ParseError,
 )
