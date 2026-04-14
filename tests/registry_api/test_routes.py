@@ -517,3 +517,121 @@ class TestDeliveryStatusChangedEvents:
         events_after = get_events(test_db)
         new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
         assert len(new_events) == 0  # No event should be created
+
+
+class TestCatchUpEndpoint:
+    """Test GET /events catch-up endpoint."""
+
+    def test_get_events_after_filters_by_seq(self, client, test_db):
+        """event-stream.AC5.1: GET /events?after=N returns only events with seq > N, ordered by seq ASC."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 3 events manually
+        insert_event(test_db, "delivery.created", "id-1", {"test": "payload1"})
+        insert_event(test_db, "delivery.created", "id-2", {"test": "payload2"})
+        insert_event(test_db, "delivery.created", "id-3", {"test": "payload3"})
+
+        # Fetch events after seq 1
+        response = client.get("/events?after=1")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        # Should contain seq 2 and 3, not seq 1
+        assert len(events) == 2
+        assert events[0]["seq"] == 2
+        assert events[1]["seq"] == 3
+        # Verify order (seq ASC)
+        assert events[0]["seq"] < events[1]["seq"]
+
+    def test_get_events_respects_limit(self, client, test_db):
+        """event-stream.AC5.2: GET /events?after=N&limit=M returns at most M events."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 5 events
+        for i in range(5):
+            insert_event(test_db, "delivery.created", f"id-{i}", {"test": f"payload{i}"})
+
+        # Fetch with limit=2
+        response = client.get("/events?after=0&limit=2")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        # Should return exactly 2 events
+        assert len(events) == 2
+        assert events[0]["seq"] == 1
+        assert events[1]["seq"] == 2
+
+    def test_get_events_after_latest_returns_empty(self, client, test_db):
+        """event-stream.AC5.3: GET /events?after=<latest_seq> returns empty array."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 3 events
+        insert_event(test_db, "delivery.created", "id-1", {"test": "payload1"})
+        insert_event(test_db, "delivery.created", "id-2", {"test": "payload2"})
+        insert_event(test_db, "delivery.created", "id-3", {"test": "payload3"})
+
+        # Fetch events after the last one (seq=3)
+        response = client.get("/events?after=3")
+
+        assert response.status_code == 200
+        events = response.json()
+        assert events == []
+
+    def test_get_events_without_after_returns_422(self, client):
+        """event-stream.AC5.4: GET /events without after parameter returns 422."""
+        response = client.get("/events")
+
+        assert response.status_code == 422
+
+    def test_get_events_limit_capping(self, client, test_db):
+        """GET /events caps limit at 1000 without erroring."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 5 events (less than the 5000 requested)
+        for i in range(5):
+            insert_event(test_db, "delivery.created", f"id-{i}", {"test": f"payload{i}"})
+
+        # Request with limit way over 1000
+        response = client.get("/events?after=0&limit=5000")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        # Should return all 5 (capped at 1000 but less available)
+        assert len(events) == 5
+
+    def test_get_events_response_shape(self, client, test_db):
+        """GET /events response includes all required fields."""
+        from pipeline.registry_api.db import insert_event
+
+        insert_event(test_db, "delivery.created", "test-id", {"key": "value"})
+
+        response = client.get("/events?after=0")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        assert len(events) == 1
+        event = events[0]
+
+        # Verify all required fields
+        assert "seq" in event
+        assert "event_type" in event
+        assert "delivery_id" in event
+        assert "payload" in event
+        assert "created_at" in event
+
+        # Verify types
+        assert isinstance(event["seq"], int)
+        assert isinstance(event["event_type"], str)
+        assert isinstance(event["delivery_id"], str)
+        assert isinstance(event["payload"], dict)
+        assert isinstance(event["created_at"], str)
+
+        # Verify values
+        assert event["seq"] == 1
+        assert event["event_type"] == "delivery.created"
+        assert event["delivery_id"] == "test-id"
+        assert event["payload"] == {"key": "value"}
