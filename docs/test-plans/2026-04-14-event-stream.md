@@ -2,8 +2,9 @@
 
 ## Prerequisites
 
-- Registry API running locally: `uv run registry-api` (port 8000)
-- All automated tests passing: `uv run pytest tests/ -v` (237 tests, 0 failures)
+- Package installed: `pip install -e ".[registry,consumer,dev]"`
+- Registry API running locally: `registry-api` (port 8000)
+- All automated tests passing: `pytest tests/ -v` (237 tests, 0 failures)
 - A WebSocket client tool available (e.g., `websocat`, browser dev tools, or the reference consumer at `src/pipeline/events/consumer.py`)
 
 ## Phase 1: Verify Existing Tests Unmodified (AC7.2)
@@ -12,7 +13,7 @@
 |------|--------|----------|
 | 1 | Run `git diff --name-only 6c8f041 -- tests/` | Lists only new files or files with additions. Should NOT show modifications to pre-existing test functions. |
 | 2 | For any changed test files, run `git diff 6c8f041 -- <file>` and inspect the diff | Changes should be additive only: new imports, new test classes, new test functions. No existing test function body should be altered. |
-| 3 | Run `uv run pytest tests/ -v` | All tests pass. No test names from before the event-stream work should be missing or renamed. |
+| 3 | Run `pytest tests/ -v` | All tests pass. No test names from before the event-stream work should be missing or renamed. |
 
 ## Phase 2: End-to-End Event Stream Walkthrough
 
@@ -20,7 +21,7 @@ Purpose: Validates that a real WebSocket client receives events triggered by HTT
 
 | Step | Action | Expected |
 |------|--------|----------|
-| 1 | Start the registry API: `uv run registry-api` | API starts on port 8000, logs to stderr. |
+| 1 | Start the registry API: `registry-api` | API starts on port 8000, logs to stderr. |
 | 2 | Connect a WebSocket client to `ws://localhost:8000/ws/events` | Connection accepted. Client stays connected, waiting for messages. |
 | 3 | In a separate terminal, POST a new delivery: `curl -X POST http://localhost:8000/deliveries -H "Content-Type: application/json" -d '{"request_id":"req-e2e","project":"test-proj","request_type":"scan","workplan_id":"wp-001","dp_id":"dp-001","version":"1.0.0","scan_root":"/data","qa_status":"pending","source_path":"/data/e2e-test-1"}'` | HTTP 200 response with delivery_id, request_id, project, etc. |
 | 4 | Check the WebSocket client | Should have received a JSON message: `{"seq": 1, "event_type": "delivery.created", "delivery_id": "<sha256-of-source_path>", "payload": {...}, "created_at": "..."}`. |
@@ -50,7 +51,7 @@ Purpose: Validates that event stream correctly handles API restart (DB state per
 | Step | Action | Expected |
 |------|--------|----------|
 | 1 | With API running and some deliveries already registered, stop the API (Ctrl+C) | API shuts down cleanly. |
-| 2 | Restart the API: `uv run registry-api` | API starts. SQLite DB with existing data is reloaded. |
+| 2 | Restart the API: `registry-api` | API starts. SQLite DB with existing data is reloaded. |
 | 3 | Connect a WS client | Connection accepted. |
 | 4 | POST the same delivery that existed before restart | HTTP 200 (upsert). No `delivery.created` event on WS (already existed in DB). |
 | 5 | POST a genuinely new delivery | HTTP 200. WS client receives `delivery.created` event. |
@@ -73,7 +74,7 @@ Purpose: Validates the EventConsumer reconnection and deduplication behaviour en
 
 | Criterion | Why Manual | Steps |
 |-----------|------------|-------|
-| AC7.2: All existing tests pass without modification | Meta-criterion about the test suite itself | (1) Run `git diff --name-only 6c8f041 -- tests/` to list changed test files. (2) For each changed file, run `git diff 6c8f041 -- <file>` and confirm all changes are additive. (3) Run `uv run pytest tests/ -v` and confirm all 237 tests pass. |
+| AC7.2: All existing tests pass without modification | Meta-criterion about the test suite itself | (1) Run `git diff --name-only 6c8f041 -- tests/` to list changed test files. (2) For each changed file, run `git diff 6c8f041 -- <file>` and confirm all changes are additive. (3) Run `pytest tests/ -v` and confirm all 237 tests pass. |
 
 ## Traceability
 
