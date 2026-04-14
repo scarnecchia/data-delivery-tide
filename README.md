@@ -1,4 +1,4 @@
-# QA Registry Pipeline
+# Data Registry Pipeline
 
 Data delivery tracking and event pipeline for file-based deliveries on a network share. Crawls directory structures that encode metadata (project, workplan, version, QA status), registers deliveries in a SQLite-backed registry API, streams lifecycle events over WebSocket, and converts SAS7BDAT files to Parquet.
 
