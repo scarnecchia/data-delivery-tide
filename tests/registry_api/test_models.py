@@ -6,6 +6,7 @@ from pipeline.registry_api.models import (
     DeliveryUpdate,
     DeliveryResponse,
     DeliveryFilters,
+    EventRecord,
 )
 
 
@@ -332,3 +333,75 @@ class TestDeliveryFilters:
 
         model_none = DeliveryFilters(converted=None)
         assert model_none.converted is None
+
+
+class TestEventRecord:
+    def test_event_record_valid_with_all_fields(self):
+        """Test EventRecord accepts valid input with all required fields."""
+        model = EventRecord(
+            seq=1,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload={"key": "value"},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.seq == 1
+        assert model.event_type == "delivery.created"
+        assert model.delivery_id == "abc123"
+        assert model.payload == {"key": "value"}
+        assert model.created_at == "2026-01-01T00:00:00+00:00"
+
+    def test_event_record_accepts_delivery_status_changed(self):
+        """Test EventRecord accepts 'delivery.status_changed' event_type."""
+        model = EventRecord(
+            seq=2,
+            event_type="delivery.status_changed",
+            delivery_id="abc123",
+            payload={"status": "passed"},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.event_type == "delivery.status_changed"
+
+    def test_event_record_rejects_invalid_event_type(self):
+        """Test EventRecord with invalid event_type raises ValidationError."""
+        with pytest.raises(ValidationError):
+            EventRecord(
+                seq=1,
+                event_type="invalid.event",
+                delivery_id="abc123",
+                payload={},
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+
+    def test_event_record_seq_must_be_int(self):
+        """Test EventRecord rejects non-int seq."""
+        with pytest.raises(ValidationError):
+            EventRecord(
+                seq="not-an-int",
+                event_type="delivery.created",
+                delivery_id="abc123",
+                payload={},
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+
+    def test_event_record_accepts_dict_payload(self):
+        """Test EventRecord accepts dict payload with arbitrary structure."""
+        complex_payload = {
+            "delivery_id": "abc123",
+            "request_id": "req-456",
+            "qa_status": "passed",
+            "nested": {"field": "value"},
+            "list": [1, 2, 3],
+        }
+
+        model = EventRecord(
+            seq=3,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload=complex_payload,
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.payload == complex_payload
