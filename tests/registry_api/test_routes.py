@@ -1,3 +1,10 @@
+import asyncio
+import json
+from unittest.mock import AsyncMock
+
+import pytest
+
+
 def make_delivery_payload(**overrides):
     """
     Helper to create a valid DeliveryCreate payload with sensible defaults.
@@ -17,6 +24,17 @@ def make_delivery_payload(**overrides):
     }
     defaults.update(overrides)
     return defaults
+
+
+def get_events(db):
+    """Helper to fetch all events from the test database."""
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM events ORDER BY seq ASC")
+    rows = cursor.fetchall()
+    return [
+        {**dict(row), "payload": json.loads(dict(row)["payload"])}
+        for row in rows
+    ]
 
 
 class TestHealth:
@@ -316,3 +334,416 @@ class TestUpdateDelivery:
         assert response.status_code == 200
         data = response.json()
         assert data["parquet_converted_at"] == "2026-04-09T15:30:00+00:00"
+
+
+class TestDeliveryCreatedEvents:
+    """Test delivery.created event emission on POST /deliveries."""
+
+    def test_new_delivery_creates_event(self, client, test_db):
+        """event-stream.AC1.1: POST new delivery creates delivery.created event."""
+        payload = make_delivery_payload(source_path="/data/new-event-test")
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Query events table directly
+        events = get_events(test_db)
+
+        assert len(events) == 1
+        event = events[0]
+        assert event["event_type"] == "delivery.created"
+        assert event["delivery_id"] == delivery_id
+        assert event["payload"]["delivery_id"] == delivery_id
+        assert event["payload"]["source_path"] == "/data/new-event-test"
+        assert event["payload"]["qa_status"] == "pending"
+
+    def test_recrawl_no_event(self, client, test_db):
+        """event-stream.AC1.3: Re-crawl of existing delivery produces no event."""
+        payload = make_delivery_payload(source_path="/data/recrawl-test")
+
+        # First POST - creates event
+        response1 = client.post("/deliveries", json=payload)
+        assert response1.status_code == 200
+
+        events_after_first = get_events(test_db)
+        assert len(events_after_first) == 1
+
+        # Second POST with same source_path and fingerprint - should not create event
+        response2 = client.post("/deliveries", json=payload)
+        assert response2.status_code == 200
+
+        events_after_second = get_events(test_db)
+        assert len(events_after_second) == 1  # Still only one event
+
+    def test_backward_compatibility_response(self, client):
+        """event-stream.AC7.1: POST response unchanged after adding event emission."""
+        payload = make_delivery_payload(source_path="/data/compat-test")
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify all expected fields are present
+        assert data["delivery_id"]
+        assert data["request_id"] == "req-001"
+        assert data["project"] == "test-project"
+        assert data["source_path"] == "/data/compat-test"
+        assert data["qa_status"] == "pending"
+        assert data["first_seen_at"]
+
+
+class TestWebSocketBroadcast:
+    """Test WebSocket broadcast of events on POST /deliveries."""
+
+    @pytest.mark.asyncio
+    async def test_ws_client_receives_delivery_created_event(self, client):
+        """AC1.2: POST /deliveries broadcasts delivery.created to connected WS client."""
+        from pipeline.registry_api.events import manager
+
+        received_events = []
+
+        async def ws_client_session():
+            """Simulate a WebSocket client connecting and waiting for events."""
+            # Create a mock WebSocket
+            mock_ws = AsyncMock()
+            mock_ws.send_json = AsyncMock()
+
+            # Add it to the connection manager
+            manager.active_connections.add(mock_ws)
+
+            try:
+                # Wait a moment for the HTTP request to complete and broadcast
+                await asyncio.sleep(0.1)
+
+                # Check what was sent
+                if mock_ws.send_json.called:
+                    # Get the first call's arguments
+                    call_args = mock_ws.send_json.call_args[0][0]
+                    received_events.append(call_args)
+            finally:
+                manager.active_connections.discard(mock_ws)
+
+        # Start the WS client in a background task
+        client_task = asyncio.create_task(ws_client_session())
+
+        # Give the client time to "connect"
+        await asyncio.sleep(0.05)
+
+        # POST a new delivery via the HTTP client
+        payload = make_delivery_payload(source_path="/data/ws-broadcast-test")
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Wait for the client to receive and process
+        await client_task
+
+        # Verify the WS client received the event
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event["event_type"] == "delivery.created"
+        assert event["delivery_id"] == delivery_id
+
+
+class TestAPIRestartDeliveryDistinction:
+    """Test that API restart distinguishes new vs existing deliveries."""
+
+    def test_post_after_restart_no_event_for_existing(self, client, test_db):
+        """AC1.4: POST same source_path after restart (DB state persists) produces no event."""
+        from pipeline.registry_api.db import upsert_delivery
+
+        source_path = "/data/restart-existing"
+
+        # Simulate pre-restart state: insert delivery directly into DB
+        payload = make_delivery_payload(source_path=source_path, qa_status="pending")
+        pre_restart_delivery = upsert_delivery(test_db, payload)
+        test_db.commit()
+
+        # Clear events that might exist
+        events = get_events(test_db)
+        initial_event_count = len(events)
+
+        # Now POST the same source_path (simulating API restart then re-crawl)
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 200
+
+        # Check events table
+        events_after = get_events(test_db)
+        # Should still be the same count (no new event)
+        assert len(events_after) == initial_event_count
+
+    def test_post_after_restart_event_for_new(self, client, test_db):
+        """AC1.4: POST new delivery after restart produces delivery.created event."""
+        from pipeline.registry_api.db import upsert_delivery
+
+        # Insert one delivery (simulating pre-restart state)
+        payload1 = make_delivery_payload(source_path="/data/restart-old")
+        upsert_delivery(test_db, payload1)
+        test_db.commit()
+
+        # Clear the events table to simulate fresh API start
+        cursor = test_db.cursor()
+        cursor.execute("DELETE FROM events")
+        test_db.commit()
+
+        # POST a genuinely new delivery
+        payload2 = make_delivery_payload(source_path="/data/restart-new")
+        response = client.post("/deliveries", json=payload2)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Check events
+        events = get_events(test_db)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "delivery.created"
+        assert events[0]["delivery_id"] == delivery_id
+
+
+class TestDeliveryStatusChangedEvents:
+    """Test delivery.status_changed event emission on PATCH /deliveries/{id}."""
+
+    def test_status_pending_to_passed_creates_event(self, client, test_db):
+        """event-stream.AC2.1: PATCH with qa_status pending→passed creates event."""
+        payload = make_delivery_payload(
+            source_path="/data/status-change-1",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH to change status
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        # Should have exactly one more event (the status_changed)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 1
+        event = new_events[0]
+        assert event["event_type"] == "delivery.status_changed"
+        assert event["delivery_id"] == delivery_id
+        assert event["payload"]["qa_status"] == "passed"
+
+    def test_status_pending_to_failed_creates_event(self, client, test_db):
+        """event-stream.AC2.2: PATCH with qa_status pending→failed creates event."""
+        payload = make_delivery_payload(
+            source_path="/data/status-change-2",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH to change status to failed
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "failed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 1
+        event = new_events[0]
+        assert event["event_type"] == "delivery.status_changed"
+        assert event["delivery_id"] == delivery_id
+        assert event["payload"]["qa_status"] == "failed"
+
+    def test_event_payload_reflects_new_status(self, client, test_db):
+        """event-stream.AC2.3: Event payload contains updated delivery record."""
+        payload = make_delivery_payload(
+            source_path="/data/payload-test",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH to change status and output_path
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "passed", "output_path": "/new/output"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 1
+        event = new_events[0]
+        # Payload should reflect new status
+        assert event["payload"]["qa_status"] == "passed"
+        assert event["payload"]["output_path"] == "/new/output"
+
+    def test_no_event_on_non_status_update(self, client, test_db):
+        """event-stream.AC2.4: PATCH non-status field produces no event."""
+        payload = make_delivery_payload(source_path="/data/non-status-test")
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH only parquet_converted_at (no status change)
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"parquet_converted_at": "2026-04-09T10:00:00+00:00"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        # Filter for events after the POST event
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 0  # No event should be created for non-status changes
+
+    def test_no_event_on_same_status_patch(self, client, test_db):
+        """event-stream.AC2.5: PATCH with same qa_status value produces no event."""
+        payload = make_delivery_payload(
+            source_path="/data/same-status-test",
+            qa_status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        events_before = get_events(test_db)
+
+        # PATCH with same status value
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"qa_status": "pending"},
+        )
+
+        assert patch_response.status_code == 200
+
+        events_after = get_events(test_db)
+        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        assert len(new_events) == 0  # No event should be created
+
+
+class TestCatchUpEndpoint:
+    """Test GET /events catch-up endpoint."""
+
+    def test_get_events_after_filters_by_seq(self, client, test_db):
+        """event-stream.AC5.1: GET /events?after=N returns only events with seq > N, ordered by seq ASC."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 3 events manually
+        insert_event(test_db, "delivery.created", "id-1", {"test": "payload1"})
+        insert_event(test_db, "delivery.created", "id-2", {"test": "payload2"})
+        insert_event(test_db, "delivery.created", "id-3", {"test": "payload3"})
+
+        # Fetch events after seq 1
+        response = client.get("/events?after=1")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        # Should contain seq 2 and 3, not seq 1
+        assert len(events) == 2
+        assert events[0]["seq"] == 2
+        assert events[1]["seq"] == 3
+        # Verify order (seq ASC)
+        assert events[0]["seq"] < events[1]["seq"]
+
+    def test_get_events_respects_limit(self, client, test_db):
+        """event-stream.AC5.2: GET /events?after=N&limit=M returns at most M events."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 5 events
+        for i in range(5):
+            insert_event(test_db, "delivery.created", f"id-{i}", {"test": f"payload{i}"})
+
+        # Fetch with limit=2
+        response = client.get("/events?after=0&limit=2")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        # Should return exactly 2 events
+        assert len(events) == 2
+        assert events[0]["seq"] == 1
+        assert events[1]["seq"] == 2
+
+    def test_get_events_after_latest_returns_empty(self, client, test_db):
+        """event-stream.AC5.3: GET /events?after=<latest_seq> returns empty array."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 3 events
+        insert_event(test_db, "delivery.created", "id-1", {"test": "payload1"})
+        insert_event(test_db, "delivery.created", "id-2", {"test": "payload2"})
+        insert_event(test_db, "delivery.created", "id-3", {"test": "payload3"})
+
+        # Fetch events after the last one (seq=3)
+        response = client.get("/events?after=3")
+
+        assert response.status_code == 200
+        events = response.json()
+        assert events == []
+
+    def test_get_events_without_after_returns_422(self, client):
+        """event-stream.AC5.4: GET /events without after parameter returns 422."""
+        response = client.get("/events")
+
+        assert response.status_code == 422
+
+    def test_get_events_limit_capping(self, client, test_db):
+        """GET /events caps limit at 1000 without erroring."""
+        from pipeline.registry_api.db import insert_event
+
+        # Insert 5 events (less than the 5000 requested)
+        for i in range(5):
+            insert_event(test_db, "delivery.created", f"id-{i}", {"test": f"payload{i}"})
+
+        # Request with limit way over 1000
+        response = client.get("/events?after=0&limit=5000")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        # Should return all 5 (capped at 1000 but less available)
+        assert len(events) == 5
+
+    def test_get_events_response_shape(self, client, test_db):
+        """GET /events response includes all required fields."""
+        from pipeline.registry_api.db import insert_event
+
+        insert_event(test_db, "delivery.created", "test-id", {"key": "value"})
+
+        response = client.get("/events?after=0")
+
+        assert response.status_code == 200
+        events = response.json()
+
+        assert len(events) == 1
+        event = events[0]
+
+        # Verify all required fields
+        assert "seq" in event
+        assert "event_type" in event
+        assert "delivery_id" in event
+        assert "payload" in event
+        assert "created_at" in event
+
+        # Verify types
+        assert isinstance(event["seq"], int)
+        assert isinstance(event["event_type"], str)
+        assert isinstance(event["delivery_id"], str)
+        assert isinstance(event["payload"], dict)
+        assert isinstance(event["created_at"], str)
+
+        # Verify values
+        assert event["seq"] == 1
+        assert event["event_type"] == "delivery.created"
+        assert event["delivery_id"] == "test-id"
+        assert event["payload"] == {"key": "value"}

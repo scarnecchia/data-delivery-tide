@@ -1,10 +1,10 @@
 # Registry API
 
-Last verified: 2026-04-09
+Last verified: 2026-04-14
 
 ## Purpose
 
-Single source of truth for delivery state. Tracks which data partner deliveries have been seen, passed QA, and converted to Parquet. The crawler writes here; the converter reads actionable items from here.
+Single source of truth for delivery state. Tracks which data partner deliveries have been seen, passed QA, and converted to Parquet. The crawler writes here; the converter reads actionable items from here. Emits lifecycle events via WebSocket broadcast and persists them in SQLite for consumer catch-up.
 
 ## Contracts
 
@@ -15,14 +15,17 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
   - `GET /deliveries/{delivery_id}` -- single delivery by ID
   - `PATCH /deliveries/{delivery_id}` -- partial update (parquet_converted_at, output_path, qa_status, qa_passed_at only)
   - `GET /health` -- health check
-- **Guarantees**: delivery_id is SHA-256 of source_path (deterministic, stable). first_seen_at is never overwritten on upsert. last_updated_at only changes when fingerprint changes.
+  - `WS /ws/events` -- one-way WebSocket broadcast of delivery lifecycle events
+  - `GET /events?after={seq}&limit={n}` -- catch-up endpoint for events after a sequence number (limit default 100, max 1000)
+- **Event types**: `delivery.created` (new delivery, not re-crawl), `delivery.status_changed` (qa_status transition)
+- **Guarantees**: delivery_id is SHA-256 of source_path (deterministic, stable). first_seen_at is never overwritten on upsert. last_updated_at only changes when fingerprint changes. Event seq is monotonically increasing (SQLite INTEGER PRIMARY KEY).
 - **Expects**: SQLite database path from config. Callers provide valid Pydantic models.
 
 ## Dependencies
 
 - **Uses**: `pipeline.config.settings` for db_path
-- **Used by**: crawler (POSTs deliveries with derived qa_status), converter (will GET actionable + PATCH after conversion)
-- **Boundary**: no imports from crawler or converter
+- **Used by**: crawler (POSTs deliveries with derived qa_status), converter (will GET actionable + PATCH after conversion), EventConsumer (`pipeline.events.consumer`)
+- **Boundary**: no imports from crawler, converter, or events consumer
 
 ## Key Decisions
 
@@ -38,16 +41,23 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 - qa_status is always "pending", "passed", or "failed" (CHECK constraint)
 - first_seen_at is immutable after initial insert (COALESCE preserves it on conflict)
 - actionable = qa_status "passed" AND parquet_converted_at IS NULL
+- event_type is constrained to "delivery.created" or "delivery.status_changed" (CHECK constraint)
+- event seq is auto-incrementing INTEGER PRIMARY KEY (monotonic, gap-free under normal operation)
+- delivery.created fires only on genuinely new deliveries (not idempotent re-crawls)
+- delivery.status_changed fires only when qa_status actually transitions to a different value
 
 ## Key Files
 
-- `main.py` -- FastAPI app with lifespan (schema init on startup)
-- `db.py` -- all SQLite operations (init_db, upsert, get, list, actionable, update)
-- `models.py` -- Pydantic request/response models
-- `routes.py` -- API route definitions
+- `main.py` -- FastAPI app with lifespan (schema init on startup), WebSocket /ws/events endpoint
+- `db.py` -- all SQLite operations (init_db, upsert, get, list, actionable, update, insert_event, get_events_after, delivery_exists)
+- `models.py` -- Pydantic request/response models (including EventRecord)
+- `routes.py` -- API route definitions (REST endpoints including GET /events)
+- `events.py` -- ConnectionManager for WebSocket broadcast; module-level `manager` singleton
 
 ## Gotchas
 
 - `DbDep` type alias uses FastAPI's `Depends(get_db)` via `Annotated` -- don't call get_db directly in route handlers
 - version="latest" filter uses a correlated subquery (MAX version per dp_id+workplan_id), not application-level sorting
 - The ensure_registry.sh watchdog uses PID files, not systemd -- check the pidfile if the API seems dead but won't restart
+- WebSocket endpoint is on `app` directly (not `router`) because FastAPI's APIRouter doesn't support `@router.websocket`
+- ConnectionManager.broadcast silently removes dead connections -- consumer reconnect loop handles recovery

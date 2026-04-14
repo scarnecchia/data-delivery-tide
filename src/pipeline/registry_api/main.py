@@ -1,10 +1,11 @@
 # pattern: Imperative Shell
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from pipeline.config import settings
 from pipeline.registry_api.db import init_db
+from pipeline.registry_api.events import manager
 from pipeline.registry_api.routes import router
 
 
@@ -22,6 +23,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="QA Registry", lifespan=lifespan)
 app.include_router(router)
+
+
+@app.websocket("/ws/events")
+async def websocket_events(websocket: WebSocket):
+    """
+    One-way broadcast channel for delivery lifecycle events.
+
+    Clients connect and receive JSON event broadcasts. The receive loop
+    exists only to detect disconnection — clients don't send messages.
+    """
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket)
 
 
 def run():

@@ -29,3 +29,6 @@ pipeline/logs/
 
 # Presentation drafts
 docs/decks/
+
+# Git worktrees
+.worktrees/

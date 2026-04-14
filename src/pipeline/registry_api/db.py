@@ -1,6 +1,7 @@
 # pattern: Imperative Shell
 
 import hashlib
+import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Annotated
@@ -57,6 +58,19 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
                 output_path          TEXT,
                 fingerprint          TEXT,
                 last_updated_at      TEXT
+            )
+            """
+        )
+
+        # Create the events table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                seq         INTEGER PRIMARY KEY,
+                event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed')),
+                delivery_id TEXT NOT NULL,
+                payload     TEXT NOT NULL,
+                created_at  TEXT NOT NULL
             )
             """
         )
@@ -361,3 +375,87 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
     return dict(row) if row else None
+
+
+def insert_event(
+    conn: sqlite3.Connection,
+    event_type: str,
+    delivery_id: str,
+    payload: dict,
+) -> dict:
+    """
+    Insert an event record and return it with the assigned sequence number.
+
+    Args:
+        conn: sqlite3.Connection
+        event_type: One of 'delivery.created' or 'delivery.status_changed'
+        delivery_id: The delivery ID this event relates to
+        payload: Full delivery record as a dict (DeliveryResponse.model_dump() output)
+
+    Returns:
+        dict: The inserted event row as a dict, including the auto-assigned seq.
+    """
+    now = _get_iso_now()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+        (event_type, delivery_id, json.dumps(payload), now),
+    )
+    conn.commit()
+
+    seq = cursor.lastrowid
+    return {
+        "seq": seq,
+        "event_type": event_type,
+        "delivery_id": delivery_id,
+        "payload": payload,
+        "created_at": now,
+    }
+
+
+def get_events_after(
+    conn: sqlite3.Connection,
+    after_seq: int,
+    limit: int = 100,
+) -> list[dict]:
+    """
+    Retrieve events with seq greater than after_seq, ordered by seq ascending.
+
+    Args:
+        conn: sqlite3.Connection
+        after_seq: Return events with seq strictly greater than this value
+        limit: Maximum number of events to return (default 100, max 1000)
+
+    Returns:
+        list[dict]: List of event dicts with payload deserialised from JSON.
+    """
+    capped_limit = min(limit, 1000)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM events WHERE seq > ? ORDER BY seq ASC LIMIT ?",
+        (after_seq, capped_limit),
+    )
+    rows = cursor.fetchall()
+
+    result = []
+    for row in rows:
+        event = dict(row)
+        event["payload"] = json.loads(event["payload"])
+        result.append(event)
+    return result
+
+
+def delivery_exists(conn: sqlite3.Connection, delivery_id: str) -> bool:
+    """
+    Check if a delivery exists by ID.
+
+    Args:
+        conn: sqlite3.Connection
+        delivery_id: The delivery ID to check
+
+    Returns:
+        bool: True if the delivery exists, False otherwise.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM deliveries WHERE delivery_id = ? LIMIT 1", (delivery_id,))
+    return cursor.fetchone() is not None

@@ -67,3 +67,13 @@ class DeliveryFilters(BaseModel):
     converted: bool | None = None
     version: str | None = None
     scan_root: str | None = None
+
+
+class EventRecord(BaseModel):
+    """Persisted event record for delivery lifecycle changes."""
+
+    seq: int
+    event_type: Literal["delivery.created", "delivery.status_changed"]
+    delivery_id: str
+    payload: dict
+    created_at: str
