@@ -7,7 +7,7 @@ import logging
 
 from pipeline.config import ScanRoot
 from pipeline.crawler.main import walk_roots, inventory_files, crawl
-from pipeline.crawler.http import RegistryUnreachableError
+from pipeline.crawler.http import RegistryUnreachableError, RegistryClientError
 
 
 class TestWalkRoots:
@@ -488,6 +488,56 @@ class TestCrawl:
         assert first_fingerprint == second_fingerprint
 
 
+class TestCrawlAuth:
+    """Token forwarding from crawl() to post_delivery()."""
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_token_forwarded_to_post_delivery(
+        self, mock_post, delivery_tree, make_crawler_config
+    ):
+        """crawl() forwards token kwarg to post_delivery()."""
+        source_path, scan_root = delivery_tree(
+            dp_id="mkscnr",
+            request_id="soc_qar_wp001",
+            version_dir_name="soc_qar_wp001_mkscnr_v01",
+            qa_status="passed",
+            sas_files=[("dataset.sas7bdat", 1024)],
+        )
+
+        config = make_crawler_config(
+            scan_roots=[{"path": scan_root, "label": "qa"}],
+        )
+        logger = MagicMock()
+        crawl(config, logger, token="my-secret-token")
+
+        assert mock_post.called
+        _, kwargs = mock_post.call_args
+        assert kwargs["token"] == "my-secret-token"
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_no_token_forwards_none(
+        self, mock_post, delivery_tree, make_crawler_config
+    ):
+        """crawl() without token passes token=None to post_delivery()."""
+        source_path, scan_root = delivery_tree(
+            dp_id="mkscnr",
+            request_id="soc_qar_wp001",
+            version_dir_name="soc_qar_wp001_mkscnr_v01",
+            qa_status="passed",
+            sas_files=[("dataset.sas7bdat", 1024)],
+        )
+
+        config = make_crawler_config(
+            scan_roots=[{"path": scan_root, "label": "qa"}],
+        )
+        logger = MagicMock()
+        crawl(config, logger)
+
+        assert mock_post.called
+        _, kwargs = mock_post.call_args
+        assert kwargs["token"] is None
+
+
 class TestMain:
     """AC5.4 — Exit code on RegistryUnreachableError."""
 
@@ -507,3 +557,108 @@ class TestMain:
             main()
 
         assert exc_info.value.code == 1
+
+    @patch("pipeline.crawler.main.settings")
+    @patch("pipeline.crawler.main.get_logger")
+    @patch("pipeline.crawler.main.crawl")
+    def test_registry_token_env_var_passed_to_crawl(
+        self, mock_crawl, mock_logger, mock_settings
+    ):
+        """REGISTRY_TOKEN env var is forwarded to crawl() as token kwarg."""
+        mock_settings.log_dir = "/tmp"
+
+        from pipeline.crawler.main import main
+
+        with patch.dict("os.environ", {"REGISTRY_TOKEN": "test-token-123"}):
+            main()
+
+        mock_crawl.assert_called_once()
+        _, kwargs = mock_crawl.call_args
+        assert kwargs["token"] == "test-token-123"
+
+    @patch("pipeline.crawler.main.settings")
+    @patch("pipeline.crawler.main.get_logger")
+    @patch("pipeline.crawler.main.crawl")
+    def test_no_registry_token_passes_none(
+        self, mock_crawl, mock_logger, mock_settings
+    ):
+        """Without REGISTRY_TOKEN, crawl() receives token=None."""
+        mock_settings.log_dir = "/tmp"
+
+        from pipeline.crawler.main import main
+
+        with patch.dict("os.environ", {}, clear=False):
+            # Ensure REGISTRY_TOKEN is not set
+            import os
+            os.environ.pop("REGISTRY_TOKEN", None)
+            main()
+
+        mock_crawl.assert_called_once()
+        _, kwargs = mock_crawl.call_args
+        assert kwargs["token"] is None
+
+    @patch("pipeline.crawler.main.settings")
+    @patch("pipeline.crawler.main.get_logger")
+    @patch("pipeline.crawler.main.crawl")
+    def test_401_error_logs_registry_token_hint(
+        self, mock_crawl, mock_logger, mock_settings
+    ):
+        """401 from registry logs actionable message about REGISTRY_TOKEN."""
+        mock_crawl.side_effect = RegistryClientError(401, '{"detail":"Missing authentication credentials"}')
+        mock_settings.log_dir = "/tmp"
+        logger_instance = MagicMock()
+        mock_logger.return_value = logger_instance
+
+        from pipeline.crawler.main import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+        logger_instance.error.assert_called_once()
+        msg = logger_instance.error.call_args[0][0]
+        assert "REGISTRY_TOKEN" in msg
+
+    @patch("pipeline.crawler.main.settings")
+    @patch("pipeline.crawler.main.get_logger")
+    @patch("pipeline.crawler.main.crawl")
+    def test_403_error_logs_role_hint(
+        self, mock_crawl, mock_logger, mock_settings
+    ):
+        """403 from registry logs actionable message about role requirements."""
+        mock_crawl.side_effect = RegistryClientError(403, '{"detail":"Insufficient permissions: requires write role"}')
+        mock_settings.log_dir = "/tmp"
+        logger_instance = MagicMock()
+        mock_logger.return_value = logger_instance
+
+        from pipeline.crawler.main import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+        logger_instance.error.assert_called_once()
+        msg = logger_instance.error.call_args[0][0]
+        assert "write" in msg
+
+    @patch("pipeline.crawler.main.settings")
+    @patch("pipeline.crawler.main.get_logger")
+    @patch("pipeline.crawler.main.crawl")
+    def test_other_4xx_error_logs_generic_message(
+        self, mock_crawl, mock_logger, mock_settings
+    ):
+        """Other 4xx errors log the full error message."""
+        mock_crawl.side_effect = RegistryClientError(422, '{"detail":"Unprocessable Entity"}')
+        mock_settings.log_dir = "/tmp"
+        logger_instance = MagicMock()
+        mock_logger.return_value = logger_instance
+
+        from pipeline.crawler.main import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+        logger_instance.error.assert_called_once()
+        msg = logger_instance.error.call_args[0][0]
+        assert "422" in msg

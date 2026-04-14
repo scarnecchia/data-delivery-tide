@@ -9,7 +9,7 @@ from pipeline.json_logging import get_logger
 from pipeline.crawler.parser import parse_path, derive_qa_statuses, ParsedDelivery, ParseError
 from pipeline.crawler.fingerprint import compute_fingerprint, FileEntry
 from pipeline.crawler.manifest import build_manifest, build_error_manifest
-from pipeline.crawler.http import post_delivery, RegistryUnreachableError
+from pipeline.crawler.http import post_delivery, RegistryUnreachableError, RegistryClientError
 
 
 def inventory_files(source_path: str) -> list[FileEntry]:
@@ -95,7 +95,7 @@ def walk_roots(scan_roots: list, logger=None) -> list[tuple[str, str]]:
     return results
 
 
-def crawl(config, logger) -> int:
+def crawl(config, logger, token: str | None = None) -> int:
     """Run a full crawl cycle. Returns count of deliveries processed.
 
     Two-pass approach:
@@ -187,7 +187,7 @@ def crawl(config, logger) -> int:
             "total_bytes": sum(f["size_bytes"] for f in files),
             "fingerprint": fingerprint,
         }
-        post_delivery(config.registry_api_url, payload)
+        post_delivery(config.registry_api_url, payload, token=token)
 
         logger.info(
             f"processed delivery {delivery_id[:12]}... (qa_status={delivery.qa_status})",
@@ -208,8 +208,22 @@ def main():
     config = settings
     logger = get_logger("crawler", log_dir=config.log_dir)
 
+    token = os.environ.get("REGISTRY_TOKEN")
+
     try:
-        crawl(config, logger)
+        crawl(config, logger, token=token)
+    except RegistryClientError as exc:
+        if exc.status_code == 401:
+            logger.error(
+                "registry authentication failed — set REGISTRY_TOKEN environment variable"
+            )
+        elif exc.status_code == 403:
+            logger.error(
+                "registry authorization failed — token lacks required role (needs write)"
+            )
+        else:
+            logger.error(f"registry client error: {exc}")
+        sys.exit(1)
     except RegistryUnreachableError as exc:
         logger.error(f"registry unreachable, aborting: {exc}")
         sys.exit(1)

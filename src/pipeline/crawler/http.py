@@ -21,12 +21,13 @@ class RegistryClientError(Exception):
 _BACKOFF_SECONDS = (2, 4, 8)
 
 
-def post_delivery(api_url: str, payload: dict) -> dict:
+def post_delivery(api_url: str, payload: dict, token: str | None = None) -> dict:
     """POST a delivery payload to the registry API.
 
     Args:
         api_url: Base URL of the registry API (e.g. "http://localhost:8000")
         payload: Dict matching the DeliveryCreate schema
+        token: Optional bearer token for authentication
 
     Returns:
         Response body dict (DeliveryResponse)
@@ -37,10 +38,13 @@ def post_delivery(api_url: str, payload: dict) -> dict:
     """
     url = f"{api_url.rstrip('/')}/deliveries"
     data = json.dumps(payload).encode()
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
 

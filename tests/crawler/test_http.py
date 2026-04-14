@@ -190,6 +190,36 @@ class TestPostDeliveryBackoff:
                 assert kwargs["headers"]["Content-Type"] == "application/json"
                 assert kwargs["method"] == "POST"
 
+    def test_auth_header_included_when_token_provided(self):
+        """Authorization header is set when a token is provided."""
+        payload = {"source_path": "/data/test", "version": "v01"}
+
+        with patch("urllib.request.Request") as mock_request:
+            with patch("urllib.request.urlopen") as mock_urlopen:
+                mock_response = MagicMock()
+                mock_response.read.return_value = b'{"delivery_id": "test"}'
+                mock_urlopen.return_value.__enter__.return_value = mock_response
+
+                post_delivery("http://localhost:8000", payload, token="secret-token")
+
+                args, kwargs = mock_request.call_args
+                assert kwargs["headers"]["Authorization"] == "Bearer secret-token"
+
+    def test_no_auth_header_when_token_is_none(self):
+        """No Authorization header when token is None."""
+        payload = {"source_path": "/data/test", "version": "v01"}
+
+        with patch("urllib.request.Request") as mock_request:
+            with patch("urllib.request.urlopen") as mock_urlopen:
+                mock_response = MagicMock()
+                mock_response.read.return_value = b'{"delivery_id": "test"}'
+                mock_urlopen.return_value.__enter__.return_value = mock_response
+
+                post_delivery("http://localhost:8000", payload)
+
+                args, kwargs = mock_request.call_args
+                assert "Authorization" not in kwargs["headers"]
+
     def test_url_trailing_slash_stripped(self):
         """Verify trailing slash in api_url is handled correctly."""
         payload = {"source_path": "/data/test", "version": "v01"}

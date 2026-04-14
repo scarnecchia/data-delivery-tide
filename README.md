@@ -47,6 +47,46 @@ Key fields in `config.json`:
 | `db_path` | SQLite database location |
 | `dp_id_exclusions` | Directory names to skip during crawl |
 
+## Authentication
+
+The registry API uses bearer token authentication. Manage tokens with the `registry-auth` CLI:
+
+```bash
+# Create a token (prints raw token to stdout — save it)
+registry-auth add-user crawler --role write
+registry-auth add-user dashboard --role read
+
+# List users
+registry-auth list-users
+
+# Revoke or rotate
+registry-auth revoke-user crawler
+registry-auth rotate-token crawler
+```
+
+Roles: `admin` > `write` > `read`. The crawler needs `write`; read-only consumers need `read`.
+
+### Crawler authentication
+
+The crawler reads its token from the `REGISTRY_TOKEN` environment variable:
+
+```bash
+export REGISTRY_TOKEN=<token-from-add-user>
+python -m pipeline.crawler.main
+```
+
+Without `REGISTRY_TOKEN`, the crawler will fail with a clear error message on the first POST attempt.
+
+### API consumers
+
+Pass the token as a bearer header:
+
+```bash
+curl -H "Authorization: Bearer <token>" http://localhost:8000/deliveries
+```
+
+The `/health` endpoint requires no authentication.
+
 ## Running
 
 Start the registry API:

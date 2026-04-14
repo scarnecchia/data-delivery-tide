@@ -8,7 +8,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 
 ## Contracts
 
-- **Expects**: `pipeline.config.settings` with `scan_roots` (each with `path`, `label`, and `target` fields), `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, `registry_api_url`, `log_dir`
+- **Expects**: `pipeline.config.settings` with `scan_roots` (each with `path`, `label`, and `target` fields), `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, `registry_api_url`, `log_dir`. Reads `REGISTRY_TOKEN` env var for bearer auth (required when registry auth is enabled).
 - **Produces**: JSON crawl manifests in `crawl_manifest_dir` (one per delivery, keyed by delivery_id). Error manifests in `crawl_manifest_dir/errors/`.
 - **Calls**: `POST /deliveries` on the registry API for each resolved delivery
 - **Guarantees**: Two-pass crawl -- manifests are written before any registry POST. Failed status derivation happens between passes (pending delivery superseded by newer version in same workplan+dp_id = failed). `walk_roots` enforces canonical 5-level traversal constrained by `target` field: only directories matching the configured `target` under each dpid are descended.
@@ -25,7 +25,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 - `parser.py` -- path parsing and QA status derivation (Functional Core)
 - `fingerprint.py` -- deterministic SHA-256 fingerprint from file inventory (Functional Core)
 - `manifest.py` -- builds crawl manifest and error manifest dicts, generates delivery_id (Functional Core)
-- `http.py` -- registry API client with exponential backoff retry (Imperative Shell)
+- `http.py` -- registry API client with exponential backoff retry and optional bearer auth (Imperative Shell)
 - `main.py` -- orchestrator: walk_roots, inventory_files, crawl(), main() entry point (Imperative Shell)
 
 ## Invariants
@@ -46,3 +46,5 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 - dp_id_exclusions filtering happens in parse_path, returning None -- callers must handle the None case
 - All manifests in a single crawl run share the same crawled_at timestamp (marks the run, not individual processing)
 - The http client uses stdlib urllib, not requests/httpx -- intentional to avoid runtime dependencies
+- `main()` catches `RegistryClientError` for 401/403 and logs actionable messages (set REGISTRY_TOKEN, check role). Other 4xx errors log the full error. All exit with code 1.
+- `REGISTRY_TOKEN` is read in `main()` and threaded through `crawl()` to `post_delivery()` -- the token is optional at each layer for backwards compatibility
