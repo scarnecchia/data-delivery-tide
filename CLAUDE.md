@@ -1,7 +1,7 @@
 # QA Registry Pipeline
 
-Last verified: 2026-04-10
-Last context update: 2026-04-10
+Last verified: 2026-04-14
+Last context update: 2026-04-14
 
 ## Purpose
 
@@ -13,6 +13,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - FastAPI + Uvicorn (registry API)
 - SQLite via stdlib sqlite3 (registry backing store, WAL mode)
 - pyreadstat + pyarrow (SAS-to-Parquet conversion, not yet implemented)
+- websockets (WebSocket event stream)
 - pytest + httpx (testing)
 - hatchling (build system)
 
@@ -21,14 +22,16 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - `uv run pytest` -- run all tests
 - `uv run registry-api` -- start the registry API on port 8000
 - `uv pip install -e ".[registry,dev]"` -- install with registry and dev deps
+- `uv pip install -e ".[consumer]"` -- install event consumer deps (websockets, httpx)
 
 ## Project Structure
 
 - `src/pipeline/` -- main package
   - `config.py` -- config loading with env var override (`PIPELINE_CONFIG`)
   - `json_logging.py` -- JSON structured logging (JsonFormatter + file/stderr handlers)
-  - `registry_api/` -- FastAPI app, SQLite db, Pydantic models, routes
+  - `registry_api/` -- FastAPI app, SQLite db, Pydantic models, routes, WebSocket event stream
   - `crawler/` -- filesystem crawler (see `src/pipeline/crawler/CLAUDE.md`)
+  - `events/` -- reference EventConsumer for WebSocket + REST catch-up consumption
   - `converter/` -- SAS-to-Parquet converter (placeholder)
 - `pipeline/` -- runtime config and scripts
   - `config.json` -- default pipeline configuration
@@ -46,6 +49,8 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Crawler uses a two-pass approach: (1) walk/parse/fingerprint/write manifests, (2) derive failed statuses then POST to registry
 - Config fields `dp_id_exclusions`, `crawl_manifest_dir`, and `crawler_version` control crawler behaviour
 - `ScanRoot` has `path`, `label`, and `target` fields; `target` (default `"packages"`) controls which subdirectory the crawler enters under each dpid during traversal
+- Event stream uses WebSocket for real-time broadcast + REST GET /events for catch-up; events are persisted in SQLite with monotonic sequence numbers
+- Events are emitted only for genuine state changes: delivery.created on first POST (not re-crawl), delivery.status_changed on qa_status transitions
 
 ## Boundaries
 
