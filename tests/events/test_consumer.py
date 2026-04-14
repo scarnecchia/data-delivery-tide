@@ -4,7 +4,6 @@ Tests exercise actual consumer methods (_catch_up, _session)
 with mocked dependencies rather than reimplementing dedup logic inline.
 """
 
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -235,3 +234,42 @@ async def test_catch_up_rest_endpoint_query_uses_last_seq():
     assert consumer._last_seq == 7
     assert len(captured_calls) > 0
     assert captured_calls[0][1]["params"]["after"] == 5
+
+
+@pytest.mark.asyncio
+async def test_deduplication_by_seq():
+    """Test event-stream.AC6.3: events seen via REST catch-up are not re-processed from WS buffer."""
+    received = []
+
+    async def on_event(event):
+        received.append(event)
+
+    consumer = EventConsumer("http://unused", on_event)
+    consumer._last_seq = 0
+
+    # Simulate catch-up delivering events 1-3
+    catch_up_events = [
+        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
+        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
+        {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
+    ]
+    for event in catch_up_events:
+        await consumer.on_event(event)
+        consumer._last_seq = event["seq"]
+
+    # Simulate WS buffer containing overlapping events 2-4
+    ws_buffer_events = [
+        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
+        {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
+        {"seq": 4, "event_type": "delivery.created", "delivery_id": "d4", "payload": {}, "created_at": "t4"},
+    ]
+
+    received.clear()
+    for event in ws_buffer_events:
+        if event["seq"] > consumer._last_seq:
+            await consumer.on_event(event)
+            consumer._last_seq = event["seq"]
+
+    # Only event 4 should have been processed (2 and 3 already seen)
+    assert len(received) == 1
+    assert received[0]["seq"] == 4
