@@ -489,6 +489,43 @@ class TestCrawl:
         assert first_fingerprint == second_fingerprint
 
 
+class TestLexiconSystemAC5Integration:
+    """lexicon-system.AC5.6 — Crawler POST payload includes lexicon_id and status."""
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_ac5_6_crawler_post_payload_includes_lexicon_id_and_status(
+        self, mock_post, delivery_tree, make_crawler_config
+    ):
+        """AC5.6: Crawler POST payload includes lexicon_id and status (not qa_status)."""
+        source_path, scan_root = delivery_tree(
+            dp_id="mkscnr",
+            request_id="soc_qar_wp001",
+            version_dir_name="soc_qar_wp001_mkscnr_v01",
+            qa_status="passed",
+            sas_files=[("dataset.sas7bdat", 2048)],
+        )
+
+        config = make_crawler_config(
+            scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Verify post_delivery was called
+        assert mock_post.called
+        call_args = mock_post.call_args[0]
+        payload = call_args[1]
+
+        # AC5.6: Payload must include lexicon_id and status, not qa_status
+        assert "lexicon_id" in payload
+        assert "status" in payload
+        assert "qa_status" not in payload
+
+        assert payload["lexicon_id"] == "soc.qar"
+        assert payload["status"] == "passed"
+
+
 class TestMain:
     """AC5.4 — Exit code on RegistryUnreachableError."""
 

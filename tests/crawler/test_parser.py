@@ -337,3 +337,204 @@ class TestDeriveStatuses:
         result = derive_statuses([], self._make_lexicon())
 
         assert result == []
+
+
+class TestLexiconSystemAC5:
+    """lexicon-system.AC5: Crawler generalisation using lexicon dir_map and hooks."""
+
+    def test_ac5_1_terminal_directory_in_dir_map_maps_to_correct_status(self):
+        """AC5.1: Terminal directory in dir_map maps to correct status."""
+        # Test with standard dir_map
+        path_passed = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc"
+        result_passed = parse_path(
+            path_passed,
+            scan_root="/requests/qa",
+            exclusions=set(),
+            dir_map={"msoc": "passed", "msoc_new": "pending"},
+        )
+        assert isinstance(result_passed, ParsedDelivery)
+        assert result_passed.status == "passed"
+
+        path_pending = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc_new"
+        result_pending = parse_path(
+            path_pending,
+            scan_root="/requests/qa",
+            exclusions=set(),
+            dir_map={"msoc": "passed", "msoc_new": "pending"},
+        )
+        assert isinstance(result_pending, ParsedDelivery)
+        assert result_pending.status == "pending"
+
+        # Test with custom dir_map
+        custom_dir_map = {"approved": "passed", "staging": "pending", "rejected": "failed"}
+        path_custom_approved = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/approved"
+        result_custom = parse_path(
+            path_custom_approved,
+            scan_root="/requests/qa",
+            exclusions=set(),
+            dir_map=custom_dir_map,
+        )
+        assert isinstance(result_custom, ParsedDelivery)
+        assert result_custom.status == "passed"
+
+    def test_ac5_2_terminal_directory_not_in_dir_map_produces_parse_error(self):
+        """AC5.2: Terminal directory not in dir_map produces ParseError."""
+        path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/invalid"
+        result = parse_path(
+            path,
+            scan_root="/requests/qa",
+            exclusions=set(),
+            dir_map={"msoc": "passed", "msoc_new": "pending"},
+        )
+
+        assert isinstance(result, ParseError)
+        assert "not in dir_map" in result.reason.lower()
+        assert "invalid" in result.reason
+        assert result.raw_path == path
+
+    def test_ac5_3_derivation_hook_called_when_set(self):
+        """AC5.3: Derivation hook is called when derive_hook is set."""
+        hook_called = []
+
+        def test_hook(deliveries, lexicon):
+            hook_called.append(True)
+            return deliveries
+
+        v1 = ParsedDelivery(
+            request_id="soc_qar_wp001",
+            project="soc",
+            request_type="qar",
+            workplan_id="wp001",
+            dp_id="mkscnr",
+            version="v01",
+            status="pending",
+            source_path="/path/to/v01/msoc_new",
+            scan_root="/requests/qa",
+        )
+
+        lexicon = Lexicon(
+            id="test.lexicon",
+            statuses=("pending", "passed", "failed"),
+            transitions={},
+            dir_map={"msoc": "passed", "msoc_new": "pending"},
+            actionable_statuses=("passed", "failed"),
+            metadata_fields={},
+            derive_hook=test_hook,
+        )
+
+        result = derive_statuses([v1], lexicon)
+
+        assert hook_called, "derive_hook was not called"
+        assert result == [v1]
+
+    def test_ac5_4_no_derivation_when_derive_hook_is_null(self):
+        """AC5.4: No derivation when derive_hook is null — inline fallback applies."""
+        v1 = ParsedDelivery(
+            request_id="soc_qar_wp001",
+            project="soc",
+            request_type="qar",
+            workplan_id="wp001",
+            dp_id="mkscnr",
+            version="v01",
+            status="pending",
+            source_path="/path/to/v01/msoc_new",
+            scan_root="/requests/qa",
+        )
+        v2 = ParsedDelivery(
+            request_id="soc_qar_wp001",
+            project="soc",
+            request_type="qar",
+            workplan_id="wp001",
+            dp_id="mkscnr",
+            version="v02",
+            status="pending",
+            source_path="/path/to/v02/msoc_new",
+            scan_root="/requests/qa",
+        )
+
+        lexicon = Lexicon(
+            id="test.lexicon",
+            statuses=("pending", "passed", "failed"),
+            transitions={},
+            dir_map={"msoc": "passed", "msoc_new": "pending"},
+            actionable_statuses=("passed", "failed"),
+            metadata_fields={},
+            derive_hook=None,  # No hook set
+        )
+
+        result = derive_statuses([v1, v2], lexicon)
+
+        # Inline fallback should mark v1 as failed (superseded by v2)
+        assert len(result) == 2
+        v1_result = next(d for d in result if d.version == "v01")
+        v2_result = next(d for d in result if d.version == "v02")
+        assert v1_result.status == "failed"
+        assert v2_result.status == "pending"
+
+    def test_ac5_5_qa_hook_marks_superseded_pending_as_failed(self):
+        """AC5.5: QA hook (inline fallback) marks superseded pending as failed."""
+        # This test verifies the inline fallback logic — the hook module will be
+        # tested in Phase 6. Here we just verify that with derive_hook=None,
+        # the fallback logic correctly marks v1 as failed when superseded.
+        v1 = ParsedDelivery(
+            request_id="soc_qar_wp001",
+            project="soc",
+            request_type="qar",
+            workplan_id="wp001",
+            dp_id="mkscnr",
+            version="v01",
+            status="pending",
+            source_path="/path/to/v01/msoc_new",
+            scan_root="/requests/qa",
+        )
+        v2 = ParsedDelivery(
+            request_id="soc_qar_wp001",
+            project="soc",
+            request_type="qar",
+            workplan_id="wp001",
+            dp_id="mkscnr",
+            version="v02",
+            status="pending",
+            source_path="/path/to/v02/msoc_new",
+            scan_root="/requests/qa",
+        )
+
+        lexicon = Lexicon(
+            id="test.lexicon",
+            statuses=("pending", "passed", "failed"),
+            transitions={},
+            dir_map={"msoc": "passed", "msoc_new": "pending"},
+            actionable_statuses=("passed", "failed"),
+            metadata_fields={},
+            derive_hook=None,
+        )
+
+        result = derive_statuses([v1, v2], lexicon)
+
+        # Verify the inline fallback marks v1 as failed
+        v1_result = next(d for d in result if d.version == "v01")
+        assert v1_result.status == "failed"
+        assert v1_result.dp_id == "mkscnr"
+        assert v1_result.workplan_id == "wp001"
+
+    @staticmethod
+    def _make_test_delivery(
+        request_id="soc_qar_wp001",
+        workplan_id="wp001",
+        dp_id="mkscnr",
+        version="v01",
+        status="pending",
+        source_path="/path/to/delivery/msoc_new",
+        scan_root="/requests/qa",
+    ):
+        return ParsedDelivery(
+            request_id=request_id,
+            project="soc",
+            request_type="qar",
+            workplan_id=workplan_id,
+            dp_id=dp_id,
+            version=version,
+            status=status,
+            source_path=source_path,
+            scan_root=scan_root,
+        )
