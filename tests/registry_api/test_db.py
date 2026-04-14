@@ -11,6 +11,9 @@ from pipeline.registry_api.db import (
     list_deliveries,
     get_actionable,
     update_delivery,
+    insert_event,
+    get_events_after,
+    delivery_exists,
 )
 
 
@@ -707,3 +710,233 @@ class TestUpdateDelivery:
         assert result is not None
         assert result["delivery_id"] == delivery_id
         assert result["qa_status"] == original_qa_status
+
+
+class TestInsertEvent:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_insert_event_creates_event_with_all_fields(self, memory_db):
+        """Test insert_event creates an event with correct fields."""
+        payload = {"delivery_id": "abc123", "qa_status": "passed"}
+
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload=payload,
+        )
+
+        assert result["event_type"] == "delivery.created"
+        assert result["delivery_id"] == "abc123"
+        assert result["payload"] == payload
+        assert result["seq"] is not None
+        assert isinstance(result["seq"], int)
+        assert result["created_at"] is not None
+
+    def test_insert_event_ac4_1_monotonic_sequence(self, memory_db):
+        """Test event-stream.AC4.1: Each event has seq higher than all previous events."""
+        payload1 = {"status": "created"}
+        payload2 = {"status": "updated"}
+
+        result1 = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="id-1",
+            payload=payload1,
+        )
+        result2 = insert_event(
+            memory_db,
+            event_type="delivery.status_changed",
+            delivery_id="id-1",
+            payload=payload2,
+        )
+
+        assert result2["seq"] > result1["seq"]
+
+    def test_insert_event_ac4_2_payload_matches_broadcast(self, memory_db):
+        """Test event-stream.AC4.2: Event payload matches broadcast payload."""
+        payload = {"delivery_id": "abc123", "request_id": "req-456", "qa_status": "passed"}
+
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload=payload,
+        )
+
+        assert result["payload"] == payload
+
+    def test_insert_event_accepts_delivery_created(self, memory_db):
+        """Test insert_event accepts 'delivery.created' event type."""
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="id-1",
+            payload={},
+        )
+
+        assert result["event_type"] == "delivery.created"
+
+    def test_insert_event_accepts_delivery_status_changed(self, memory_db):
+        """Test insert_event accepts 'delivery.status_changed' event type."""
+        result = insert_event(
+            memory_db,
+            event_type="delivery.status_changed",
+            delivery_id="id-1",
+            payload={},
+        )
+
+        assert result["event_type"] == "delivery.status_changed"
+
+    def test_insert_event_rejects_invalid_event_type(self, memory_db):
+        """Test insert_event with invalid event_type raises sqlite3.IntegrityError (CHECK constraint)."""
+        with pytest.raises(sqlite3.IntegrityError):
+            insert_event(
+                memory_db,
+                event_type="invalid.event",
+                delivery_id="id-1",
+                payload={},
+            )
+
+    def test_insert_event_ac4_3_persists_without_clients(self, memory_db):
+        """Test event-stream.AC4.3: Events persist even if no WS clients connected."""
+        payload = {"test": "data"}
+
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="id-1",
+            payload=payload,
+        )
+
+        # Verify it's actually persisted by fetching it back
+        cursor = memory_db.cursor()
+        cursor.execute("SELECT * FROM events WHERE seq = ?", (result["seq"],))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row["delivery_id"] == "id-1"
+
+
+class TestGetEventsAfter:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    @pytest.fixture
+    def sample_events(self, memory_db):
+        """Insert sample events for testing."""
+        events = []
+        for i in range(1, 4):
+            result = insert_event(
+                memory_db,
+                event_type="delivery.created",
+                delivery_id=f"id-{i}",
+                payload={"num": i},
+            )
+            events.append(result)
+        return events
+
+    def test_get_events_after_ac5_1_returns_only_after_seq(self, memory_db, sample_events):
+        """Test event-stream.AC5.1: Returns only events with seq > after_seq, ordered ASC."""
+        results = get_events_after(memory_db, after_seq=1)
+
+        assert len(results) == 2
+        assert results[0]["seq"] == sample_events[1]["seq"]
+        assert results[1]["seq"] == sample_events[2]["seq"]
+
+    def test_get_events_after_ac5_2_respects_limit(self, memory_db):
+        """Test event-stream.AC5.2: Returns at most limit events."""
+        # Insert 5 events
+        for i in range(5):
+            insert_event(memory_db, "delivery.created", f"id-{i}", {})
+
+        results = get_events_after(memory_db, after_seq=0, limit=2)
+
+        assert len(results) == 2
+
+    def test_get_events_after_ordered_ascending(self, memory_db, sample_events):
+        """Test get_events_after returns results ordered by seq ASC."""
+        results = get_events_after(memory_db, after_seq=0)
+
+        seqs = [r["seq"] for r in results]
+        assert seqs == sorted(seqs)
+
+    def test_get_events_after_limit_capped_at_1000(self, memory_db):
+        """Test get_events_after caps limit at 1000."""
+        # Insert 5 events
+        for i in range(5):
+            insert_event(memory_db, "delivery.created", f"id-{i}", {})
+
+        # Request limit=2000, should behave same as limit=1000 (which is still > 5)
+        results = get_events_after(memory_db, after_seq=0, limit=2000)
+
+        assert len(results) == 5
+
+    def test_get_events_after_empty_result(self, memory_db, sample_events):
+        """Test get_events_after returns empty list when no events match."""
+        results = get_events_after(memory_db, after_seq=999)
+
+        assert results == []
+
+    def test_get_events_after_payload_deserialized(self, memory_db):
+        """Test get_events_after returns payload as dict, not JSON string."""
+        payload = {"delivery_id": "abc", "status": "passed"}
+        insert_event(memory_db, "delivery.created", "id-1", payload)
+
+        results = get_events_after(memory_db, after_seq=0)
+
+        assert len(results) == 1
+        assert results[0]["payload"] == payload
+        assert isinstance(results[0]["payload"], dict)
+
+
+class TestDeliveryExists:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_delivery_exists_returns_true_for_existing_delivery(self, memory_db):
+        """Test delivery_exists returns True for a delivery that has been upserted."""
+        data = {
+            "source_path": "/test/source",
+            "request_id": "req-123",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-456",
+            "dp_id": "dp-789",
+            "version": "v01",
+            "scan_root": "/scan",
+            "qa_status": "pending",
+            "fingerprint": "hash-abc",
+        }
+
+        upsert_delivery(memory_db, data)
+        delivery_id = make_delivery_id("/test/source")
+
+        result = delivery_exists(memory_db, delivery_id)
+
+        assert result is True
+
+    def test_delivery_exists_returns_false_for_nonexistent_delivery(self, memory_db):
+        """Test delivery_exists returns False for a delivery_id that does not exist."""
+        result = delivery_exists(memory_db, "nonexistent-id")
+
+        assert result is False
