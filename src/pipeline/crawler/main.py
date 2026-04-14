@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from itertools import groupby
 
 from pipeline.config import settings
 from pipeline.json_logging import get_logger
@@ -10,6 +11,7 @@ from pipeline.crawler.parser import parse_path, derive_statuses, ParsedDelivery,
 from pipeline.crawler.fingerprint import compute_fingerprint, FileEntry
 from pipeline.crawler.manifest import build_manifest, build_error_manifest
 from pipeline.crawler.http import post_delivery, RegistryUnreachableError
+from pipeline.lexicons import load_all_lexicons
 
 
 def inventory_files(source_path: str) -> list[FileEntry]:
@@ -107,12 +109,21 @@ def crawl(config, logger) -> int:
     Two-pass approach:
     1. Walk, parse, inventory, fingerprint, write manifests for all deliveries
     2. Derive failed statuses (pending deliveries superseded by newer versions),
-       then POST all deliveries to the registry API with final qa_status values
+       then POST all deliveries to the registry API with final status values
     """
     manifest_dir = config.crawl_manifest_dir
     error_dir = os.path.join(manifest_dir, "errors")
     os.makedirs(manifest_dir, exist_ok=True)
     os.makedirs(error_dir, exist_ok=True)
+
+    # Load lexicons and build mapping
+    lexicons = load_all_lexicons(config.lexicons_dir)
+    root_lexicon_map = {}
+    valid_terminals = set()
+    for root in config.scan_roots:
+        lex = lexicons[root.lexicon]
+        root_lexicon_map[root.path] = (root.lexicon, lex)
+        valid_terminals.update(lex.dir_map.keys())
 
     exclusions = set(config.dp_id_exclusions)
     # Single timestamp for the entire crawl run — all manifests from this run
@@ -127,16 +138,18 @@ def crawl(config, logger) -> int:
                 extra={"scan_root": root.path},
             )
 
-    candidates = walk_roots(config.scan_roots, logger)
+    candidates = walk_roots(config.scan_roots, valid_terminals, logger)
     logger.info(f"found {len(candidates)} delivery candidates")
 
     # --- Pass 1: Parse, inventory, fingerprint, write manifests ---
     # Collect successful deliveries with their file data for pass 2
     parsed_deliveries: list[ParsedDelivery] = []
     delivery_data: dict[str, tuple[list[FileEntry], str, dict]] = {}  # source_path -> (files, fingerprint, manifest)
+    delivery_lexicons: dict[str, tuple[str, object]] = {}  # source_path -> (lexicon_id, lexicon)
 
     for source_path, scan_root in candidates:
-        result = parse_path(source_path, scan_root, exclusions)
+        lexicon_id, lexicon = root_lexicon_map[scan_root]
+        result = parse_path(source_path, scan_root, exclusions, lexicon.dir_map)
 
         if result is None:
             # Excluded dp_id — skip silently, no error manifest
@@ -159,7 +172,7 @@ def crawl(config, logger) -> int:
         files = inventory_files(source_path)
         fingerprint = compute_fingerprint(files)
         manifest = build_manifest(
-            result, files, fingerprint, config.crawler_version, now,
+            result, files, fingerprint, config.crawler_version, now, lexicon_id,
         )
 
         # Write crawl manifest
@@ -170,14 +183,30 @@ def crawl(config, logger) -> int:
 
         parsed_deliveries.append(result)
         delivery_data[result.source_path] = (files, fingerprint, manifest)
+        delivery_lexicons[result.source_path] = (lexicon_id, lexicon)
 
-    # --- Pass 2: Derive failed statuses, POST to registry ---
-    resolved_deliveries = derive_qa_statuses(parsed_deliveries)
+    # --- Pass 2: Derive statuses by lexicon, POST to registry ---
+    # Build lexicon lookup by ID for derivation
+    lexicon_by_id = {lid: lex for lid, lex in root_lexicon_map.values()}
+
+    # Group deliveries by lexicon_id for derivation
+    deliveries_by_lexicon: dict[str, list[ParsedDelivery]] = {}
+    for delivery in parsed_deliveries:
+        lex_id, _ = delivery_lexicons[delivery.source_path]
+        deliveries_by_lexicon.setdefault(lex_id, []).append(delivery)
+
+    # Apply derivation per lexicon
+    resolved_deliveries = []
+    for lex_id, group_deliveries in deliveries_by_lexicon.items():
+        lex = lexicon_by_id[lex_id]
+        resolved_deliveries.extend(derive_statuses(group_deliveries, lex))
+
     processed = 0
 
     for delivery in resolved_deliveries:
         files, fingerprint, manifest = delivery_data[delivery.source_path]
         delivery_id = manifest["delivery_id"]
+        lexicon_id, _ = delivery_lexicons[delivery.source_path]
 
         payload = {
             "request_id": delivery.request_id,
@@ -187,7 +216,8 @@ def crawl(config, logger) -> int:
             "dp_id": delivery.dp_id,
             "version": delivery.version,
             "scan_root": delivery.scan_root,
-            "qa_status": delivery.qa_status,  # may be "failed" after derivation
+            "lexicon_id": lexicon_id,
+            "status": delivery.status,
             "source_path": delivery.source_path,
             "file_count": len(files),
             "total_bytes": sum(f["size_bytes"] for f in files),
@@ -196,7 +226,7 @@ def crawl(config, logger) -> int:
         post_delivery(config.registry_api_url, payload)
 
         logger.info(
-            f"processed delivery {delivery_id[:12]}... (qa_status={delivery.qa_status})",
+            f"processed delivery {delivery_id[:12]}... (status={delivery.status})",
             extra={
                 "scan_root": delivery.scan_root,
                 "source_path": delivery.source_path,
