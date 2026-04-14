@@ -105,6 +105,32 @@ pytest
 uv run pytest
 ```
 
+## Scheduling with cron
+
+Create a wrapper script that loads credentials from a `.env` file:
+
+```bash
+#!/bin/bash
+# /opt/pipeline/scripts/run_crawler.sh
+set -a
+source /etc/pipeline/.env
+set +a
+exec /path/to/python -m pipeline.crawler.main
+```
+
+The `.env` file should contain at minimum:
+
+```
+REGISTRY_TOKEN=<token>
+PIPELINE_CONFIG=/path/to/config.json
+```
+
+Lock down the `.env` file permissions (`chmod 600 /etc/pipeline/.env`) since it contains the bearer token. Then add a cron entry:
+
+```cron
+*/30 * * * * /opt/pipeline/scripts/run_crawler.sh >> /var/log/crawler.log 2>&1
+```
+
 ## For consumers of the output
 
 The pipeline produces two things downstream systems can use:
