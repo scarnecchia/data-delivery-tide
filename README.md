@@ -21,7 +21,7 @@ pip install -e ".[registry,dev]"
 uv pip install -e ".[registry,dev]"
 ```
 
-The `registry` extra installs FastAPI and Uvicorn. The `converter` extra installs pyreadstat and pyarrow for SAS-to-Parquet conversion. The `dev` extra adds pytest and httpx.
+The `registry` extra installs FastAPI and Uvicorn. The `converter` extra installs pyreadstat and pyarrow for SAS-to-Parquet conversion. The `consumer` extra installs websockets and httpx for event stream consumption. The `dev` extra adds pytest and httpx.
 
 ## Configuration
 
@@ -78,3 +78,23 @@ Converted SAS7BDAT data lands under the configured `output_root`. File paths mir
 The registry API exposes delivery metadata over HTTP. Each delivery has a deterministic ID (SHA-256 of the source path), QA status (`pending`, `passed`, or `failed`), and the metadata parsed from the directory structure.
 
 Query the API at the configured `registry_api_url` (default `http://localhost:8000`). Standard HTTP — use `requests`, `httpx`, `curl`, or whatever your stack prefers.
+
+### 3. Event stream (optional)
+
+Instead of polling the registry API, you can subscribe to real-time delivery lifecycle events via WebSocket. The API broadcasts `delivery.created` and `delivery.status_changed` events to all connected clients at `/ws/events`. A REST catch-up endpoint (`GET /events?after=<seq>`) lets you retrieve any events missed during a disconnection.
+
+A reference consumer is included at `src/pipeline/events/consumer.py`. It handles WebSocket streaming, REST catch-up, sequence-based deduplication, and automatic reconnection with backoff. To use it:
+
+```bash
+pip install -e ".[consumer]"
+```
+
+```python
+from pipeline.events.consumer import EventConsumer
+
+async def handle_event(event: dict) -> None:
+    print(f"{event['event_type']}: {event['delivery_id']}")
+
+consumer = EventConsumer("http://localhost:8000", on_event=handle_event)
+await consumer.run()
+```
