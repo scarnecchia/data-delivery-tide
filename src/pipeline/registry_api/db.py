@@ -48,9 +48,10 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
                 dp_id                TEXT NOT NULL,
                 version              TEXT NOT NULL,
                 scan_root            TEXT NOT NULL,
-                qa_status            TEXT NOT NULL CHECK (qa_status IN ('pending', 'passed', 'failed')),
+                lexicon_id           TEXT NOT NULL,
+                status               TEXT NOT NULL,
+                metadata             TEXT DEFAULT '{}',
                 first_seen_at        TEXT NOT NULL,
-                qa_passed_at         TEXT,
                 parquet_converted_at TEXT,
                 file_count           INTEGER,
                 total_bytes          INTEGER,
@@ -77,13 +78,16 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
 
         # Create indexes
         cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_actionable ON deliveries (qa_status, parquet_converted_at)"
+            "CREATE INDEX IF NOT EXISTS idx_actionable ON deliveries (lexicon_id, status, parquet_converted_at)"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_dp_wp ON deliveries (dp_id, workplan_id)"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_request_id ON deliveries (request_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lexicon ON deliveries (lexicon_id)"
         )
 
         # Enable WAL mode only for file-based databases
@@ -167,9 +171,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             dp_id,
             version,
             scan_root,
-            qa_status,
+            lexicon_id,
+            status,
+            metadata,
             first_seen_at,
-            qa_passed_at,
             parquet_converted_at,
             file_count,
             total_bytes,
@@ -177,7 +182,7 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             output_path,
             fingerprint,
             last_updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(delivery_id) DO UPDATE SET
             request_id = excluded.request_id,
             project = excluded.project,
@@ -186,9 +191,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             dp_id = excluded.dp_id,
             version = excluded.version,
             scan_root = excluded.scan_root,
-            qa_status = excluded.qa_status,
+            lexicon_id = excluded.lexicon_id,
+            status = excluded.status,
+            metadata = excluded.metadata,
             first_seen_at = COALESCE(deliveries.first_seen_at, excluded.first_seen_at),
-            qa_passed_at = excluded.qa_passed_at,
             parquet_converted_at = excluded.parquet_converted_at,
             file_count = excluded.file_count,
             total_bytes = excluded.total_bytes,
@@ -208,9 +214,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             data.get("dp_id"),
             data.get("version"),
             data.get("scan_root"),
-            data.get("qa_status"),
+            data.get("lexicon_id"),
+            data.get("status"),
+            data.get("metadata", "{}"),
             now,
-            data.get("qa_passed_at"),
             data.get("parquet_converted_at"),
             data.get("file_count"),
             data.get("total_bytes"),
@@ -252,7 +259,7 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
     List deliveries with optional filtering.
 
     Supported filter keys:
-    - dp_id, project, request_type, workplan_id, request_id, qa_status, scan_root: exact match with =
+    - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match with =
     - converted: boolean, if True: parquet_converted_at IS NOT NULL, if False: IS NULL
     - version: if "latest", returns highest version per (dp_id, workplan_id); otherwise exact match
 
@@ -271,7 +278,7 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
     where_clauses = []
     params = []
 
-    exact_match_fields = ["dp_id", "project", "request_type", "workplan_id", "request_id", "qa_status", "scan_root"]
+    exact_match_fields = ["dp_id", "project", "request_type", "workplan_id", "request_id", "status", "lexicon_id", "scan_root"]
 
     for field in exact_match_fields:
         if field in filters:
@@ -304,22 +311,40 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def get_actionable(conn: sqlite3.Connection) -> list[dict]:
+def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]) -> list[dict]:
     """
-    Get actionable deliveries (passed QA but not yet converted to Parquet).
+    Get actionable deliveries matching per-lexicon actionable statuses.
 
-    Returns all deliveries where qa_status='passed' AND parquet_converted_at IS NULL.
+    Accepts a mapping of lexicon_id → list of actionable statuses. Returns all deliveries
+    where (lexicon_id matches AND status in that lexicon's actionable_statuses)
+    AND parquet_converted_at IS NULL.
 
     Args:
         conn: sqlite3.Connection
+        lexicon_actionable: dict mapping lexicon_id to list of actionable status values
 
     Returns:
         list: List of actionable delivery dicts
     """
     cursor = conn.cursor()
+
+    if not lexicon_actionable:
+        return []
+
+    conditions = []
+    params = []
+    for lex_id, statuses in lexicon_actionable.items():
+        placeholders = ", ".join("?" for _ in statuses)
+        conditions.append(f"(lexicon_id = ? AND status IN ({placeholders}))")
+        params.append(lex_id)
+        params.extend(statuses)
+
+    where = " OR ".join(conditions)
     cursor.execute(
-        "SELECT * FROM deliveries WHERE qa_status = 'passed' AND parquet_converted_at IS NULL"
+        f"SELECT * FROM deliveries WHERE ({where}) AND parquet_converted_at IS NULL",
+        params,
     )
+
     rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
@@ -328,7 +353,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     """
     Update a delivery by ID.
 
-    Allowed update keys: parquet_converted_at, output_path, qa_status, qa_passed_at.
+    Allowed update keys: parquet_converted_at, output_path, status, metadata.
 
     If updates is empty, skips UPDATE and returns the current row via SELECT.
 
@@ -349,7 +374,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
         return dict(row) if row else None
 
     # Allowed update fields
-    allowed_fields = {"parquet_converted_at", "output_path", "qa_status", "qa_passed_at"}
+    allowed_fields = {"parquet_converted_at", "output_path", "status", "metadata"}
 
     # Filter updates to only allowed fields
     update_dict = {k: v for k, v in updates.items() if k in allowed_fields}
