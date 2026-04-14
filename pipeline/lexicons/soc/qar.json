@@ -1,0 +1,9 @@
+{
+  "extends": "soc._base",
+  "metadata_fields": {
+    "passed_at": {
+      "type": "datetime",
+      "set_on": "passed"
+    }
+  }
+}
