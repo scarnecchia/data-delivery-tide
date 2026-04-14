@@ -3,6 +3,8 @@ import re
 from dataclasses import dataclass, replace
 from itertools import groupby
 
+from pipeline.lexicons.models import Lexicon
+
 
 @dataclass(frozen=True)
 class ParsedDelivery:
@@ -124,7 +126,7 @@ def _version_sort_key(delivery: ParsedDelivery) -> str:
 
 def derive_statuses(
     deliveries: list[ParsedDelivery],
-    lexicon,
+    lexicon: Lexicon,
 ) -> list[ParsedDelivery]:
     """Apply lexicon derivation hook if defined.
 

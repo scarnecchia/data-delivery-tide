@@ -19,13 +19,13 @@ class TestWalkRoots:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
         )
         pending_path, _ = delivery_tree(
             dp_id="nsdp",
             request_id="soc_qar_wp002",
             version_dir_name="soc_qar_wp002_nsdp_v01",
-            qa_status="pending",
+            status="pending",
         )
 
         scan_roots = [ScanRoot(path=scan_root, label="qa", lexicon="soc.qar")]
@@ -232,7 +232,7 @@ class TestInventoryFiles:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[
                 ("dataset1.sas7bdat", 1024),
                 ("dataset2.sas7bdat", 2048),
@@ -262,7 +262,7 @@ class TestInventoryFiles:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[],  # no files
         )
 
@@ -283,7 +283,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -357,7 +357,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -425,7 +425,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -465,7 +465,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -501,7 +501,7 @@ class TestLexiconSystemAC5Integration:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 2048)],
         )
 

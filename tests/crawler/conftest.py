@@ -14,7 +14,7 @@ def delivery_tree(tmp_path):
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
         )
         # Creates: tmp_path/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc/
     """
@@ -25,10 +25,10 @@ def delivery_tree(tmp_path):
         dp_id,
         request_id,
         version_dir_name,
-        qa_status="passed",
+        status="passed",
         sas_files=None,
     ):
-        terminal = "msoc" if qa_status == "passed" else "msoc_new"
+        terminal = "msoc" if status == "passed" else "msoc_new"
 
         delivery_dir = scan_root / dp_id / "packages" / request_id / version_dir_name / terminal
         delivery_dir.mkdir(parents=True)

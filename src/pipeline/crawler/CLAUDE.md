@@ -35,7 +35,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 - delivery_id = SHA-256 of source_path (computed in manifest.py, must match registry_api convention)
 - fingerprint = "sha256:<hex>" computed from sorted (filename, size_bytes, modified_at) tuples; "sha256:<hash_of_empty>" for empty directories
 - parse_path returns ParsedDelivery | ParseError | None (None = excluded dp_id, skip silently)
-- derive_qa_statuses: groups by (workplan_id, dp_id), marks all pending deliveries except the highest version as "failed"
+- derive_statuses: groups by (workplan_id, dp_id), marks all pending deliveries except the highest version as "failed". When lexicon.derive_hook is set, delegates to the hook function instead.
 - Version directory pattern: `<name>_<dp_id>_v<digits>` where dp_id is 3-8 alphanumeric chars
 - http.post_delivery retries on 5xx/network errors with backoff (2, 4, 8 seconds), raises RegistryUnreachableError on exhaustion, raises RegistryClientError on 4xx (no retry)
 

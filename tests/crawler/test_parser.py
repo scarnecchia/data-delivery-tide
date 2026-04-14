@@ -516,25 +516,3 @@ class TestLexiconSystemAC5:
         assert v1_result.status == "failed"
         assert v1_result.dp_id == "mkscnr"
         assert v1_result.workplan_id == "wp001"
-
-    @staticmethod
-    def _make_test_delivery(
-        request_id="soc_qar_wp001",
-        workplan_id="wp001",
-        dp_id="mkscnr",
-        version="v01",
-        status="pending",
-        source_path="/path/to/delivery/msoc_new",
-        scan_root="/requests/qa",
-    ):
-        return ParsedDelivery(
-            request_id=request_id,
-            project="soc",
-            request_type="qar",
-            workplan_id=workplan_id,
-            dp_id=dp_id,
-            version=version,
-            status=status,
-            source_path=source_path,
-            scan_root=scan_root,
-        )

@@ -3,7 +3,6 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from itertools import groupby
 
 from pipeline.config import settings
 from pipeline.json_logging import get_logger
@@ -91,7 +90,7 @@ def walk_roots(
                     if not version_entry.is_dir(follow_symlinks=False):
                         continue
 
-                    # Level 5: check for msoc or msoc_new only
+                    # Level 5: check for terminal directories
                     try:
                         terminal_entries = list(os.scandir(version_entry.path))
                     except OSError:
