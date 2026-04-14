@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from pipeline.config import settings
 from pipeline.json_logging import get_logger
-from pipeline.crawler.parser import parse_path, derive_qa_statuses, ParsedDelivery, ParseError
+from pipeline.crawler.parser import parse_path, derive_statuses, ParsedDelivery, ParseError
 from pipeline.crawler.fingerprint import compute_fingerprint, FileEntry
 from pipeline.crawler.manifest import build_manifest, build_error_manifest
 from pipeline.crawler.http import post_delivery, RegistryUnreachableError
@@ -30,11 +30,17 @@ def inventory_files(source_path: str) -> list[FileEntry]:
     return files
 
 
-def walk_roots(scan_roots: list, logger=None) -> list[tuple[str, str]]:
-    """Find all msoc/msoc_new directories under configured scan roots.
+def walk_roots(
+    scan_roots: list,
+    valid_terminals: set[str],
+    logger=None,
+) -> list[tuple[str, str]]:
+    """Find all terminal directories under configured scan roots.
 
     Descends exactly 5 levels following the canonical structure:
-    scan_root / <dpid> / <target> / <request_id> / <version_dir> / {msoc|msoc_new}
+    scan_root / <dpid> / <target> / <request_id> / <version_dir> / <terminal>
+
+    valid_terminals: set of terminal directory names to match.
 
     Returns list of (source_path, scan_root_path) tuples.
     Skips non-existent scan roots.
@@ -89,7 +95,7 @@ def walk_roots(scan_roots: list, logger=None) -> list[tuple[str, str]]:
                     except OSError:
                         continue
                     for terminal_entry in terminal_entries:
-                        if terminal_entry.is_dir(follow_symlinks=False) and terminal_entry.name in ("msoc", "msoc_new"):
+                        if terminal_entry.is_dir(follow_symlinks=False) and terminal_entry.name in valid_terminals:
                             results.append((terminal_entry.path, root_path))
 
     return results
