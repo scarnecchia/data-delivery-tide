@@ -28,7 +28,7 @@ class TestWalkRoots:
             qa_status="pending",
         )
 
-        scan_roots = [ScanRoot(path=scan_root, label="qa")]
+        scan_roots = [ScanRoot(path=scan_root, label="qa", lexicon="soc.qar")]
         results = walk_roots(scan_roots)
 
         assert len(results) == 2
@@ -49,8 +49,8 @@ class TestWalkRoots:
         v2_path.mkdir(parents=True)
 
         scan_roots = [
-            ScanRoot(path=str(scan_root1), label="qa"),
-            ScanRoot(path=str(scan_root2), label="qm"),
+            ScanRoot(path=str(scan_root1), label="qa", lexicon="soc.qar"),
+            ScanRoot(path=str(scan_root2), label="qm", lexicon="soc.qar"),
         ]
         results = walk_roots(scan_roots)
 
@@ -68,8 +68,8 @@ class TestWalkRoots:
         missing_root = tmp_path / "nonexistent"
 
         scan_roots = [
-            ScanRoot(path=str(existing_root), label="qa"),
-            ScanRoot(path=str(missing_root), label="missing"),
+            ScanRoot(path=str(existing_root), label="qa", lexicon="soc.qar"),
+            ScanRoot(path=str(missing_root), label="missing", lexicon="soc.qar"),
         ]
         results = walk_roots(scan_roots)
 
@@ -86,7 +86,7 @@ class TestWalkRoots:
         compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
         results = walk_roots(scan_roots)
 
         # Result should be empty — the msoc under 'compare' should not be discovered
@@ -101,7 +101,7 @@ class TestWalkRoots:
         msoc_wrong_depth = scan_root / "mkscnr" / "msoc"
         msoc_wrong_depth.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
         results = walk_roots(scan_roots)
 
         # Result should be empty
@@ -116,7 +116,7 @@ class TestWalkRoots:
         msoc_nested = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "subdir" / "msoc"
         msoc_nested.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
         results = walk_roots(scan_roots)
 
         # Result should be empty
@@ -134,7 +134,7 @@ class TestWalkRoots:
         dpid2_msoc = scan_root / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc"
         dpid2_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
         results = walk_roots(scan_roots)
 
         # Both should be discovered
@@ -155,7 +155,7 @@ class TestWalkRoots:
         v2_msoc_new = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc_new"
         v2_msoc_new.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
         results = walk_roots(scan_roots)
 
         # Both should be discovered
@@ -174,7 +174,7 @@ class TestWalkRoots:
         dpid_dir.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
         results = walk_roots(scan_roots, logger)
 
         # Assert warning was logged
@@ -197,7 +197,7 @@ class TestWalkRoots:
         msoc.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
         results = walk_roots(scan_roots, logger)
 
         # Assert warning was NOT logged
@@ -215,7 +215,7 @@ class TestWalkRoots:
         compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="compare")]
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="compare")]
         results = walk_roots(scan_roots)
 
         # Should discover msoc under custom target

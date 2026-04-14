@@ -68,6 +68,7 @@ def make_crawler_config(tmp_path):
             ScanRoot(
                 path=sr["path"],
                 label=sr.get("label", "default"),
+                lexicon=sr.get("lexicon", "soc.qar"),
                 target=sr.get("target", "packages"),
             )
             for sr in config_dict["scan_roots"]
@@ -84,6 +85,7 @@ def make_crawler_config(tmp_path):
             dp_id_exclusions=config_dict["dp_id_exclusions"],
             crawl_manifest_dir=config_dict["crawl_manifest_dir"],
             crawler_version=config_dict["crawler_version"],
+            lexicons_dir=str(tmp_path / "lexicons"),
         )
 
     return _make
