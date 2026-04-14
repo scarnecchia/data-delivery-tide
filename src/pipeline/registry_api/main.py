@@ -1,7 +1,7 @@
 # pattern: Imperative Shell
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from pipeline.config import settings
 from pipeline.registry_api.db import init_db
@@ -37,6 +37,8 @@ async def websocket_events(websocket: WebSocket):
     try:
         while True:
             await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
     finally:
         manager.disconnect(websocket)
 
