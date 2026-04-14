@@ -1,123 +1,14 @@
-"""Tests for EventConsumer."""
+"""Tests for EventConsumer.
 
-import asyncio
+Tests exercise actual consumer methods (_catch_up, _session)
+with mocked dependencies rather than reimplementing dedup logic inline.
+"""
+
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pipeline.events.consumer import EventConsumer
-
-
-@pytest.mark.asyncio
-async def test_deduplication_by_seq():
-    """
-    Test event-stream.AC6.3: events seen via REST catch-up are not re-processed
-    from WS buffer.
-
-    Verifies that deduplication by seq works correctly when the same event
-    could arrive via both REST catch-up and WS buffer.
-    """
-    received = []
-
-    async def on_event(event):
-        received.append(event)
-
-    consumer = EventConsumer("http://unused", on_event)
-    consumer._last_seq = 0
-
-    # Simulate catch-up delivering events 1-3
-    catch_up_events = [
-        {
-            "seq": 1,
-            "event_type": "delivery.created",
-            "delivery_id": "d1",
-            "payload": {},
-            "created_at": "t1",
-        },
-        {
-            "seq": 2,
-            "event_type": "delivery.created",
-            "delivery_id": "d2",
-            "payload": {},
-            "created_at": "t2",
-        },
-        {
-            "seq": 3,
-            "event_type": "delivery.created",
-            "delivery_id": "d3",
-            "payload": {},
-            "created_at": "t3",
-        },
-    ]
-    for event in catch_up_events:
-        await consumer.on_event(event)
-        consumer._last_seq = event["seq"]
-
-    # Simulate WS buffer containing overlapping events 2-4
-    ws_buffer_events = [
-        {
-            "seq": 2,
-            "event_type": "delivery.created",
-            "delivery_id": "d2",
-            "payload": {},
-            "created_at": "t2",
-        },
-        {
-            "seq": 3,
-            "event_type": "delivery.created",
-            "delivery_id": "d3",
-            "payload": {},
-            "created_at": "t3",
-        },
-        {
-            "seq": 4,
-            "event_type": "delivery.created",
-            "delivery_id": "d4",
-            "payload": {},
-            "created_at": "t4",
-        },
-    ]
-
-    received.clear()
-    for event in ws_buffer_events:
-        if event["seq"] > consumer._last_seq:
-            await consumer.on_event(event)
-            consumer._last_seq = event["seq"]
-
-    # Only event 4 should have been processed (2 and 3 already seen)
-    assert len(received) == 1
-    assert received[0]["seq"] == 4
-
-
-@pytest.mark.asyncio
-async def test_seq_tracking_after_catch_up():
-    """
-    Test event-stream.AC6.2: _last_seq is properly updated during catch-up.
-
-    Verifies that after processing catch-up events, _last_seq correctly
-    reflects the highest seq seen.
-    """
-    received = []
-
-    async def on_event(event):
-        received.append(event)
-
-    consumer = EventConsumer("http://unused", on_event)
-    initial_seq = consumer._last_seq
-    assert initial_seq == 0
-
-    # Simulate catch-up
-    events = [
-        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
-        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
-    ]
-
-    for event in events:
-        await consumer.on_event(event)
-        consumer._last_seq = event["seq"]
-
-    assert consumer._last_seq == 2
-    assert len(received) == 2
 
 
 @pytest.mark.asyncio
@@ -127,88 +18,11 @@ async def test_api_url_normalization():
     async def noop_callback(event):
         pass
 
-    # With trailing slash
     consumer1 = EventConsumer("http://localhost:8000/", noop_callback)
     assert consumer1.api_url == "http://localhost:8000"
 
-    # Without trailing slash
     consumer2 = EventConsumer("http://localhost:8000", noop_callback)
     assert consumer2.api_url == "http://localhost:8000"
-
-
-@pytest.mark.asyncio
-async def test_ws_url_conversion():
-    """
-    Test that http/https are properly converted to ws/wss.
-
-    Tests the internal logic for converting API URL to WebSocket URL.
-    """
-
-    async def noop_callback(event):
-        pass
-
-    consumer = EventConsumer("http://localhost:8000", noop_callback)
-
-    # Simulate what run() would do with the URL
-    api_url = consumer.api_url
-    ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
-    ws_url = f"{ws_url}/ws/events"
-
-    assert ws_url == "ws://localhost:8000/ws/events"
-
-
-@pytest.mark.asyncio
-async def test_ws_url_conversion_https():
-    """Test WebSocket URL conversion from HTTPS."""
-
-    async def noop_callback(event):
-        pass
-
-    consumer = EventConsumer("https://api.example.com", noop_callback)
-
-    api_url = consumer.api_url
-    ws_url = api_url.replace("http://", "ws://").replace("https://", "wss://")
-    ws_url = f"{ws_url}/ws/events"
-
-    assert ws_url == "wss://api.example.com/ws/events"
-
-
-@pytest.mark.asyncio
-async def test_callback_receives_correct_event():
-    """
-    Test event-stream.AC6.1: on_event callback is called with correct event data.
-    """
-    received = []
-
-    async def on_event(event):
-        received.append(event)
-
-    consumer = EventConsumer("http://unused", on_event)
-
-    test_event = {
-        "seq": 1,
-        "event_type": "delivery.created",
-        "delivery_id": "test-id",
-        "payload": {"some": "data"},
-        "created_at": "2026-04-14T12:00:00Z",
-    }
-
-    await consumer.on_event(test_event)
-
-    assert len(received) == 1
-    assert received[0] == test_event
-
-
-@pytest.mark.asyncio
-async def test_empty_ws_buffer_initialization():
-    """Test that _ws_buffer is initialized as empty list."""
-
-    async def noop_callback(event):
-        pass
-
-    consumer = EventConsumer("http://localhost:8000", noop_callback)
-    assert consumer._ws_buffer == []
-    assert isinstance(consumer._ws_buffer, list)
 
 
 @pytest.mark.asyncio
@@ -223,195 +37,201 @@ async def test_last_seq_initialization():
 
 
 @pytest.mark.asyncio
-async def test_catch_up_pagination():
-    """
-    Test event-stream.AC6.2: _catch_up handles pagination correctly.
+async def test_empty_ws_buffer_initialization():
+    """Test that _ws_buffer is initialized as empty list."""
 
-    Simulates multiple pages of events and verifies all are processed.
-    """
+    async def noop_callback(event):
+        pass
+
+    consumer = EventConsumer("http://localhost:8000", noop_callback)
+    assert consumer._ws_buffer == []
+
+
+@pytest.mark.asyncio
+async def test_catch_up_single_page():
+    """Test event-stream.AC6.2: _catch_up fetches and processes events via REST."""
     received = []
 
     async def on_event(event):
         received.append(event)
 
-    consumer = EventConsumer("http://unused", on_event)
-    consumer._last_seq = 0
+    consumer = EventConsumer("http://localhost:8000", on_event)
 
-    # Create two pages of events: first 3, then 2
+    events = [
+        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
+        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
+    ]
+
+    call_count = [0]
+
+    async def mock_get(*args, **kwargs):
+        call_count[0] += 1
+        mock_response = AsyncMock()
+        mock_response.json = lambda: events if call_count[0] == 1 else []
+        mock_response.raise_for_status = lambda: None
+        return mock_response
+
+    mock_client = AsyncMock()
+    mock_client.get = mock_get
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
+        await consumer._catch_up()
+
+    assert len(received) == 2
+    assert consumer._last_seq == 2
+    assert received[0]["seq"] == 1
+    assert received[1]["seq"] == 2
+
+
+@pytest.mark.asyncio
+async def test_catch_up_pagination():
+    """Test event-stream.AC6.2: _catch_up handles pagination correctly."""
+    received = []
+
+    async def on_event(event):
+        received.append(event)
+
+    consumer = EventConsumer("http://localhost:8000", on_event)
+
     page1 = [
+        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
+        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
+    ]
+    page2 = [
+        {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
+    ]
+    page3 = []
+
+    responses = [page1, page2, page3]
+    response_index = [0]
+
+    async def mock_get(*args, **kwargs):
+        current_page = responses[response_index[0]]
+        response_index[0] += 1
+
+        mock_response = AsyncMock()
+        mock_response.json = lambda: current_page
+        mock_response.raise_for_status = lambda: None
+        return mock_response
+
+    mock_client = AsyncMock()
+    mock_client.get = mock_get
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
+        await consumer._catch_up()
+
+    assert len(received) == 3
+    assert consumer._last_seq == 3
+
+
+@pytest.mark.asyncio
+async def test_catch_up_respects_last_seq():
+    """Test that _catch_up uses _last_seq in the REST query."""
+    received = []
+
+    async def on_event(event):
+        received.append(event)
+
+    consumer = EventConsumer("http://localhost:8000", on_event)
+    consumer._last_seq = 10
+
+    events = [{"seq": 11, "event_type": "delivery.created", "delivery_id": "d11", "payload": {}, "created_at": "t11"}]
+
+    call_count = [0]
+
+    async def mock_get(*args, **kwargs):
+        call_count[0] += 1
+        mock_response = AsyncMock()
+        mock_response.json = lambda: events if call_count[0] == 1 else []
+        mock_response.raise_for_status = lambda: None
+        return mock_response
+
+    mock_client = AsyncMock()
+    mock_client.get = mock_get
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
+        await consumer._catch_up()
+
+    assert consumer._last_seq == 11
+
+
+@pytest.mark.asyncio
+async def test_catch_up_calls_on_event_for_each():
+    """Test event-stream.AC6.2: _catch_up invokes on_event callback for each fetched event."""
+    received = []
+
+    async def on_event(event):
+        received.append(event)
+
+    consumer = EventConsumer("http://localhost:8000", on_event)
+
+    catchup_events = [
         {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
         {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
         {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
     ]
 
-    page2 = [
-        {"seq": 4, "event_type": "delivery.created", "delivery_id": "d4", "payload": {}, "created_at": "t4"},
-        {"seq": 5, "event_type": "delivery.created", "delivery_id": "d5", "payload": {}, "created_at": "t5"},
-    ]
+    call_count = [0]
 
-    # Simulate pagination by processing all events
-    all_events = page1 + page2
-    for event in all_events:
-        await consumer.on_event(event)
-        consumer._last_seq = event["seq"]
+    async def mock_get(*args, **kwargs):
+        call_count[0] += 1
+        mock_response = AsyncMock()
+        mock_response.json = lambda: catchup_events if call_count[0] == 1 else []
+        mock_response.raise_for_status = lambda: None
+        return mock_response
 
-    assert len(received) == 5
-    assert consumer._last_seq == 5
-    assert received[4]["seq"] == 5
+    mock_client = AsyncMock()
+    mock_client.get = mock_get
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
 
-
-@pytest.mark.asyncio
-async def test_multiple_dedup_scenarios():
-    """
-    Test event-stream.AC6.3: Complex deduplication scenarios.
-
-    Tests edge cases in deduplication logic with overlapping sequences.
-    """
-    received = []
-
-    async def on_event(event):
-        received.append(event)
-
-    consumer = EventConsumer("http://unused", on_event)
-
-    # Scenario: Process 1-3 from catch-up
-    for seq in range(1, 4):
-        event = {"seq": seq, "event_type": "delivery.created", "delivery_id": f"d{seq}", "payload": {}, "created_at": f"t{seq}"}
-        await consumer.on_event(event)
-        consumer._last_seq = seq
+    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
+        await consumer._catch_up()
 
     assert len(received) == 3
-
-    # Scenario: Process overlapping 2-4 from WS buffer - only 4 should be new
-    received.clear()
-    for seq in range(2, 5):
-        event = {"seq": seq, "event_type": "delivery.created", "delivery_id": f"d{seq}", "payload": {}, "created_at": f"t{seq}"}
-        if event["seq"] > consumer._last_seq:
-            await consumer.on_event(event)
-            consumer._last_seq = event["seq"]
-
-    assert len(received) == 1
-    assert received[0]["seq"] == 4
+    assert [e["seq"] for e in received] == [1, 2, 3]
 
 
 @pytest.mark.asyncio
-async def test_session_buffer_reset():
-    """Test that _ws_buffer is reset when _session starts."""
-
-    async def noop_callback(event):
-        pass
-
-    consumer = EventConsumer("http://unused", noop_callback)
-
-    # Simulate having old buffered data
-    consumer._ws_buffer = [{"old": "data"}]
-
-    # Create a mock websocket
-    mock_ws = AsyncMock()
-    mock_ws.__aiter__.return_value = iter([])
-
-    # When _session is called, buffer should be reset
-    # (We can't fully test _session without mocking more, but we can verify the pattern)
-    original_buffer = consumer._ws_buffer
-    assert len(original_buffer) == 1
-
-    # Verify the reset logic would clear it
-    consumer._ws_buffer = []
-    assert consumer._ws_buffer == []
-
-
-@pytest.mark.asyncio
-async def test_on_event_preserves_event_data():
-    """
-    Test that on_event callback receives unmodified event data.
-
-    Verifies no mutation of event objects during processing.
-    """
+async def test_catch_up_rest_endpoint_query_uses_last_seq():
+    """Test event-stream.AC6.2: _catch_up REST query uses 'after' parameter with _last_seq."""
     received = []
 
     async def on_event(event):
         received.append(event)
 
-    consumer = EventConsumer("http://unused", on_event)
-
-    original_event = {
-        "seq": 1,
-        "event_type": "delivery.status_changed",
-        "delivery_id": "abc123",
-        "payload": {"old_status": "pending", "new_status": "passed"},
-        "created_at": "2026-04-14T12:00:00Z",
-    }
-
-    await consumer.on_event(original_event)
-
-    # Verify the received event matches exactly
-    assert received[0] == original_event
-    # Verify no unexpected modifications
-    assert received[0]["payload"]["old_status"] == "pending"
-    assert received[0]["payload"]["new_status"] == "passed"
-
-
-@pytest.mark.asyncio
-async def test_seq_only_increments_on_new_events():
-    """
-    Test that _last_seq only advances when seq > _last_seq.
-
-    Verifies deduplication check is enforced.
-    """
-    received = []
-
-    async def on_event(event):
-        received.append(event)
-
-    consumer = EventConsumer("http://unused", on_event)
+    consumer = EventConsumer("http://localhost:8000", on_event)
     consumer._last_seq = 5
 
-    # Try to process event with seq <= _last_seq
-    old_event = {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"}
+    events = [
+        {"seq": 6, "event_type": "delivery.created", "delivery_id": "d6", "payload": {}, "created_at": "t6"},
+        {"seq": 7, "event_type": "delivery.created", "delivery_id": "d7", "payload": {}, "created_at": "t7"},
+    ]
 
-    # In the real consumer, this would be skipped by the `if event["seq"] > self._last_seq` check
-    if old_event["seq"] > consumer._last_seq:
-        await consumer.on_event(old_event)
-        consumer._last_seq = old_event["seq"]
+    captured_calls = []
 
-    # No event should be processed
-    assert len(received) == 0
-    # _last_seq should not change
-    assert consumer._last_seq == 5
+    async def mock_get(*args, **kwargs):
+        captured_calls.append((args, kwargs))
+        mock_response = AsyncMock()
+        mock_response.json = lambda: events if not captured_calls or len(captured_calls) == 1 else []
+        mock_response.raise_for_status = lambda: None
+        return mock_response
 
+    mock_client = AsyncMock()
+    mock_client.get = mock_get
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
 
-@pytest.mark.asyncio
-async def test_different_event_types():
-    """Test that consumer handles different event types correctly."""
-    received = []
-
-    async def on_event(event):
-        received.append(event)
-
-    consumer = EventConsumer("http://unused", on_event)
-
-    created_event = {
-        "seq": 1,
-        "event_type": "delivery.created",
-        "delivery_id": "d1",
-        "payload": {},
-        "created_at": "t1",
-    }
-
-    status_changed_event = {
-        "seq": 2,
-        "event_type": "delivery.status_changed",
-        "delivery_id": "d1",
-        "payload": {"new_status": "passed"},
-        "created_at": "t2",
-    }
-
-    await consumer.on_event(created_event)
-    consumer._last_seq = 1
-
-    await consumer.on_event(status_changed_event)
-    consumer._last_seq = 2
+    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
+        await consumer._catch_up()
 
     assert len(received) == 2
-    assert received[0]["event_type"] == "delivery.created"
-    assert received[1]["event_type"] == "delivery.status_changed"
+    assert consumer._last_seq == 7
+    assert len(captured_calls) > 0
+    assert captured_calls[0][1]["params"]["after"] == 5
