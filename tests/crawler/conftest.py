@@ -49,9 +49,9 @@ def lexicons_dir(tmp_path):
     lexicons_dir = tmp_path / "lexicons"
     lexicons_dir.mkdir()
 
-    # Create soc.qar lexicon with standard dir_map
-    soc_qar = {
-        "id": "soc.qar",
+    # Create soc._base lexicon (base for soc.qar)
+    soc_base = {
+        "id": "soc._base",
         "statuses": ["pending", "passed", "failed"],
         "transitions": {
             "pending": ["passed", "failed"],
@@ -63,11 +63,27 @@ def lexicons_dir(tmp_path):
             "msoc_new": "pending"
         },
         "actionable_statuses": ["passed", "failed"],
-        "metadata_fields": {},
-        "derive_hook": None
+        "metadata_fields": {}
     }
 
-    soc_qar_path = lexicons_dir / "soc.qar.json"
+    soc_base_path = lexicons_dir / "soc" / "_base.json"
+    soc_base_path.parent.mkdir(parents=True)
+    with open(soc_base_path, "w") as f:
+        json.dump(soc_base, f)
+
+    # Create soc.qar lexicon (extends soc._base with derive_hook)
+    soc_qar = {
+        "extends": "soc._base",
+        "derive_hook": "pipeline.lexicons.soc.qa:derive",
+        "metadata_fields": {
+            "passed_at": {
+                "type": "datetime",
+                "set_on": "passed"
+            }
+        }
+    }
+
+    soc_qar_path = lexicons_dir / "soc" / "qar.json"
     with open(soc_qar_path, "w") as f:
         json.dump(soc_qar, f)
 

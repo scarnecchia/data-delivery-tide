@@ -1,7 +1,6 @@
 # pattern: Functional Core
 import re
-from dataclasses import dataclass, replace
-from itertools import groupby
+from dataclasses import dataclass
 
 from pipeline.lexicons.models import Lexicon
 
@@ -114,16 +113,6 @@ def parse_path(
     )
 
 
-def _group_key(delivery: ParsedDelivery) -> tuple[str, str]:
-    """Extract grouping key from delivery: (workplan_id, dp_id)."""
-    return (delivery.workplan_id, delivery.dp_id)
-
-
-def _version_sort_key(delivery: ParsedDelivery) -> str:
-    """Extract version for descending sort."""
-    return delivery.version
-
-
 def derive_statuses(
     deliveries: list[ParsedDelivery],
     lexicon: Lexicon,
@@ -131,36 +120,10 @@ def derive_statuses(
     """Apply lexicon derivation hook if defined.
 
     If lexicon.derive_hook is set, delegates to the hook function.
-    If lexicon.derive_hook is None, applies the inline QA supersession
-    logic (pending non-highest versions → failed). This inline logic
-    will be removed in Phase 6 when the hook module is created.
+    If lexicon.derive_hook is None, returns deliveries unchanged.
 
     Returns a new list — does not mutate the input.
     """
     if lexicon.derive_hook is not None:
         return lexicon.derive_hook(deliveries, lexicon)
-
-    # Inline fallback: QA supersession logic (kept until Phase 6 extracts it)
-    if not deliveries:
-        return []
-
-    result = []
-    sorted_deliveries = sorted(deliveries, key=_group_key)
-
-    for _key, group in groupby(sorted_deliveries, key=_group_key):
-        group_list = list(group)
-        if len(group_list) == 1:
-            result.append(group_list[0])
-            continue
-
-        # Sort by version descending to find the highest
-        by_version = sorted(group_list, key=_version_sort_key, reverse=True)
-        highest_version = by_version[0].version
-
-        for delivery in group_list:
-            if delivery.status == "pending" and delivery.version != highest_version:
-                result.append(replace(delivery, status="failed"))
-            else:
-                result.append(delivery)
-
-    return result
+    return list(deliveries)

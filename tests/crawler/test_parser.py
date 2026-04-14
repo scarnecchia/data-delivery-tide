@@ -1,6 +1,7 @@
 
 from pipeline.crawler.parser import ParsedDelivery, ParseError, parse_path, derive_statuses
 from pipeline.lexicons.models import Lexicon, MetadataField
+from pipeline.lexicons.soc.qa import derive as qa_derive
 
 
 # Standard dir_map for tests using msoc/msoc_new directories
@@ -181,7 +182,9 @@ class TestDeriveStatuses:
 
     @staticmethod
     def _make_lexicon(derive_hook=None):
-        """Create a test lexicon with optional derive_hook."""
+        """Create a test lexicon with optional derive_hook. Defaults to QA derive hook."""
+        if derive_hook is None:
+            derive_hook = qa_derive
         return Lexicon(
             id="test.lexicon",
             statuses=("pending", "passed", "failed"),
@@ -428,7 +431,7 @@ class TestLexiconSystemAC5:
         assert result == [v1]
 
     def test_ac5_4_no_derivation_when_derive_hook_is_null(self):
-        """AC5.4: No derivation when derive_hook is null — inline fallback applies."""
+        """AC5.4: No derivation when derive_hook is null — deliveries returned unchanged."""
         v1 = ParsedDelivery(
             request_id="soc_qar_wp001",
             project="soc",
@@ -464,18 +467,16 @@ class TestLexiconSystemAC5:
 
         result = derive_statuses([v1, v2], lexicon)
 
-        # Inline fallback should mark v1 as failed (superseded by v2)
+        # Without a hook, deliveries are returned unchanged
         assert len(result) == 2
         v1_result = next(d for d in result if d.version == "v01")
         v2_result = next(d for d in result if d.version == "v02")
-        assert v1_result.status == "failed"
+        assert v1_result.status == "pending"
         assert v2_result.status == "pending"
 
     def test_ac5_5_qa_hook_marks_superseded_pending_as_failed(self):
-        """AC5.5: QA hook (inline fallback) marks superseded pending as failed."""
-        # This test verifies the inline fallback logic — the hook module will be
-        # tested in Phase 6. Here we just verify that with derive_hook=None,
-        # the fallback logic correctly marks v1 as failed when superseded.
+        """AC5.5: QA hook marks superseded pending as failed."""
+        # This test verifies the QA hook logic by passing it explicitly.
         v1 = ParsedDelivery(
             request_id="soc_qar_wp001",
             project="soc",
@@ -506,12 +507,12 @@ class TestLexiconSystemAC5:
             dir_map={"msoc": "passed", "msoc_new": "pending"},
             actionable_statuses=("passed", "failed"),
             metadata_fields={},
-            derive_hook=None,
+            derive_hook=qa_derive,
         )
 
         result = derive_statuses([v1, v2], lexicon)
 
-        # Verify the inline fallback marks v1 as failed
+        # Verify the QA hook marks v1 as failed
         v1_result = next(d for d in result if d.version == "v01")
         assert v1_result.status == "failed"
         assert v1_result.dp_id == "mkscnr"
