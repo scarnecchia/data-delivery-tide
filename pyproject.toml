@@ -16,6 +16,10 @@ converter = [
     "pyreadstat>=1.2,<2",
     "pyarrow>=18,<19",
 ]
+consumer = [
+    "websockets>=16,<17",
+    "httpx>=0.28,<1",
+]
 dev = [
     "pytest>=8,<9",
     "httpx>=0.28,<1",
