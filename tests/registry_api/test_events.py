@@ -146,6 +146,28 @@ class TestConnectionManager:
         assert mock_ws2 in test_manager.active_connections
         assert len(test_manager.active_connections) == 1
 
+    @pytest.mark.asyncio
+    async def test_broadcast_persists_across_calls(self):
+        """Test that broadcast calls accumulate messages for connected clients.
+
+        This verifies that multiple broadcasts don't interfere with each other and
+        a connected client receives all messages sent while connected.
+        """
+        test_manager = ConnectionManager()
+        mock_ws = AsyncMock()
+        test_manager.active_connections.add(mock_ws)
+
+        # Send 3 sequential broadcasts
+        for i in range(3):
+            await test_manager.broadcast({"id": i, "count": i + 1})
+
+        # Verify all 3 were sent to the client
+        assert mock_ws.send_json.call_count == 3
+        calls = mock_ws.send_json.call_args_list
+        assert calls[0][0][0] == {"id": 0, "count": 1}
+        assert calls[1][0][0] == {"id": 1, "count": 2}
+        assert calls[2][0][0] == {"id": 2, "count": 3}
+
 
 class TestWebSocketEndpoint:
     """Integration tests for the /ws/events WebSocket endpoint."""
@@ -207,8 +229,11 @@ class TestWebSocketEndpoint:
         # Connect and immediately close a client
         connect_and_close()
 
-        # Give it a moment to clean up
-        time.sleep(0.05)
+        # Poll for connection cleanup instead of using time.sleep
+        for _ in range(50):  # up to 0.5s
+            if len(manager.active_connections) == 0:
+                break
+            time.sleep(0.01)
 
         # Now broadcast - should not crash even though we just closed a connection
         try:
@@ -219,25 +244,3 @@ class TestWebSocketEndpoint:
 
         assert broadcast_succeeded, "Broadcast should not crash with dead connections"
 
-    def test_broadcast_persists_across_calls(self, client):
-        """Test that broadcast calls accumulate and persist messages for clients.
-
-        This verifies that multiple broadcasts don't interfere with each other and
-        a connected client can receive any message that was broadcast while connected.
-        """
-        from unittest.mock import AsyncMock
-
-        # Simulate a client connection
-        ws = AsyncMock()
-        manager.active_connections.add(ws)
-
-        # Send 3 sequential broadcasts
-        for i in range(3):
-            asyncio.run(manager.broadcast({"id": i, "count": i + 1}))
-
-        # Verify all 3 were sent to the client
-        assert ws.send_json.call_count == 3
-        calls = ws.send_json.call_args_list
-        assert calls[0][0][0] == {"id": 0, "count": 1}
-        assert calls[1][0][0] == {"id": 1, "count": 2}
-        assert calls[2][0][0] == {"id": 2, "count": 3}
