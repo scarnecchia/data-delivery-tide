@@ -2,6 +2,8 @@
 
 Data delivery tracking and event pipeline for file-based deliveries on a network share. Crawls directory structures that encode metadata (project, workplan, version, QA status), registers deliveries in a SQLite-backed registry API, streams lifecycle events over WebSocket, and converts SAS7BDAT files to Parquet.
 
+While the current configuration targets QA deliveries, the pipeline is not QA-specific. The crawler's directory parsing is driven by a configurable lexicon — the rules that map directory structure to metadata fields. Adding a new lexicon lets you adapt the pipeline to discover and track other types of data deliveries without changing the core registry or event infrastructure.
+
 ## How it works
 
 ```
