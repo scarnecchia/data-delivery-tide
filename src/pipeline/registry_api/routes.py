@@ -171,7 +171,10 @@ async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbD
                 detail=f"transition from '{old_status}' to '{new_status}' not allowed for lexicon '{old['lexicon_id']}'",
             )
 
-        existing_metadata = json.loads(old.get("metadata", "{}"))
+        # Metadata is returned from db.py deserialized as dict; handle both dict and string for safety
+        metadata_val = old.get("metadata", {})
+        existing_metadata = metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
+
         for field_name, field_def in lexicon.metadata_fields.items():
             if field_def.set_on == new_status:
                 if field_def.type == "datetime":
