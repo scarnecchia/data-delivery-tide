@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pipeline.registry_api.db import (
     DbDep,
     delivery_exists,
+    get_events_after,
     insert_event,
     make_delivery_id,
     upsert_delivery,
@@ -17,6 +18,7 @@ from pipeline.registry_api.models import (
     DeliveryUpdate,
     DeliveryResponse,
     DeliveryFilters,
+    EventRecord,
 )
 from pipeline.registry_api.events import manager
 
@@ -118,3 +120,17 @@ async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbD
         await manager.broadcast(event)
 
     return result
+
+
+@router.get("/events", response_model=list[EventRecord])
+async def get_events(db: DbDep, after: int, limit: int = 100):
+    """
+    Retrieve events after a given sequence number for consumer catch-up.
+
+    Args:
+        after: Return events with seq strictly greater than this value (required).
+        limit: Maximum number of events to return (default 100, max 1000).
+
+    Returns empty array if no events match.
+    """
+    return get_events_after(db, after, limit)
