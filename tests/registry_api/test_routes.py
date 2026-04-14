@@ -350,6 +350,19 @@ class TestLexiconValidation:
         assert data["status"] == "pending"
         assert data["lexicon_id"] == "soc.qar"
 
+    def test_post_with_unknown_lexicon_id(self, client):
+        """POST with unknown lexicon_id returns 422 with "unknown lexicon_id" detail."""
+        payload = make_delivery_payload(
+            source_path="/data/unknown-lexicon-test",
+            lexicon_id="nonexistent.lexicon",
+            status="pending",
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert "unknown lexicon_id" in detail
+
     def test_ac4_2_post_with_invalid_status(self, client):
         """AC4.2: POST with status not in lexicon's statuses returns 422."""
         payload = make_delivery_payload(
