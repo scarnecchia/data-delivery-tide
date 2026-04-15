@@ -6,6 +6,7 @@ from pipeline.registry_api.models import (
     DeliveryUpdate,
     DeliveryResponse,
     DeliveryFilters,
+    EventRecord,
 )
 
 
@@ -20,7 +21,8 @@ class TestDeliveryCreate:
             dp_id="dp-789",
             version="v01",
             scan_root="/scan",
-            qa_status="pending",
+            lexicon_id="qa-standard",
+            status="pending",
             source_path="/source",
         )
 
@@ -31,9 +33,10 @@ class TestDeliveryCreate:
         assert model.dp_id == "dp-789"
         assert model.version == "v01"
         assert model.scan_root == "/scan"
-        assert model.qa_status == "pending"
+        assert model.lexicon_id == "qa-standard"
+        assert model.status == "pending"
         assert model.source_path == "/source"
-        assert model.qa_passed_at is None
+        assert model.metadata is None
         assert model.file_count is None
         assert model.total_bytes is None
         assert model.fingerprint is None
@@ -48,15 +51,16 @@ class TestDeliveryCreate:
             dp_id="dp-789",
             version="v01",
             scan_root="/scan",
-            qa_status="passed",
+            lexicon_id="qa-standard",
+            status="passed",
             source_path="/source",
-            qa_passed_at="2026-01-01T00:00:00+00:00",
+            metadata={"passed_at": "2026-01-01T00:00:00+00:00"},
             file_count=100,
             total_bytes=1024,
             fingerprint="hash-abc",
         )
 
-        assert model.qa_passed_at == "2026-01-01T00:00:00+00:00"
+        assert model.metadata == {"passed_at": "2026-01-01T00:00:00+00:00"}
         assert model.file_count == 100
         assert model.total_bytes == 1024
         assert model.fingerprint == "hash-abc"
@@ -72,7 +76,8 @@ class TestDeliveryCreate:
                 dp_id="dp-789",
                 version="v01",
                 scan_root="/scan",
-                qa_status="pending",
+                lexicon_id="qa-standard",
+                status="pending",
                 # Missing: source_path
             )
 
@@ -86,12 +91,13 @@ class TestDeliveryCreate:
                 dp_id="dp-789",
                 version="v01",
                 scan_root="/scan",
-                qa_status="pending",
+                lexicon_id="qa-standard",
+                status="pending",
                 source_path="/source",
             )
 
-    def test_delivery_create_accepts_failed_qa_status(self):
-        """Test DeliveryCreate accepts 'failed' qa_status."""
+    def test_delivery_create_accepts_failed_status(self):
+        """Test DeliveryCreate accepts 'failed' status."""
         model = DeliveryCreate(
             request_id="req-123",
             project="proj-a",
@@ -100,13 +106,14 @@ class TestDeliveryCreate:
             dp_id="dp-789",
             version="v01",
             scan_root="/scan",
-            qa_status="failed",
+            lexicon_id="qa-standard",
+            status="failed",
             source_path="/source",
         )
-        assert model.qa_status == "failed"
+        assert model.status == "failed"
 
-    def test_delivery_create_rejects_invalid_qa_status(self):
-        """Test AC3.2 (model layer): DeliveryCreate with invalid qa_status value raises ValidationError."""
+    def test_delivery_create_rejects_missing_lexicon_id(self):
+        """Test AC3.2: DeliveryCreate with missing lexicon_id raises ValidationError."""
         with pytest.raises(ValidationError):
             DeliveryCreate(
                 request_id="req-123",
@@ -116,12 +123,13 @@ class TestDeliveryCreate:
                 dp_id="dp-789",
                 version="v01",
                 scan_root="/scan",
-                qa_status="rejected",  # Invalid: only "pending", "passed", or "failed" allowed
+                status="pending",
                 source_path="/source",
+                # Missing: lexicon_id
             )
 
-    def test_delivery_create_rejects_qa_status_none(self):
-        """Test DeliveryCreate rejects None for required qa_status field."""
+    def test_delivery_create_rejects_status_none(self):
+        """Test DeliveryCreate rejects None for required status field."""
         with pytest.raises(ValidationError):
             DeliveryCreate(
                 request_id="req-123",
@@ -131,7 +139,8 @@ class TestDeliveryCreate:
                 dp_id="dp-789",
                 version="v01",
                 scan_root="/scan",
-                qa_status=None,
+                lexicon_id="qa-standard",
+                status=None,
                 source_path="/source",
             )
 
@@ -143,18 +152,18 @@ class TestDeliveryUpdate:
 
         assert model.parquet_converted_at is None
         assert model.output_path is None
-        assert model.qa_status is None
-        assert model.qa_passed_at is None
+        assert model.status is None
+        assert model.metadata is None
 
     def test_delivery_update_accepts_partial_fields(self):
         """Test DeliveryUpdate accepts partial update with some fields set."""
         model = DeliveryUpdate(
-            qa_status="passed",
-            qa_passed_at="2026-01-01T00:00:00+00:00",
+            status="passed",
+            metadata={"passed_at": "2026-01-01T00:00:00+00:00"},
         )
 
-        assert model.qa_status == "passed"
-        assert model.qa_passed_at == "2026-01-01T00:00:00+00:00"
+        assert model.status == "passed"
+        assert model.metadata == {"passed_at": "2026-01-01T00:00:00+00:00"}
         assert model.parquet_converted_at is None
         assert model.output_path is None
 
@@ -163,38 +172,33 @@ class TestDeliveryUpdate:
         model = DeliveryUpdate(
             parquet_converted_at="2026-01-01T00:00:00+00:00",
             output_path="/output",
-            qa_status="passed",
-            qa_passed_at="2026-01-01T00:00:00+00:00",
+            status="passed",
+            metadata={"passed_at": "2026-01-01T00:00:00+00:00"},
         )
 
         assert model.parquet_converted_at == "2026-01-01T00:00:00+00:00"
         assert model.output_path == "/output"
-        assert model.qa_status == "passed"
-        assert model.qa_passed_at == "2026-01-01T00:00:00+00:00"
+        assert model.status == "passed"
+        assert model.metadata == {"passed_at": "2026-01-01T00:00:00+00:00"}
 
-    def test_delivery_update_accepts_failed_qa_status(self):
-        """Test DeliveryUpdate accepts 'failed' qa_status."""
-        model = DeliveryUpdate(qa_status="failed")
-        assert model.qa_status == "failed"
-
-    def test_delivery_update_rejects_invalid_qa_status(self):
-        """Test DeliveryUpdate with invalid qa_status raises ValidationError."""
-        with pytest.raises(ValidationError):
-            DeliveryUpdate(qa_status="rejected")
+    def test_delivery_update_accepts_failed_status(self):
+        """Test DeliveryUpdate accepts 'failed' status."""
+        model = DeliveryUpdate(status="failed")
+        assert model.status == "failed"
 
     def test_delivery_update_accepts_none_values_explicitly(self):
         """Test DeliveryUpdate with explicitly set None values."""
         model = DeliveryUpdate(
             parquet_converted_at=None,
             output_path=None,
-            qa_status=None,
-            qa_passed_at=None,
+            status=None,
+            metadata=None,
         )
 
         assert model.parquet_converted_at is None
         assert model.output_path is None
-        assert model.qa_status is None
-        assert model.qa_passed_at is None
+        assert model.status is None
+        assert model.metadata is None
 
 
 class TestDeliveryResponse:
@@ -209,9 +213,10 @@ class TestDeliveryResponse:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "passed",
+            "lexicon_id": "qa-standard",
+            "status": "passed",
+            "metadata": {"passed_at": "2026-01-01T01:00:00+00:00"},
             "first_seen_at": "2026-01-01T00:00:00+00:00",
-            "qa_passed_at": "2026-01-01T01:00:00+00:00",
             "parquet_converted_at": "2026-01-01T02:00:00+00:00",
             "file_count": 100,
             "total_bytes": 1024,
@@ -231,9 +236,10 @@ class TestDeliveryResponse:
         assert model.dp_id == "dp-789"
         assert model.version == "v01"
         assert model.scan_root == "/scan"
-        assert model.qa_status == "passed"
+        assert model.lexicon_id == "qa-standard"
+        assert model.status == "passed"
+        assert model.metadata == {"passed_at": "2026-01-01T01:00:00+00:00"}
         assert model.first_seen_at == "2026-01-01T00:00:00+00:00"
-        assert model.qa_passed_at == "2026-01-01T01:00:00+00:00"
         assert model.parquet_converted_at == "2026-01-01T02:00:00+00:00"
         assert model.file_count == 100
         assert model.total_bytes == 1024
@@ -253,7 +259,8 @@ class TestDeliveryResponse:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "pending",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
             "first_seen_at": "2026-01-01T00:00:00+00:00",
             "source_path": "/source",
         }
@@ -261,7 +268,7 @@ class TestDeliveryResponse:
         model = DeliveryResponse(**data)
 
         assert model.delivery_id == "abc123"
-        assert model.qa_passed_at is None
+        assert model.metadata is None
         assert model.parquet_converted_at is None
         assert model.file_count is None
         assert model.total_bytes is None
@@ -280,7 +287,8 @@ class TestDeliveryFilters:
         assert model.request_type is None
         assert model.workplan_id is None
         assert model.request_id is None
-        assert model.qa_status is None
+        assert model.status is None
+        assert model.lexicon_id is None
         assert model.converted is None
         assert model.version is None
         assert model.scan_root is None
@@ -297,30 +305,27 @@ class TestDeliveryFilters:
         model = DeliveryFilters(
             dp_id="dp-789",
             project="proj-a",
-            qa_status="passed",
+            status="passed",
+            lexicon_id="qa-standard",
             converted=True,
         )
 
         assert model.dp_id == "dp-789"
         assert model.project == "proj-a"
-        assert model.qa_status == "passed"
+        assert model.status == "passed"
+        assert model.lexicon_id == "qa-standard"
         assert model.converted is True
 
-    def test_delivery_filters_rejects_invalid_qa_status(self):
-        """Test DeliveryFilters with invalid qa_status raises ValidationError."""
-        with pytest.raises(ValidationError):
-            DeliveryFilters(qa_status="invalid")
+    def test_delivery_filters_accepts_valid_statuses(self):
+        """Test DeliveryFilters accepts all valid status values."""
+        model1 = DeliveryFilters(status="pending")
+        assert model1.status == "pending"
 
-    def test_delivery_filters_accepts_valid_qa_statuses(self):
-        """Test DeliveryFilters accepts all valid qa_status values."""
-        model1 = DeliveryFilters(qa_status="pending")
-        assert model1.qa_status == "pending"
+        model2 = DeliveryFilters(status="passed")
+        assert model2.status == "passed"
 
-        model2 = DeliveryFilters(qa_status="passed")
-        assert model2.qa_status == "passed"
-
-        model3 = DeliveryFilters(qa_status="failed")
-        assert model3.qa_status == "failed"
+        model3 = DeliveryFilters(status="failed")
+        assert model3.status == "failed"
 
     def test_delivery_filters_boolean_converted_field(self):
         """Test DeliveryFilters with boolean converted field."""
@@ -332,3 +337,75 @@ class TestDeliveryFilters:
 
         model_none = DeliveryFilters(converted=None)
         assert model_none.converted is None
+
+
+class TestEventRecord:
+    def test_event_record_valid_with_all_fields(self):
+        """Test EventRecord accepts valid input with all required fields."""
+        model = EventRecord(
+            seq=1,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload={"key": "value"},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.seq == 1
+        assert model.event_type == "delivery.created"
+        assert model.delivery_id == "abc123"
+        assert model.payload == {"key": "value"}
+        assert model.created_at == "2026-01-01T00:00:00+00:00"
+
+    def test_event_record_accepts_delivery_status_changed(self):
+        """Test EventRecord accepts 'delivery.status_changed' event_type."""
+        model = EventRecord(
+            seq=2,
+            event_type="delivery.status_changed",
+            delivery_id="abc123",
+            payload={"status": "passed"},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.event_type == "delivery.status_changed"
+
+    def test_event_record_rejects_invalid_event_type(self):
+        """Test EventRecord with invalid event_type raises ValidationError."""
+        with pytest.raises(ValidationError):
+            EventRecord(
+                seq=1,
+                event_type="invalid.event",
+                delivery_id="abc123",
+                payload={},
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+
+    def test_event_record_seq_must_be_int(self):
+        """Test EventRecord rejects non-int seq."""
+        with pytest.raises(ValidationError):
+            EventRecord(
+                seq="not-an-int",
+                event_type="delivery.created",
+                delivery_id="abc123",
+                payload={},
+                created_at="2026-01-01T00:00:00+00:00",
+            )
+
+    def test_event_record_accepts_dict_payload(self):
+        """Test EventRecord accepts dict payload with arbitrary structure."""
+        complex_payload = {
+            "delivery_id": "abc123",
+            "request_id": "req-456",
+            "status": "passed",
+            "nested": {"field": "value"},
+            "list": [1, 2, 3],
+        }
+
+        model = EventRecord(
+            seq=3,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload=complex_payload,
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.payload == complex_payload

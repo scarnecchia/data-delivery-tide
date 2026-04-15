@@ -1,7 +1,8 @@
 # pattern: Functional Core
 import re
-from dataclasses import dataclass, replace
-from itertools import groupby
+from dataclasses import dataclass
+
+from pipeline.lexicons.models import Lexicon
 
 
 @dataclass(frozen=True)
@@ -12,7 +13,7 @@ class ParsedDelivery:
     workplan_id: str
     dp_id: str
     version: str
-    qa_status: str
+    status: str
     source_path: str
     scan_root: str
 
@@ -33,6 +34,7 @@ def parse_path(
     path: str,
     scan_root: str,
     exclusions: set[str],
+    dir_map: dict[str, str],
 ) -> ParsedDelivery | ParseError | None:
     """Parse a delivery directory path into structured metadata.
 
@@ -41,29 +43,27 @@ def parse_path(
         None if dp_id is in the exclusion set (expected, not an error),
         ParseError if the path cannot be parsed.
     """
-    # Determine QA status from terminal directory
-    if path.endswith("/msoc"):
-        qa_status = "passed"
-    elif path.endswith("/msoc_new"):
-        qa_status = "pending"
-    else:
-        return ParseError(
-            raw_path=path,
-            scan_root=scan_root,
-            reason="path does not end with msoc or msoc_new",
-        )
-
-    # Walk up to the version directory (parent of msoc/msoc_new)
-    # path: .../soc_qar_wp001_mkscnr_v01/msoc
-    # version_dir_name: soc_qar_wp001_mkscnr_v01
+    # Determine status from terminal directory using dir_map
     parts = path.rstrip("/").split("/")
-    # terminal is msoc or msoc_new, version dir is one level up
     if len(parts) < 2:
         return ParseError(
             raw_path=path,
             scan_root=scan_root,
             reason="path too short to contain version directory",
         )
+
+    terminal_dir = parts[-1]
+    if terminal_dir not in dir_map:
+        return ParseError(
+            raw_path=path,
+            scan_root=scan_root,
+            reason=f"terminal directory '{terminal_dir}' not in dir_map",
+        )
+    status = dir_map[terminal_dir]
+
+    # Walk up to the version directory (parent of msoc/msoc_new)
+    # path: .../soc_qar_wp001_mkscnr_v01/msoc
+    # version_dir_name: soc_qar_wp001_mkscnr_v01
 
     version_dir_name = parts[-2]
 
@@ -107,50 +107,23 @@ def parse_path(
         workplan_id=workplan_id,
         dp_id=dp_id,
         version=version,
-        qa_status=qa_status,
+        status=status,
         source_path=path,
         scan_root=scan_root,
     )
 
 
-def _group_key(delivery: ParsedDelivery) -> tuple[str, str]:
-    """Extract grouping key from delivery: (workplan_id, dp_id)."""
-    return (delivery.workplan_id, delivery.dp_id)
+def derive_statuses(
+    deliveries: list[ParsedDelivery],
+    lexicon: Lexicon,
+) -> list[ParsedDelivery]:
+    """Apply lexicon derivation hook if defined.
 
-
-def _version_sort_key(delivery: ParsedDelivery) -> str:
-    """Extract version for descending sort."""
-    return delivery.version
-
-
-def derive_qa_statuses(deliveries: list[ParsedDelivery]) -> list[ParsedDelivery]:
-    """Derive 'failed' status for pending deliveries superseded by newer versions.
-
-    Within each (workplan_id, dp_id) group, any pending delivery that is NOT
-    the highest version is marked as failed. Passed deliveries are never changed.
+    If lexicon.derive_hook is set, delegates to the hook function.
+    If lexicon.derive_hook is None, returns deliveries unchanged.
 
     Returns a new list — does not mutate the input.
     """
-    if not deliveries:
-        return []
-
-    result = []
-    sorted_deliveries = sorted(deliveries, key=_group_key)
-
-    for _key, group in groupby(sorted_deliveries, key=_group_key):
-        group_list = list(group)
-        if len(group_list) == 1:
-            result.append(group_list[0])
-            continue
-
-        # Sort by version descending to find the highest
-        by_version = sorted(group_list, key=_version_sort_key, reverse=True)
-        highest_version = by_version[0].version
-
-        for delivery in group_list:
-            if delivery.qa_status == "pending" and delivery.version != highest_version:
-                result.append(replace(delivery, qa_status="failed"))
-            else:
-                result.append(delivery)
-
-    return result
+    if lexicon.derive_hook is not None:
+        return lexicon.derive_hook(deliveries, lexicon)
+    return list(deliveries)

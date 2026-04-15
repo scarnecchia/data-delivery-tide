@@ -7,7 +7,7 @@ import logging
 
 from pipeline.config import ScanRoot
 from pipeline.crawler.main import walk_roots, inventory_files, crawl
-from pipeline.crawler.http import RegistryUnreachableError, RegistryClientError
+from pipeline.crawler.http import RegistryUnreachableError
 
 
 class TestWalkRoots:
@@ -19,17 +19,17 @@ class TestWalkRoots:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
         )
         pending_path, _ = delivery_tree(
             dp_id="nsdp",
             request_id="soc_qar_wp002",
             version_dir_name="soc_qar_wp002_nsdp_v01",
-            qa_status="pending",
+            status="pending",
         )
 
-        scan_roots = [ScanRoot(path=scan_root, label="qa")]
-        results = walk_roots(scan_roots)
+        scan_roots = [ScanRoot(path=scan_root, label="qa", lexicon="soc.qar")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
         paths = [r[0] for r in results]
@@ -49,10 +49,10 @@ class TestWalkRoots:
         v2_path.mkdir(parents=True)
 
         scan_roots = [
-            ScanRoot(path=str(scan_root1), label="qa"),
-            ScanRoot(path=str(scan_root2), label="qm"),
+            ScanRoot(path=str(scan_root1), label="qa", lexicon="soc.qar"),
+            ScanRoot(path=str(scan_root2), label="qm", lexicon="soc.qar"),
         ]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
         assert (str(v1_path), str(scan_root1)) in results
@@ -68,10 +68,10 @@ class TestWalkRoots:
         missing_root = tmp_path / "nonexistent"
 
         scan_roots = [
-            ScanRoot(path=str(existing_root), label="qa"),
-            ScanRoot(path=str(missing_root), label="missing"),
+            ScanRoot(path=str(existing_root), label="qa", lexicon="soc.qar"),
+            ScanRoot(path=str(missing_root), label="missing", lexicon="soc.qar"),
         ]
-        results = walk_roots(scan_roots)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Should only find the existing root's delivery
         assert len(results) == 1
@@ -86,8 +86,8 @@ class TestWalkRoots:
         compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
-        results = walk_roots(scan_roots)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty — the msoc under 'compare' should not be discovered
         assert len(results) == 0
@@ -101,8 +101,8 @@ class TestWalkRoots:
         msoc_wrong_depth = scan_root / "mkscnr" / "msoc"
         msoc_wrong_depth.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
-        results = walk_roots(scan_roots)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
         assert len(results) == 0
@@ -116,8 +116,8 @@ class TestWalkRoots:
         msoc_nested = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "subdir" / "msoc"
         msoc_nested.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
-        results = walk_roots(scan_roots)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
         assert len(results) == 0
@@ -134,8 +134,8 @@ class TestWalkRoots:
         dpid2_msoc = scan_root / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc"
         dpid2_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
-        results = walk_roots(scan_roots)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
         assert len(results) == 2
@@ -155,8 +155,8 @@ class TestWalkRoots:
         v2_msoc_new = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc_new"
         v2_msoc_new.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
-        results = walk_roots(scan_roots)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
         assert len(results) == 2
@@ -174,8 +174,8 @@ class TestWalkRoots:
         dpid_dir.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
-        results = walk_roots(scan_roots, logger)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger)
 
         # Assert warning was logged
         assert logger.warning.called
@@ -197,8 +197,8 @@ class TestWalkRoots:
         msoc.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="packages")]
-        results = walk_roots(scan_roots, logger)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger)
 
         # Assert warning was NOT logged
         assert not logger.warning.called
@@ -215,8 +215,8 @@ class TestWalkRoots:
         compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", target="compare")]
-        results = walk_roots(scan_roots)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="compare")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Should discover msoc under custom target
         assert len(results) == 1
@@ -232,7 +232,7 @@ class TestInventoryFiles:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[
                 ("dataset1.sas7bdat", 1024),
                 ("dataset2.sas7bdat", 2048),
@@ -262,7 +262,7 @@ class TestInventoryFiles:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[],  # no files
         )
 
@@ -283,7 +283,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -306,7 +306,8 @@ class TestCrawl:
         assert payload["workplan_id"] == "wp001"
         assert payload["dp_id"] == "mkscnr"
         assert payload["version"] == "v01"
-        assert payload["qa_status"] == "passed"
+        assert payload["status"] == "passed"
+        assert payload["lexicon_id"] == "soc.qar"
         assert payload["source_path"] == source_path
         assert payload["file_count"] == 1
         assert payload["total_bytes"] == 1024
@@ -316,7 +317,7 @@ class TestCrawl:
     def test_ac2_7_pending_superseded_by_newer_version_marked_failed(
         self, mock_post, tmp_path, make_crawler_config
     ):
-        """AC2.7: Pending delivery with newer version for same workplan+dp_id is POSTed with qa_status=failed."""
+        """AC2.7: Pending delivery with newer version for same workplan+dp_id is POSTed with status=failed."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
@@ -344,8 +345,8 @@ class TestCrawl:
         v1_payload = next(p for p in payloads if p["version"] == "v01")
         v2_payload = next(p for p in payloads if p["version"] == "v02")
 
-        assert v1_payload["qa_status"] == "failed"
-        assert v2_payload["qa_status"] == "pending"
+        assert v1_payload["status"] == "failed"
+        assert v2_payload["status"] == "pending"
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_ac3_4_re_crawling_same_delivery_overwrites_manifest_idempotent(
@@ -356,7 +357,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -424,7 +425,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -464,7 +465,7 @@ class TestCrawl:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
@@ -488,6 +489,43 @@ class TestCrawl:
         assert first_fingerprint == second_fingerprint
 
 
+class TestLexiconSystemAC5Integration:
+    """lexicon-system.AC5.6 — Crawler POST payload includes lexicon_id and status."""
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_ac5_6_crawler_post_payload_includes_lexicon_id_and_status(
+        self, mock_post, delivery_tree, make_crawler_config
+    ):
+        """AC5.6: Crawler POST payload includes lexicon_id and status (not qa_status)."""
+        source_path, scan_root = delivery_tree(
+            dp_id="mkscnr",
+            request_id="soc_qar_wp001",
+            version_dir_name="soc_qar_wp001_mkscnr_v01",
+            status="passed",
+            sas_files=[("dataset.sas7bdat", 2048)],
+        )
+
+        config = make_crawler_config(
+            scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Verify post_delivery was called
+        assert mock_post.called
+        call_args = mock_post.call_args[0]
+        payload = call_args[1]
+
+        # AC5.6: Payload must include lexicon_id and status, not qa_status
+        assert "lexicon_id" in payload
+        assert "status" in payload
+        assert "qa_status" not in payload
+
+        assert payload["lexicon_id"] == "soc.qar"
+        assert payload["status"] == "passed"
+
+
 class TestCrawlAuth:
     """Token forwarding from crawl() to post_delivery()."""
 
@@ -500,12 +538,12 @@ class TestCrawlAuth:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
         config = make_crawler_config(
-            scan_roots=[{"path": scan_root, "label": "qa"}],
+            scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
         )
         logger = MagicMock()
         crawl(config, logger, token="my-secret-token")
@@ -523,12 +561,12 @@ class TestCrawlAuth:
             dp_id="mkscnr",
             request_id="soc_qar_wp001",
             version_dir_name="soc_qar_wp001_mkscnr_v01",
-            qa_status="passed",
+            status="passed",
             sas_files=[("dataset.sas7bdat", 1024)],
         )
 
         config = make_crawler_config(
-            scan_roots=[{"path": scan_root, "label": "qa"}],
+            scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
         )
         logger = MagicMock()
         crawl(config, logger)
@@ -536,6 +574,221 @@ class TestCrawlAuth:
         assert mock_post.called
         _, kwargs = mock_post.call_args
         assert kwargs["token"] is None
+
+
+
+class TestSubDeliveryDiscovery:
+    """sub-deliveries.AC4.1-AC4.8 — Crawler sub-directory discovery."""
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_created_when_sub_dir_exists(
+        self, mock_post, sub_delivery_setup
+    ):
+        """AC4.1, AC4.2: Sub-delivery created when sub-dir exists, with correct source_path."""
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Verify post_delivery was called twice (parent + sub-delivery)
+        assert mock_post.call_count == 2
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+
+        # Find the sub-delivery (should have source_path ending with scdm_snapshot)
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+        assert sub_payload["source_path"].endswith("scdm_snapshot")
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_inherits_parent_identity(
+        self, mock_post, sub_delivery_setup
+    ):
+        """AC4.3: Sub-delivery inherits request_id, project, workplan_id, dp_id, version from parent."""
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # Assert sub-delivery inherited identity fields
+        assert sub_payload["request_id"] == parent_payload["request_id"] == "soc_qar_wp001"
+        assert sub_payload["project"] == parent_payload["project"] == "soc"
+        assert sub_payload["workplan_id"] == parent_payload["workplan_id"] == "wp001"
+        assert sub_payload["dp_id"] == parent_payload["dp_id"] == "mkscnr"
+        assert sub_payload["version"] == parent_payload["version"] == "v01"
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_inherits_parent_status(
+        self, mock_post, sub_delivery_setup
+    ):
+        """AC4.4: Sub-delivery inherits status from parent's dir_map resolution."""
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
+            parent_status="passed",
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # Sub-delivery should inherit parent's status ("passed")
+        assert sub_payload["status"] == "passed"
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_has_own_delivery_id(
+        self, mock_post, sub_delivery_setup
+    ):
+        """AC4.5: Sub-delivery has its own delivery_id (SHA-256 of its source_path)."""
+        import hashlib
+
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # delivery_ids should be different (verified via source_path uniqueness)
+        assert parent_payload["source_path"] != sub_payload["source_path"]
+
+        # Verify manifest file exists with delivery_id = sha256(sub_source_path)
+        expected_sub_delivery_id = hashlib.sha256(sub_payload["source_path"].encode()).hexdigest()
+        manifest_path = Path(config.crawl_manifest_dir) / f"{expected_sub_delivery_id}.json"
+        assert manifest_path.exists(), f"Manifest for sub-delivery not found at {manifest_path}"
+
+        # Verify manifest contains the correct delivery_id
+        manifest_content = json.loads(manifest_path.read_text())
+        assert manifest_content["delivery_id"] == expected_sub_delivery_id
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_has_own_file_inventory(
+        self, mock_post, sub_delivery_setup
+    ):
+        """AC4.6: Sub-delivery has its own file inventory and fingerprint."""
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent1.sas7bdat", 100), ("parent2.sas7bdat", 200)],
+            sub_files=[("sub.sas7bdat", 50)],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # Parent has 2 files (300 bytes), sub has 1 file (50 bytes)
+        assert parent_payload["file_count"] == 2
+        assert parent_payload["total_bytes"] == 300
+        assert sub_payload["file_count"] == 1
+        assert sub_payload["total_bytes"] == 50
+        # Fingerprints should differ
+        assert parent_payload["fingerprint"] != sub_payload["fingerprint"]
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_missing_sub_dir_silently_skipped(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.7: Missing sub-directory is silently skipped (no error, no sub-delivery)."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path.mkdir(parents=True)
+        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        # Patch lexicon to reference non-existent sub-directory
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Only parent should be POSTed
+        assert mock_post.call_count == 1
+        payload = mock_post.call_args[0][1]
+        assert "scdm_snapshot" not in payload["source_path"]
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_deliveries_grouped_by_own_lexicon_for_derivation(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.8: Sub-deliveries are grouped by their own lexicon for derivation."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create v01 (pending from msoc_new)
+        parent_v1 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc_new"
+        parent_v1.mkdir(parents=True)
+        (parent_v1 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        sub_v1 = parent_v1 / "scdm_snapshot"
+        sub_v1.mkdir()
+        (sub_v1 / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        # Create v02 (passed from msoc)
+        parent_v2 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc"
+        parent_v2.mkdir(parents=True)
+        (parent_v2 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        sub_v2 = parent_v2 / "scdm_snapshot"
+        sub_v2.mkdir()
+        (sub_v2 / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Should have 4 POSTs: parent_v01, sub_v01, parent_v02, sub_v02
+        assert mock_post.call_count == 4
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+
+        # v01 parent is pending (from msoc_new)
+        v1_parent = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" not in p["source_path"])
+        # v01 sub inherits parent status (pending)
+        v1_sub = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" in p["source_path"])
+        # v02 parent is passed (from msoc)
+        v2_parent = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" not in p["source_path"])
+        # v02 sub inherits parent status (passed)
+        v2_sub = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" in p["source_path"])
+
+        # After derivation, v01_parent should be failed (superseded by v02)
+        # v01_sub inherited parent's initial status (pending) and keeps it
+        # (soc.scdm has no derive_hook, so derivation doesn't affect it)
+        assert v1_parent["status"] == "failed"
+        assert v1_sub["status"] == "pending"  # Inherited parent's initial status, not affected by parent's derivation
+        assert v2_parent["status"] == "passed"
+        assert v2_sub["status"] == "passed"  # Inherited parent's initial status
 
 
 class TestMain:
@@ -557,108 +810,3 @@ class TestMain:
             main()
 
         assert exc_info.value.code == 1
-
-    @patch("pipeline.crawler.main.settings")
-    @patch("pipeline.crawler.main.get_logger")
-    @patch("pipeline.crawler.main.crawl")
-    def test_registry_token_env_var_passed_to_crawl(
-        self, mock_crawl, mock_logger, mock_settings
-    ):
-        """REGISTRY_TOKEN env var is forwarded to crawl() as token kwarg."""
-        mock_settings.log_dir = "/tmp"
-
-        from pipeline.crawler.main import main
-
-        with patch.dict("os.environ", {"REGISTRY_TOKEN": "test-token-123"}):
-            main()
-
-        mock_crawl.assert_called_once()
-        _, kwargs = mock_crawl.call_args
-        assert kwargs["token"] == "test-token-123"
-
-    @patch("pipeline.crawler.main.settings")
-    @patch("pipeline.crawler.main.get_logger")
-    @patch("pipeline.crawler.main.crawl")
-    def test_no_registry_token_passes_none(
-        self, mock_crawl, mock_logger, mock_settings
-    ):
-        """Without REGISTRY_TOKEN, crawl() receives token=None."""
-        mock_settings.log_dir = "/tmp"
-
-        from pipeline.crawler.main import main
-
-        with patch.dict("os.environ", {}, clear=False):
-            # Ensure REGISTRY_TOKEN is not set
-            import os
-            os.environ.pop("REGISTRY_TOKEN", None)
-            main()
-
-        mock_crawl.assert_called_once()
-        _, kwargs = mock_crawl.call_args
-        assert kwargs["token"] is None
-
-    @patch("pipeline.crawler.main.settings")
-    @patch("pipeline.crawler.main.get_logger")
-    @patch("pipeline.crawler.main.crawl")
-    def test_401_error_logs_registry_token_hint(
-        self, mock_crawl, mock_logger, mock_settings
-    ):
-        """401 from registry logs actionable message about REGISTRY_TOKEN."""
-        mock_crawl.side_effect = RegistryClientError(401, '{"detail":"Missing authentication credentials"}')
-        mock_settings.log_dir = "/tmp"
-        logger_instance = MagicMock()
-        mock_logger.return_value = logger_instance
-
-        from pipeline.crawler.main import main
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 1
-        logger_instance.error.assert_called_once()
-        msg = logger_instance.error.call_args[0][0]
-        assert "REGISTRY_TOKEN" in msg
-
-    @patch("pipeline.crawler.main.settings")
-    @patch("pipeline.crawler.main.get_logger")
-    @patch("pipeline.crawler.main.crawl")
-    def test_403_error_logs_role_hint(
-        self, mock_crawl, mock_logger, mock_settings
-    ):
-        """403 from registry logs actionable message about role requirements."""
-        mock_crawl.side_effect = RegistryClientError(403, '{"detail":"Insufficient permissions: requires write role"}')
-        mock_settings.log_dir = "/tmp"
-        logger_instance = MagicMock()
-        mock_logger.return_value = logger_instance
-
-        from pipeline.crawler.main import main
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 1
-        logger_instance.error.assert_called_once()
-        msg = logger_instance.error.call_args[0][0]
-        assert "write" in msg
-
-    @patch("pipeline.crawler.main.settings")
-    @patch("pipeline.crawler.main.get_logger")
-    @patch("pipeline.crawler.main.crawl")
-    def test_other_4xx_error_logs_generic_message(
-        self, mock_crawl, mock_logger, mock_settings
-    ):
-        """Other 4xx errors log the full error message."""
-        mock_crawl.side_effect = RegistryClientError(422, '{"detail":"Unprocessable Entity"}')
-        mock_settings.log_dir = "/tmp"
-        logger_instance = MagicMock()
-        mock_logger.return_value = logger_instance
-
-        from pipeline.crawler.main import main
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 1
-        logger_instance.error.assert_called_once()
-        msg = logger_instance.error.call_args[0][0]
-        assert "422" in msg

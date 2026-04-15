@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pipeline.lexicons",
+  "title": "Pipeline Lexicon",
+  "description": "Schema for pipeline lexicon definition files. A lexicon defines the status vocabulary for a delivery type: valid statuses, allowed transitions, directory-to-status mappings, actionable states, metadata auto-population rules, and an optional derivation hook.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to this schema file for editor validation."
+    },
+    "extends": {
+      "type": "string",
+      "description": "Lexicon ID of the parent to inherit from (e.g. 'soc._base'). Child keys override parent; nested objects merge recursively. Max inheritance depth is 3."
+    },
+    "statuses": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Valid status values for this delivery type (e.g. ['pending', 'passed', 'failed'])."
+    },
+    "transitions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "uniqueItems": true
+      },
+      "description": "Allowed status transitions. Keys are source statuses, values are arrays of valid target statuses. An empty array means no transitions are allowed from that status."
+    },
+    "dir_map": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Maps terminal directory names to statuses (e.g. {'msoc': 'passed', 'msoc_new': 'pending'}). The crawler uses this to derive a delivery's initial status from its directory path."
+    },
+    "actionable_statuses": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true,
+      "description": "Statuses that indicate a delivery is ready for downstream processing (e.g. conversion)."
+    },
+    "metadata_fields": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/metadataField" },
+      "description": "Named metadata fields that can be auto-populated on status transitions. Keys are field names (e.g. 'passed_at'), values define the field type and trigger."
+    },
+    "derive_hook": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_.]*:[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "Python import path for a status derivation function, in 'module.path:function' format. The function signature is (deliveries: list[ParsedDelivery], lexicon: Lexicon) -> list[ParsedDelivery]."
+    },
+    "sub_dirs": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Maps subdirectory names to lexicon IDs. The crawler checks for these directories inside matched terminal directories and registers them as separate deliveries with the referenced lexicon."
+    }
+  },
+  "dependentRequired": {
+    "extends": []
+  },
+  "if": {
+    "not": { "required": ["extends"] }
+  },
+  "then": {
+    "required": ["statuses", "transitions", "dir_map", "actionable_statuses"]
+  },
+  "$defs": {
+    "metadataField": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["datetime", "boolean", "string"],
+          "description": "Data type of the metadata field."
+        },
+        "set_on": {
+          "type": "string",
+          "description": "Status that triggers auto-population of this field. When a delivery transitions to this status, the field is set automatically (datetime fields get UTC ISO timestamp)."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

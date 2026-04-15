@@ -19,7 +19,7 @@ def make_parsed_delivery(**overrides) -> ParsedDelivery:
         "workplan_id": "wp001",
         "dp_id": "mkscnr",
         "version": "v01",
-        "qa_status": "passed",
+        "status": "passed",
         "source_path": "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc",
         "scan_root": "/requests/qa",
     }
@@ -63,7 +63,7 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at)
+        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
         assert "crawled_at" in manifest
         assert "crawler_version" in manifest
@@ -71,7 +71,8 @@ class TestBuildManifest:
         assert "source_path" in manifest
         assert "scan_root" in manifest
         assert "parsed" in manifest
-        assert "qa_status" in manifest
+        assert "status" in manifest
+        assert "lexicon_id" in manifest
         assert "fingerprint" in manifest
         assert "files" in manifest
         assert "file_count" in manifest
@@ -85,7 +86,7 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at)
+        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
         expected_delivery_id = hashlib.sha256(parsed.source_path.encode()).hexdigest()
         assert manifest["delivery_id"] == expected_delivery_id
@@ -101,7 +102,7 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at)
+        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
         assert len(manifest["files"]) == 2
         assert manifest["files"][0]["filename"] == "file1.sas7bdat"
@@ -119,7 +120,7 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = "2026-04-09T15:30:00Z"
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at)
+        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
         assert manifest["crawler_version"] == "0.1.0"
         assert manifest["crawled_at"] == "2026-04-09T15:30:00Z"
@@ -135,7 +136,7 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at)
+        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
         assert manifest["file_count"] == 2
 
@@ -150,7 +151,7 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at)
+        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
         assert manifest["total_bytes"] == 3072
 
@@ -169,7 +170,7 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at)
+        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
         assert manifest["parsed"]["request_id"] == "proj_type_wpid"
         assert manifest["parsed"]["project"] == "proj"
@@ -178,20 +179,22 @@ class TestBuildManifest:
         assert manifest["parsed"]["dp_id"] == "dpidxx"
         assert manifest["parsed"]["version"] == "v02"
 
-    def test_build_manifest_preserves_qa_status(self):
-        """Manifest qa_status matches parsed qa_status."""
-        parsed_passed = make_parsed_delivery(qa_status="passed")
-        parsed_pending = make_parsed_delivery(qa_status="pending")
+    def test_build_manifest_preserves_status(self):
+        """Manifest status matches parsed status."""
+        parsed_passed = make_parsed_delivery(status="passed")
+        parsed_pending = make_parsed_delivery(status="pending")
         files: list[FileEntry] = []
         fingerprint = "sha256:empty"
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest_passed = build_manifest(parsed_passed, files, fingerprint, crawler_version, crawled_at)
-        manifest_pending = build_manifest(parsed_pending, files, fingerprint, crawler_version, crawled_at)
+        manifest_passed = build_manifest(parsed_passed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest_pending = build_manifest(parsed_pending, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
 
-        assert manifest_passed["qa_status"] == "passed"
-        assert manifest_pending["qa_status"] == "pending"
+        assert manifest_passed["status"] == "passed"
+        assert manifest_pending["status"] == "pending"
+        assert manifest_passed["lexicon_id"] == "test.lexicon"
+        assert manifest_pending["lexicon_id"] == "test.lexicon"
 
 
 class TestBuildErrorManifest:

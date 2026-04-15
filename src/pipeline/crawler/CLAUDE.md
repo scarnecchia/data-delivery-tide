@@ -1,17 +1,17 @@
 # Crawler
 
-Last verified: 2026-04-10
+Last verified: 2026-04-14
 
 ## Purpose
 
-Walks configured scan roots to discover healthcare data deliveries encoded in directory structure, parses metadata from paths, fingerprints file inventories, writes JSON crawl manifests, derives QA failure statuses, and POSTs deliveries to the registry API.
+Walks configured scan roots to discover healthcare data deliveries encoded in directory structure, parses metadata from paths, fingerprints file inventories, writes JSON crawl manifests, derives statuses via lexicon hooks, and POSTs deliveries to the registry API.
 
 ## Contracts
 
-- **Expects**: `pipeline.config.settings` with `scan_roots` (each with `path`, `label`, and `target` fields), `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, `registry_api_url`, `log_dir`. Reads `REGISTRY_TOKEN` env var for bearer auth (required when registry auth is enabled).
+- **Expects**: `pipeline.config.settings` with `scan_roots` (each with `path`, `label`, `target`, and `lexicon` fields), `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, `registry_api_url`, `log_dir`. Reads `REGISTRY_TOKEN` env var for bearer auth (required when registry auth is enabled).
 - **Produces**: JSON crawl manifests in `crawl_manifest_dir` (one per delivery, keyed by delivery_id). Error manifests in `crawl_manifest_dir/errors/`.
-- **Calls**: `POST /deliveries` on the registry API for each resolved delivery
-- **Guarantees**: Two-pass crawl -- manifests are written before any registry POST. Failed status derivation happens between passes (pending delivery superseded by newer version in same workplan+dp_id = failed). `walk_roots` enforces canonical 5-level traversal constrained by `target` field: only directories matching the configured `target` under each dpid are descended.
+- **Calls**: `POST /deliveries` on the registry API for each resolved delivery with `lexicon_id` and lexicon-derived `status`
+- **Guarantees**: Two-pass crawl -- manifests are written before any registry POST. Status derivation via lexicon hooks happens between passes. `walk_roots` enforces canonical 5-level traversal constrained by `target` field: only directories whose names match lexicon.dir_map keys under each dpid are descended. After discovering a terminal directory match, the crawler checks the lexicon's `sub_dirs` field for known subdirectories and registers sub-deliveries if found.
 
 ## Dependencies
 
@@ -22,7 +22,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 
 ## Key Files
 
-- `parser.py` -- path parsing and QA status derivation (Functional Core)
+- `parser.py` -- path parsing and status derivation (Functional Core)
 - `fingerprint.py` -- deterministic SHA-256 fingerprint from file inventory (Functional Core)
 - `manifest.py` -- builds crawl manifest and error manifest dicts, generates delivery_id (Functional Core)
 - `http.py` -- registry API client with exponential backoff retry and optional bearer auth (Imperative Shell)
@@ -30,12 +30,16 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 
 ## Invariants
 
-- `walk_roots` enforces canonical 5-level structure: `<scan_root>/<dpid>/<target>/<request_id>/<version_dir>/{msoc|msoc_new}`. Only directories at this exact depth are discovered. Sibling directories (e.g., `compare/`) or wrong depth (e.g., `msoc` directly under dpid) are not traversed.
+- `walk_roots` enforces canonical 5-level structure: `<scan_root>/<dpid>/<target>/<request_id>/<version_dir>/{dir_map_keys}`. Only directories at this exact depth are discovered. Sibling directories (e.g., `compare/`) or wrong depth are not traversed.
 - `walk_roots` logs a warning when a dpid directory is missing its configured `target` subdirectory (e.g., dpid has no `packages/` when `target="packages"`).
+- Directory names at the leaf level are matched against lexicon.dir_map keys (not hardcoded "msoc"/"msoc_new").
+- After matching a terminal directory, the crawler checks the lexicon's `sub_dirs` for known subdirectories and discovers sub-deliveries inside them.
+- Sub-deliveries inherit identity (`request_id`, `workplan_id`, `dp_id`, `version`) and status from their parent, but get their own `source_path`, `delivery_id`, and file inventory.
+- Missing sub-directories are silently skipped (not an error).
 - delivery_id = SHA-256 of source_path (computed in manifest.py, must match registry_api convention)
 - fingerprint = "sha256:<hex>" computed from sorted (filename, size_bytes, modified_at) tuples; "sha256:<hash_of_empty>" for empty directories
 - parse_path returns ParsedDelivery | ParseError | None (None = excluded dp_id, skip silently)
-- derive_qa_statuses: groups by (workplan_id, dp_id), marks all pending deliveries except the highest version as "failed"
+- derive_statuses: When lexicon.derive_hook is set, delegates to the hook function which returns status and metadata. Otherwise applies default status (typically "pending").
 - Version directory pattern: `<name>_<dp_id>_v<digits>` where dp_id is 3-8 alphanumeric chars
 - http.post_delivery retries on 5xx/network errors with backoff (2, 4, 8 seconds), raises RegistryUnreachableError on exhaustion, raises RegistryClientError on 4xx (no retry)
 
@@ -48,3 +52,4 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 - The http client uses stdlib urllib, not requests/httpx -- intentional to avoid runtime dependencies
 - `main()` catches `RegistryClientError` for 401/403 and logs actionable messages (set REGISTRY_TOKEN, check role). Other 4xx errors log the full error. All exit with code 1.
 - `REGISTRY_TOKEN` is read in `main()` and threaded through `crawl()` to `post_delivery()` -- the token is optional at each layer for backwards compatibility
+- `inventory_files` uses `os.scandir()` (direct children only), so parent file inventory naturally excludes sub-directory contents — no special filtering needed when sub-deliveries are discovered

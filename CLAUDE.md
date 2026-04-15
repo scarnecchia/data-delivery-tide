@@ -1,11 +1,11 @@
 # QA Registry Pipeline
 
-Last verified: 2026-04-10
-Last context update: 2026-04-10
+Last verified: 2026-04-14
+Last context update: 2026-04-14
 
 ## Purpose
 
-SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Crawls directory structures that encode metadata (project, workplan, version, QA status), registers deliveries in SQLite, and converts SAS7BDAT files to Parquet.
+SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Crawls directory structures that encode metadata (project, workplan, version, status), registers deliveries in SQLite, and converts SAS7BDAT files to Parquet. Status semantics (valid statuses, transitions, directory mappings, actionable states) are defined by configurable lexicons rather than hardcoded values.
 
 ## Tech Stack
 
@@ -13,7 +13,8 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - FastAPI + Uvicorn (registry API)
 - SQLite via stdlib sqlite3 (registry backing store, WAL mode)
 - pyreadstat + pyarrow (SAS-to-Parquet conversion, not yet implemented)
-- pytest + httpx (testing)
+- websockets (WebSocket event stream)
+- pytest + pytest-asyncio + httpx (testing)
 - hatchling (build system)
 
 ## Commands
@@ -22,6 +23,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - `uv run registry-api` -- start the registry API on port 8000
 - `uv run registry-auth` -- manage auth tokens (add-user, list-users, revoke-user, rotate-token)
 - `uv pip install -e ".[registry,dev]"` -- install with registry and dev deps
+- `uv pip install -e ".[consumer]"` -- install event consumer deps (websockets, httpx)
 
 ## Project Structure
 
@@ -29,11 +31,14 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
   - `config.py` -- config loading with env var override (`PIPELINE_CONFIG`)
   - `json_logging.py` -- JSON structured logging (JsonFormatter + file/stderr handlers)
   - `auth_cli.py` -- CLI for token lifecycle (add-user, list-users, revoke-user, rotate-token)
-  - `registry_api/` -- FastAPI app, SQLite db, Pydantic models, routes, auth (see `src/pipeline/registry_api/CLAUDE.md`)
+  - `lexicons/` -- lexicon system: models, loader, domain hooks (see `src/pipeline/lexicons/CLAUDE.md`)
+  - `registry_api/` -- FastAPI app, SQLite db, Pydantic models, routes, auth, WebSocket event stream (see `src/pipeline/registry_api/CLAUDE.md`)
   - `crawler/` -- filesystem crawler (see `src/pipeline/crawler/CLAUDE.md`)
+  - `events/` -- reference EventConsumer for WebSocket + REST catch-up consumption
   - `converter/` -- SAS-to-Parquet converter (placeholder)
 - `pipeline/` -- runtime config and scripts
   - `config.json` -- default pipeline configuration
+  - `lexicons/` -- lexicon JSON definitions (namespace directories, e.g. `soc/`)
   - `scripts/ensure_registry.sh` -- PID-based watchdog for registry API
 - `tests/` -- mirrors src structure
 - `docs/implementation-plans/` -- phased implementation plans
@@ -44,12 +49,16 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Functional Core / Imperative Shell pattern (files annotated with `# pattern:` comment)
 - Delivery IDs are deterministic SHA-256 of source_path
 - Config loaded lazily via module-level `__getattr__` on `pipeline.config.settings`
-- QA status is tri-state: "pending", "passed", or "failed". Directories encode "pending" (msoc_new) and "passed" (msoc); "failed" is derived by the crawler when a newer version supersedes a pending delivery within the same workplan+dp_id
-- Crawler uses a two-pass approach: (1) walk/parse/fingerprint/write manifests, (2) derive failed statuses then POST to registry
-- Config fields `dp_id_exclusions`, `crawl_manifest_dir`, and `crawler_version` control crawler behaviour
+- Status semantics are defined by lexicons, not hardcoded. Each lexicon declares valid statuses, allowed transitions, directory-to-status mappings (`dir_map`), actionable statuses, metadata fields, and an optional `derive_hook`. Lexicon JSON files live in `pipeline/lexicons/` and support single-level inheritance via `extends`
+- Lexicons can declare `sub_dirs` mapping subdirectory names to lexicon IDs; the crawler discovers these inside terminal directories and registers them as separate deliveries correlated to the parent by shared identity fields
+- Crawler uses a two-pass approach: (1) walk/parse/fingerprint/write manifests, (2) derive statuses via lexicon hooks then POST to registry
+- Config fields `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, and `lexicons_dir` control crawler behaviour
 - API authentication uses SHA-256 hashed bearer tokens with role hierarchy: admin > write > read
 - Routes split into public (health) and protected (all delivery endpoints require auth; mutating endpoints require write role)
-- `ScanRoot` has `path`, `label`, and `target` fields; `target` (default `"packages"`) controls which subdirectory the crawler enters under each dpid during traversal
+- `ScanRoot` has `path`, `label`, `lexicon`, and `target` fields; `target` (default `"packages"`) controls which subdirectory the crawler enters under each dpid; `lexicon` references a lexicon ID (e.g. `"soc.qar"`)
+- Event stream uses WebSocket for real-time broadcast + REST GET /events for catch-up; events are persisted in SQLite with monotonic sequence numbers
+- Events are emitted only for genuine state changes: delivery.created on first POST (not re-crawl), delivery.status_changed on status transitions
+- Database stores `lexicon_id`, `status`, and `metadata` (JSON dict) per delivery instead of the former `qa_status`/`qa_passed_at` columns
 
 ## Boundaries
 

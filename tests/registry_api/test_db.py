@@ -12,6 +12,9 @@ from pipeline.registry_api.db import (
     get_actionable,
     update_delivery,
     get_token_by_hash,
+    insert_event,
+    get_events_after,
+    delivery_exists,
 )
 
 
@@ -82,9 +85,10 @@ class TestInitDb:
             "dp_id",
             "version",
             "scan_root",
-            "qa_status",
+            "lexicon_id",
+            "status",
+            "metadata",
             "first_seen_at",
-            "qa_passed_at",
             "parquet_converted_at",
             "file_count",
             "total_bytes",
@@ -316,7 +320,9 @@ class TestUpsertDelivery:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "pending",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
+            "metadata": {"notes": "test"},
             "file_count": 10,
             "total_bytes": 1024,
             "fingerprint": "hash-abc",
@@ -332,7 +338,8 @@ class TestUpsertDelivery:
         assert result["dp_id"] == "dp-789"
         assert result["version"] == "v01"
         assert result["scan_root"] == "/scan"
-        assert result["qa_status"] == "pending"
+        assert result["lexicon_id"] == "qa-standard"
+        assert result["status"] == "pending"
         assert result["file_count"] == 10
         assert result["total_bytes"] == 1024
         assert result["source_path"] == "/test/source"
@@ -353,7 +360,8 @@ class TestUpsertDelivery:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "pending",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
             "file_count": 10,
             "total_bytes": 1024,
             "fingerprint": "hash-abc",
@@ -398,7 +406,8 @@ class TestUpsertDelivery:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "pending",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
             "file_count": 10,
             "total_bytes": 1024,
             "fingerprint": "hash-aaa",
@@ -443,7 +452,8 @@ class TestUpsertDelivery:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "pending",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
             "file_count": 10,
             "total_bytes": 1024,
             "fingerprint": "hash-aaa",
@@ -497,7 +507,8 @@ class TestGetDelivery:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "pending",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
             "fingerprint": "hash-abc",
         }
 
@@ -540,7 +551,8 @@ class TestListDeliveries:
                 "dp_id": "dp-1",
                 "version": "v01",
                 "scan_root": "/scan/1",
-                "qa_status": "pending",
+                "lexicon_id": "qa-standard",
+                "status": "pending",
                 "fingerprint": "hash-1",
             },
             {
@@ -552,7 +564,8 @@ class TestListDeliveries:
                 "dp_id": "dp-2",
                 "version": "v01",
                 "scan_root": "/scan/2",
-                "qa_status": "passed",
+                "lexicon_id": "qa-standard",
+                "status": "passed",
                 "parquet_converted_at": "2026-01-01T00:00:00+00:00",
                 "fingerprint": "hash-2",
             },
@@ -565,7 +578,8 @@ class TestListDeliveries:
                 "dp_id": "dp-1",
                 "version": "v02",
                 "scan_root": "/scan/3",
-                "qa_status": "passed",
+                "lexicon_id": "qa-standard",
+                "status": "passed",
                 "fingerprint": "hash-3",
             },
             {
@@ -577,7 +591,8 @@ class TestListDeliveries:
                 "dp_id": "dp-1",
                 "version": "v03",
                 "scan_root": "/scan/3",
-                "qa_status": "pending",
+                "lexicon_id": "qa-standard",
+                "status": "pending",
                 "fingerprint": "hash-4",
             },
         ]
@@ -628,12 +643,12 @@ class TestListDeliveries:
         assert len(results) == 1
         assert results[0]["request_id"] == "req-1"
 
-    def test_list_deliveries_filter_by_qa_status(self, memory_db, sample_deliveries):
-        """Test AC2.5: list_deliveries filters by qa_status."""
-        results = list_deliveries(memory_db, {"qa_status": "passed"})
+    def test_list_deliveries_filter_by_status(self, memory_db, sample_deliveries):
+        """Test AC2.5: list_deliveries filters by status."""
+        results = list_deliveries(memory_db, {"status": "passed"})
 
         assert len(results) == 2
-        assert all(r["qa_status"] == "passed" for r in results)
+        assert all(r["status"] == "passed" for r in results)
 
     def test_list_deliveries_filter_by_scan_root(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by scan_root."""
@@ -674,12 +689,12 @@ class TestListDeliveries:
     ):
         """Test AC2.7: Multiple filters combine with AND semantics."""
         results = list_deliveries(
-            memory_db, {"project": "proj-a", "qa_status": "passed"}
+            memory_db, {"project": "proj-a", "status": "passed"}
         )
 
         assert len(results) == 1
         assert results[0]["project"] == "proj-a"
-        assert results[0]["qa_status"] == "passed"
+        assert results[0]["status"] == "passed"
 
 
 class TestGetActionable:
@@ -706,19 +721,20 @@ class TestGetActionable:
                 "dp_id": "dp-1",
                 "version": "v01",
                 "scan_root": "/scan/1",
-                "qa_status": "passed",
+                "lexicon_id": "qa-standard",
+                "status": "passed",
                 "fingerprint": "hash-1",
             },
         )
 
-        results = get_actionable(memory_db)
+        results = get_actionable(memory_db, {"qa-standard": ["passed"]})
 
         assert len(results) == 1
-        assert results[0]["qa_status"] == "passed"
+        assert results[0]["status"] == "passed"
         assert results[0]["parquet_converted_at"] is None
 
     def test_get_actionable_excludes_pending(self, memory_db):
-        """Test get_actionable excludes deliveries with qa_status=pending."""
+        """Test get_actionable excludes deliveries with status=pending."""
         upsert_delivery(
             memory_db,
             {
@@ -730,12 +746,13 @@ class TestGetActionable:
                 "dp_id": "dp-1",
                 "version": "v01",
                 "scan_root": "/scan/1",
-                "qa_status": "pending",
+                "lexicon_id": "qa-standard",
+                "status": "pending",
                 "fingerprint": "hash-1",
             },
         )
 
-        results = get_actionable(memory_db)
+        results = get_actionable(memory_db, {"qa-standard": ["passed"]})
 
         assert len(results) == 0
 
@@ -752,13 +769,14 @@ class TestGetActionable:
                 "dp_id": "dp-1",
                 "version": "v01",
                 "scan_root": "/scan/1",
-                "qa_status": "passed",
+                "lexicon_id": "qa-standard",
+                "status": "passed",
                 "parquet_converted_at": "2026-01-01T00:00:00+00:00",
                 "fingerprint": "hash-1",
             },
         )
 
-        results = get_actionable(memory_db)
+        results = get_actionable(memory_db, {"qa-standard": ["passed"]})
 
         assert len(results) == 0
 
@@ -785,7 +803,8 @@ class TestUpdateDelivery:
             "dp_id": "dp-789",
             "version": "v01",
             "scan_root": "/scan",
-            "qa_status": "pending",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
             "fingerprint": "hash-abc",
         }
         return upsert_delivery(memory_db, data)
@@ -798,29 +817,538 @@ class TestUpdateDelivery:
             memory_db,
             delivery_id,
             {
-                "qa_status": "passed",
-                "qa_passed_at": "2026-01-01T00:00:00+00:00",
+                "status": "passed",
+                "metadata": {"passed_at": "2026-01-01T00:00:00+00:00"},
             },
         )
 
-        assert result["qa_status"] == "passed"
-        assert result["qa_passed_at"] == "2026-01-01T00:00:00+00:00"
+        assert result["status"] == "passed"
+        assert result["metadata"] == {"passed_at": "2026-01-01T00:00:00+00:00"}
         # Other fields unchanged
         assert result["request_id"] == "req-123"
 
     def test_update_delivery_returns_none_for_nonexistent(self, memory_db):
         """Test update_delivery returns None for nonexistent delivery_id."""
-        result = update_delivery(memory_db, "nonexistent-id", {"qa_status": "passed"})
+        result = update_delivery(memory_db, "nonexistent-id", {"status": "passed"})
 
         assert result is None
 
     def test_update_delivery_empty_dict_is_noop(self, memory_db, sample_delivery):
         """Test update_delivery with empty dict is a no-op (returns unchanged row)."""
         delivery_id = sample_delivery["delivery_id"]
-        original_qa_status = sample_delivery["qa_status"]
+        original_status = sample_delivery["status"]
 
         result = update_delivery(memory_db, delivery_id, {})
 
         assert result is not None
         assert result["delivery_id"] == delivery_id
-        assert result["qa_status"] == original_qa_status
+        assert result["status"] == original_status
+
+
+class TestInsertEvent:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_insert_event_creates_event_with_all_fields(self, memory_db):
+        """Test insert_event creates an event with correct fields."""
+        payload = {"delivery_id": "abc123", "status": "passed"}
+
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload=payload,
+        )
+
+        assert result["event_type"] == "delivery.created"
+        assert result["delivery_id"] == "abc123"
+        assert result["payload"] == payload
+        assert result["seq"] is not None
+        assert isinstance(result["seq"], int)
+        assert result["created_at"] is not None
+
+    def test_insert_event_ac4_1_monotonic_sequence(self, memory_db):
+        """Test event-stream.AC4.1: Each event has seq higher than all previous events."""
+        payload1 = {"status": "created"}
+        payload2 = {"status": "updated"}
+
+        result1 = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="id-1",
+            payload=payload1,
+        )
+        result2 = insert_event(
+            memory_db,
+            event_type="delivery.status_changed",
+            delivery_id="id-1",
+            payload=payload2,
+        )
+
+        assert result2["seq"] > result1["seq"]
+
+    def test_insert_event_ac4_2_payload_matches_broadcast(self, memory_db):
+        """Test event-stream.AC4.2: Event payload matches broadcast payload."""
+        payload = {"delivery_id": "abc123", "request_id": "req-456", "status": "passed"}
+
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="abc123",
+            payload=payload,
+        )
+
+        assert result["payload"] == payload
+
+    def test_insert_event_accepts_delivery_created(self, memory_db):
+        """Test insert_event accepts 'delivery.created' event type."""
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="id-1",
+            payload={},
+        )
+
+        assert result["event_type"] == "delivery.created"
+
+    def test_insert_event_accepts_delivery_status_changed(self, memory_db):
+        """Test insert_event accepts 'delivery.status_changed' event type."""
+        result = insert_event(
+            memory_db,
+            event_type="delivery.status_changed",
+            delivery_id="id-1",
+            payload={},
+        )
+
+        assert result["event_type"] == "delivery.status_changed"
+
+    def test_insert_event_rejects_invalid_event_type(self, memory_db):
+        """Test insert_event with invalid event_type raises sqlite3.IntegrityError (CHECK constraint)."""
+        with pytest.raises(sqlite3.IntegrityError):
+            insert_event(
+                memory_db,
+                event_type="invalid.event",
+                delivery_id="id-1",
+                payload={},
+            )
+
+    def test_insert_event_ac4_3_persists_without_clients(self, memory_db):
+        """Test event-stream.AC4.3: Events persist even if no WS clients connected."""
+        payload = {"test": "data"}
+
+        result = insert_event(
+            memory_db,
+            event_type="delivery.created",
+            delivery_id="id-1",
+            payload=payload,
+        )
+
+        # Verify it's actually persisted by fetching it back
+        cursor = memory_db.cursor()
+        cursor.execute("SELECT * FROM events WHERE seq = ?", (result["seq"],))
+        row = cursor.fetchone()
+
+        assert row is not None
+        assert row["delivery_id"] == "id-1"
+
+
+class TestGetEventsAfter:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    @pytest.fixture
+    def sample_events(self, memory_db):
+        """Insert sample events for testing."""
+        events = []
+        for i in range(1, 4):
+            result = insert_event(
+                memory_db,
+                event_type="delivery.created",
+                delivery_id=f"id-{i}",
+                payload={"num": i},
+            )
+            events.append(result)
+        return events
+
+    def test_get_events_after_ac5_1_returns_only_after_seq(self, memory_db, sample_events):
+        """Test event-stream.AC5.1: Returns only events with seq > after_seq, ordered ASC."""
+        results = get_events_after(memory_db, after_seq=1)
+
+        assert len(results) == 2
+        assert results[0]["seq"] == sample_events[1]["seq"]
+        assert results[1]["seq"] == sample_events[2]["seq"]
+
+    def test_get_events_after_ac5_2_respects_limit(self, memory_db):
+        """Test event-stream.AC5.2: Returns at most limit events."""
+        # Insert 5 events
+        for i in range(5):
+            insert_event(memory_db, "delivery.created", f"id-{i}", {})
+
+        results = get_events_after(memory_db, after_seq=0, limit=2)
+
+        assert len(results) == 2
+
+    def test_get_events_after_ordered_ascending(self, memory_db, sample_events):
+        """Test get_events_after returns results ordered by seq ASC."""
+        results = get_events_after(memory_db, after_seq=0)
+
+        seqs = [r["seq"] for r in results]
+        assert seqs == sorted(seqs)
+
+    def test_get_events_after_limit_capped_at_1000(self, memory_db):
+        """Test get_events_after caps limit at 1000."""
+        # Insert 5 events
+        for i in range(5):
+            insert_event(memory_db, "delivery.created", f"id-{i}", {})
+
+        # Request limit=2000, should behave same as limit=1000 (which is still > 5)
+        results = get_events_after(memory_db, after_seq=0, limit=2000)
+
+        assert len(results) == 5
+
+    def test_get_events_after_empty_result(self, memory_db, sample_events):
+        """Test get_events_after returns empty list when no events match."""
+        results = get_events_after(memory_db, after_seq=999)
+
+        assert results == []
+
+    def test_get_events_after_payload_deserialized(self, memory_db):
+        """Test get_events_after returns payload as dict, not JSON string."""
+        payload = {"delivery_id": "abc", "status": "passed"}
+        insert_event(memory_db, "delivery.created", "id-1", payload)
+
+        results = get_events_after(memory_db, after_seq=0)
+
+        assert len(results) == 1
+        assert results[0]["payload"] == payload
+        assert isinstance(results[0]["payload"], dict)
+
+
+class TestDeliveryExists:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_delivery_exists_returns_true_for_existing_delivery(self, memory_db):
+        """Test delivery_exists returns True for a delivery that has been upserted."""
+        data = {
+            "source_path": "/test/source",
+            "request_id": "req-123",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-456",
+            "dp_id": "dp-789",
+            "version": "v01",
+            "scan_root": "/scan",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
+            "fingerprint": "hash-abc",
+        }
+
+        upsert_delivery(memory_db, data)
+        delivery_id = make_delivery_id("/test/source")
+
+        result = delivery_exists(memory_db, delivery_id)
+
+        assert result is True
+
+    def test_delivery_exists_returns_false_for_nonexistent_delivery(self, memory_db):
+        """Test delivery_exists returns False for a delivery_id that does not exist."""
+        result = delivery_exists(memory_db, "nonexistent-id")
+
+        assert result is False
+
+
+class TestLexiconSchema:
+    """Tests for AC3.1-AC3.5: Lexicon schema changes."""
+
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_ac3_1_delivery_with_lexicon_id_status_metadata(self, memory_db):
+        """AC3.1 Success: Delivery created with lexicon_id, status, and metadata fields."""
+        data = {
+            "source_path": "/test/delivery-ac3-1",
+            "request_id": "req-001",
+            "project": "proj-a",
+            "request_type": "full",
+            "workplan_id": "wp-001",
+            "dp_id": "dp-001",
+            "version": "v01",
+            "scan_root": "/scan",
+            "lexicon_id": "qa-standard",
+            "status": "pending",
+            "metadata": {"source": "automated_crawler"},
+            "fingerprint": "hash-001",
+        }
+
+        result = upsert_delivery(memory_db, data)
+
+        assert result["lexicon_id"] == "qa-standard"
+        assert result["status"] == "pending"
+        assert result["metadata"] is not None
+
+    def test_ac3_2_metadata_json_roundtrip(self, memory_db):
+        """AC3.2 Success: metadata JSON round-trips correctly through upsert and query."""
+        metadata_in = {"passed_at": "2026-04-14T12:00:00Z", "notes": "test delivery"}
+
+        data = {
+            "source_path": "/test/delivery-ac3-2",
+            "request_id": "req-002",
+            "project": "proj-b",
+            "request_type": "partial",
+            "workplan_id": "wp-002",
+            "dp_id": "dp-002",
+            "version": "v01",
+            "scan_root": "/scan",
+            "lexicon_id": "qa-extended",
+            "status": "passed",
+            "metadata": metadata_in,
+            "fingerprint": "hash-002",
+        }
+
+        # Upsert the delivery
+        upsert_result = upsert_delivery(memory_db, data)
+        assert upsert_result["metadata"] == metadata_in
+
+        # Query it back
+        delivery_id = make_delivery_id("/test/delivery-ac3-2")
+        fetched = get_delivery(memory_db, delivery_id)
+        assert fetched["metadata"] == metadata_in
+
+    def test_ac3_3_actionable_query_returns_matching_statuses(self, memory_db):
+        """AC3.3 Success: Actionable query returns deliveries matching per-lexicon actionable_statuses."""
+        # Insert deliveries for qa-standard lexicon
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-3-passed",
+                "request_id": "req-passed",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-standard",
+                "status": "passed",
+                "fingerprint": "hash-p1",
+            },
+        )
+
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-3-pending",
+                "request_id": "req-pending",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-standard",
+                "status": "pending",
+                "fingerprint": "hash-p2",
+            },
+        )
+
+        # Query with qa-standard's actionable statuses = ["passed"]
+        results = get_actionable(memory_db, {"qa-standard": ["passed"]})
+
+        assert len(results) == 1
+        assert results[0]["status"] == "passed"
+        assert results[0]["source_path"] == "/test/ac3-3-passed"
+
+    def test_ac3_4_actionable_across_multiple_lexicons(self, memory_db):
+        """AC3.4 Success: Actionable query works across multiple lexicons with different actionable statuses."""
+        # qa-standard: actionable on "passed"
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-4-std-passed",
+                "request_id": "req-std-p",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-standard",
+                "status": "passed",
+                "fingerprint": "hash-s1",
+            },
+        )
+
+        # qa-standard: not actionable on "pending"
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-4-std-pending",
+                "request_id": "req-std-pend",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-standard",
+                "status": "pending",
+                "fingerprint": "hash-s2",
+            },
+        )
+
+        # qa-extended: actionable on "passed" and "review-pending"
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-4-ext-pending",
+                "request_id": "req-ext-p",
+                "project": "proj-b",
+                "request_type": "partial",
+                "workplan_id": "wp-200",
+                "dp_id": "dp-2",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-extended",
+                "status": "review-pending",
+                "fingerprint": "hash-e1",
+            },
+        )
+
+        # Query with both lexicons and their respective actionable statuses
+        lexicon_actionable = {
+            "qa-standard": ["passed"],
+            "qa-extended": ["passed", "review-pending"],
+        }
+        results = get_actionable(memory_db, lexicon_actionable)
+
+        # Should return: 1 from qa-standard (passed) + 1 from qa-extended (review-pending)
+        assert len(results) == 2
+        statuses = {r["status"] for r in results}
+        assert "passed" in statuses
+        assert "review-pending" in statuses
+
+    def test_ac3_5_list_deliveries_filter_by_lexicon_id(self, memory_db):
+        """AC3.5 Success: List/filter deliveries by lexicon_id."""
+        # Create deliveries for different lexicons
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-5-lex1-1",
+                "request_id": "req-l1-1",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-standard",
+                "status": "passed",
+                "fingerprint": "hash-l1-1",
+            },
+        )
+
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-5-lex1-2",
+                "request_id": "req-l1-2",
+                "project": "proj-a",
+                "request_type": "full",
+                "workplan_id": "wp-100",
+                "dp_id": "dp-1",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-standard",
+                "status": "pending",
+                "fingerprint": "hash-l1-2",
+            },
+        )
+
+        upsert_delivery(
+            memory_db,
+            {
+                "source_path": "/test/ac3-5-lex2-1",
+                "request_id": "req-l2-1",
+                "project": "proj-b",
+                "request_type": "partial",
+                "workplan_id": "wp-200",
+                "dp_id": "dp-2",
+                "version": "v01",
+                "scan_root": "/scan",
+                "lexicon_id": "qa-extended",
+                "status": "passed",
+                "fingerprint": "hash-l2-1",
+            },
+        )
+
+        # Filter by lexicon_id
+        results_standard = list_deliveries(memory_db, {"lexicon_id": "qa-standard"})
+        results_extended = list_deliveries(memory_db, {"lexicon_id": "qa-extended"})
+
+        # Verify filtering works
+        assert len(results_standard) == 2
+        assert all(r["lexicon_id"] == "qa-standard" for r in results_standard)
+
+        assert len(results_extended) == 1
+        assert all(r["lexicon_id"] == "qa-extended" for r in results_extended)
+
+    def test_ac3_5_list_deliveries_filter_by_status(self, memory_db):
+        """AC3.5 Success: List/filter deliveries by status."""
+        # Create deliveries with different statuses
+        for i, status in enumerate(["pending", "passed", "failed", "pending"]):
+            upsert_delivery(
+                memory_db,
+                {
+                    "source_path": f"/test/ac3-5-status-{i}",
+                    "request_id": f"req-st-{i}",
+                    "project": "proj-a",
+                    "request_type": "full",
+                    "workplan_id": "wp-100",
+                    "dp_id": "dp-1",
+                    "version": "v01",
+                    "scan_root": "/scan",
+                    "lexicon_id": "qa-standard",
+                    "status": status,
+                    "fingerprint": f"hash-st-{i}",
+                },
+            )
+
+        # Filter by status
+        pending_results = list_deliveries(memory_db, {"status": "pending"})
+        passed_results = list_deliveries(memory_db, {"status": "passed"})
+        failed_results = list_deliveries(memory_db, {"status": "failed"})
+
+        # Verify filtering works
+        assert len(pending_results) == 2
+        assert all(r["status"] == "pending" for r in pending_results)
+
+        assert len(passed_results) == 1
+        assert all(r["status"] == "passed" for r in passed_results)
+
+        assert len(failed_results) == 1
+        assert all(r["status"] == "failed" for r in failed_results)

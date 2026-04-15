@@ -1,6 +1,7 @@
 # pattern: Imperative Shell
 
 import hashlib
+import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Annotated
@@ -47,9 +48,10 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
                 dp_id                TEXT NOT NULL,
                 version              TEXT NOT NULL,
                 scan_root            TEXT NOT NULL,
-                qa_status            TEXT NOT NULL CHECK (qa_status IN ('pending', 'passed', 'failed')),
+                lexicon_id           TEXT NOT NULL,
+                status               TEXT NOT NULL,
+                metadata             TEXT DEFAULT '{}',
                 first_seen_at        TEXT NOT NULL,
-                qa_passed_at         TEXT,
                 parquet_converted_at TEXT,
                 file_count           INTEGER,
                 total_bytes          INTEGER,
@@ -61,15 +63,31 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
             """
         )
 
+        # Create the events table
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                seq         INTEGER PRIMARY KEY,
+                event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed')),
+                delivery_id TEXT NOT NULL,
+                payload     TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
+
         # Create indexes
         cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_actionable ON deliveries (qa_status, parquet_converted_at)"
+            "CREATE INDEX IF NOT EXISTS idx_actionable ON deliveries (lexicon_id, status, parquet_converted_at)"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_dp_wp ON deliveries (dp_id, workplan_id)"
         )
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_request_id ON deliveries (request_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lexicon ON deliveries (lexicon_id)"
         )
 
         # Create the tokens table
@@ -134,6 +152,21 @@ def _get_iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _deserialize_metadata(row_dict: dict) -> dict:
+    """
+    Deserialize metadata JSON field in a delivery row.
+
+    Converts the metadata field from JSON string to dict.
+    Modifies the dict in-place.
+    """
+    if "metadata" in row_dict and isinstance(row_dict["metadata"], str):
+        try:
+            row_dict["metadata"] = json.loads(row_dict["metadata"])
+        except (json.JSONDecodeError, TypeError):
+            row_dict["metadata"] = {}
+    return row_dict
+
+
 def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     """
     Insert or update a delivery record.
@@ -152,6 +185,13 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     delivery_id = make_delivery_id(data["source_path"])
     now = _get_iso_now()
 
+    # Serialize metadata to JSON if it's a dict
+    metadata = data.get("metadata")
+    if metadata is not None and isinstance(metadata, dict):
+        metadata = json.dumps(metadata)
+    elif metadata is None:
+        metadata = "{}"
+
     cursor = conn.cursor()
 
     # INSERT ... ON CONFLICT statement
@@ -166,9 +206,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             dp_id,
             version,
             scan_root,
-            qa_status,
+            lexicon_id,
+            status,
+            metadata,
             first_seen_at,
-            qa_passed_at,
             parquet_converted_at,
             file_count,
             total_bytes,
@@ -176,7 +217,7 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             output_path,
             fingerprint,
             last_updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(delivery_id) DO UPDATE SET
             request_id = excluded.request_id,
             project = excluded.project,
@@ -185,9 +226,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             dp_id = excluded.dp_id,
             version = excluded.version,
             scan_root = excluded.scan_root,
-            qa_status = excluded.qa_status,
+            lexicon_id = excluded.lexicon_id,
+            status = excluded.status,
+            metadata = excluded.metadata,
             first_seen_at = COALESCE(deliveries.first_seen_at, excluded.first_seen_at),
-            qa_passed_at = excluded.qa_passed_at,
             parquet_converted_at = excluded.parquet_converted_at,
             file_count = excluded.file_count,
             total_bytes = excluded.total_bytes,
@@ -207,9 +249,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
             data.get("dp_id"),
             data.get("version"),
             data.get("scan_root"),
-            data.get("qa_status"),
+            data.get("lexicon_id"),
+            data.get("status"),
+            metadata,
             now,
-            data.get("qa_passed_at"),
             data.get("parquet_converted_at"),
             data.get("file_count"),
             data.get("total_bytes"),
@@ -226,7 +269,10 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
 
-    return dict(row) if row else None
+    if row:
+        row_dict = dict(row)
+        return _deserialize_metadata(row_dict)
+    return None
 
 
 def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
@@ -243,7 +289,10 @@ def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
-    return dict(row) if row else None
+    if row:
+        row_dict = dict(row)
+        return _deserialize_metadata(row_dict)
+    return None
 
 
 def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
@@ -251,7 +300,7 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
     List deliveries with optional filtering.
 
     Supported filter keys:
-    - dp_id, project, request_type, workplan_id, request_id, qa_status, scan_root: exact match with =
+    - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match with =
     - converted: boolean, if True: parquet_converted_at IS NOT NULL, if False: IS NULL
     - version: if "latest", returns highest version per (dp_id, workplan_id); otherwise exact match
 
@@ -270,7 +319,7 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
     where_clauses = []
     params = []
 
-    exact_match_fields = ["dp_id", "project", "request_type", "workplan_id", "request_id", "qa_status", "scan_root"]
+    exact_match_fields = ["dp_id", "project", "request_type", "workplan_id", "request_id", "status", "lexicon_id", "scan_root"]
 
     for field in exact_match_fields:
         if field in filters:
@@ -300,34 +349,52 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
-    return [dict(row) for row in rows]
+    return [_deserialize_metadata(dict(row)) for row in rows]
 
 
-def get_actionable(conn: sqlite3.Connection) -> list[dict]:
+def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]) -> list[dict]:
     """
-    Get actionable deliveries (passed QA but not yet converted to Parquet).
+    Get actionable deliveries matching per-lexicon actionable statuses.
 
-    Returns all deliveries where qa_status='passed' AND parquet_converted_at IS NULL.
+    Accepts a mapping of lexicon_id → list of actionable statuses. Returns all deliveries
+    where (lexicon_id matches AND status in that lexicon's actionable_statuses)
+    AND parquet_converted_at IS NULL.
 
     Args:
         conn: sqlite3.Connection
+        lexicon_actionable: dict mapping lexicon_id to list of actionable status values
 
     Returns:
         list: List of actionable delivery dicts
     """
     cursor = conn.cursor()
+
+    if not lexicon_actionable:
+        return []
+
+    conditions = []
+    params = []
+    for lex_id, statuses in lexicon_actionable.items():
+        placeholders = ", ".join("?" for _ in statuses)
+        conditions.append(f"(lexicon_id = ? AND status IN ({placeholders}))")
+        params.append(lex_id)
+        params.extend(statuses)
+
+    where = " OR ".join(conditions)
     cursor.execute(
-        "SELECT * FROM deliveries WHERE qa_status = 'passed' AND parquet_converted_at IS NULL"
+        f"SELECT * FROM deliveries WHERE ({where}) AND parquet_converted_at IS NULL",
+        params,
     )
+
     rows = cursor.fetchall()
-    return [dict(row) for row in rows]
+    return [_deserialize_metadata(dict(row)) for row in rows]
 
 
 def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -> dict | None:
     """
     Update a delivery by ID.
 
-    Allowed update keys: parquet_converted_at, output_path, qa_status, qa_passed_at.
+    Allowed update keys: parquet_converted_at, output_path, status, metadata.
 
     If updates is empty, skips UPDATE and returns the current row via SELECT.
 
@@ -345,10 +412,12 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     if not updates:
         cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if row:
+            return _deserialize_metadata(dict(row))
+        return None
 
     # Allowed update fields
-    allowed_fields = {"parquet_converted_at", "output_path", "qa_status", "qa_passed_at"}
+    allowed_fields = {"parquet_converted_at", "output_path", "status", "metadata"}
 
     # Filter updates to only allowed fields
     update_dict = {k: v for k, v in updates.items() if k in allowed_fields}
@@ -357,7 +426,15 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
         # No allowed fields, just return current row
         cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if row:
+            return _deserialize_metadata(dict(row))
+        return None
+
+    # Serialize metadata if present
+    if "metadata" in update_dict:
+        metadata = update_dict["metadata"]
+        if isinstance(metadata, dict):
+            update_dict["metadata"] = json.dumps(metadata)
 
     # Build UPDATE statement
     set_clauses = [f"{field} = ?" for field in update_dict.keys()]
@@ -373,7 +450,9 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     # Fetch and return updated row
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
-    return dict(row) if row else None
+    if row:
+        return _deserialize_metadata(dict(row))
+    return None
 
 
 def get_token_by_hash(conn: sqlite3.Connection, token_hash: str) -> dict | None:
@@ -387,3 +466,87 @@ def get_token_by_hash(conn: sqlite3.Connection, token_hash: str) -> dict | None:
     cursor.execute("SELECT * FROM tokens WHERE token_hash = ?", (token_hash,))
     row = cursor.fetchone()
     return dict(row) if row else None
+
+
+def insert_event(
+    conn: sqlite3.Connection,
+    event_type: str,
+    delivery_id: str,
+    payload: dict,
+) -> dict:
+    """
+    Insert an event record and return it with the assigned sequence number.
+
+    Args:
+        conn: sqlite3.Connection
+        event_type: One of 'delivery.created' or 'delivery.status_changed'
+        delivery_id: The delivery ID this event relates to
+        payload: Full delivery record as a dict (DeliveryResponse.model_dump() output)
+
+    Returns:
+        dict: The inserted event row as a dict, including the auto-assigned seq.
+    """
+    now = _get_iso_now()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+        (event_type, delivery_id, json.dumps(payload), now),
+    )
+    conn.commit()
+
+    seq = cursor.lastrowid
+    return {
+        "seq": seq,
+        "event_type": event_type,
+        "delivery_id": delivery_id,
+        "payload": payload,
+        "created_at": now,
+    }
+
+
+def get_events_after(
+    conn: sqlite3.Connection,
+    after_seq: int,
+    limit: int = 100,
+) -> list[dict]:
+    """
+    Retrieve events with seq greater than after_seq, ordered by seq ascending.
+
+    Args:
+        conn: sqlite3.Connection
+        after_seq: Return events with seq strictly greater than this value
+        limit: Maximum number of events to return (default 100, max 1000)
+
+    Returns:
+        list[dict]: List of event dicts with payload deserialised from JSON.
+    """
+    capped_limit = min(limit, 1000)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM events WHERE seq > ? ORDER BY seq ASC LIMIT ?",
+        (after_seq, capped_limit),
+    )
+    rows = cursor.fetchall()
+
+    result = []
+    for row in rows:
+        event = dict(row)
+        event["payload"] = json.loads(event["payload"])
+        result.append(event)
+    return result
+
+
+def delivery_exists(conn: sqlite3.Connection, delivery_id: str) -> bool:
+    """
+    Check if a delivery exists by ID.
+
+    Args:
+        conn: sqlite3.Connection
+        delivery_id: The delivery ID to check
+
+    Returns:
+        bool: True if the delivery exists, False otherwise.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM deliveries WHERE delivery_id = ? LIMIT 1", (delivery_id,))
+    return cursor.fetchone() is not None
