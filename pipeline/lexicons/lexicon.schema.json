@@ -49,6 +49,11 @@
       "type": "string",
       "pattern": "^[a-zA-Z_][a-zA-Z0-9_.]*:[a-zA-Z_][a-zA-Z0-9_]*$",
       "description": "Python import path for a status derivation function, in 'module.path:function' format. The function signature is (deliveries: list[ParsedDelivery], lexicon: Lexicon) -> list[ParsedDelivery]."
+    },
+    "sub_dirs": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Maps subdirectory names to lexicon IDs. The crawler checks for these directories inside matched terminal directories and registers them as separate deliveries with the referenced lexicon."
     }
   },
   "dependentRequired": {

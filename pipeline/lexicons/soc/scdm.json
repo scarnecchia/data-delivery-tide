@@ -1,0 +1,4 @@
+{
+  "$schema": "../lexicon.schema.json",
+  "extends": "soc._base"
+}

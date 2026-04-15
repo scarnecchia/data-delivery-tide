@@ -898,3 +898,28 @@ class TestSubDirs:
         result = load_all_lexicons(lexicons_dir)
         child = result["soc.child"]
         assert child.sub_dirs == {"a": "soc.lex_a", "b": "soc.lex_b"}
+
+    def test_real_lexicons_load_with_sub_dirs(self):
+        """AC6.1, AC6.2: Real lexicons load with correct sub_dirs configuration."""
+        from pathlib import Path
+
+        # Load from actual pipeline/lexicons directory
+        lexicons_dir = Path(__file__).parent.parent.parent / "pipeline" / "lexicons"
+        result = load_all_lexicons(lexicons_dir)
+
+        # Verify soc.scdm exists, extends soc._base, has empty sub_dirs and no derive hook
+        assert "soc.scdm" in result
+        scdm = result["soc.scdm"]
+        assert scdm.statuses == result["soc._base"].statuses
+        assert scdm.sub_dirs == {}
+        assert scdm.derive_hook is None
+
+        # Verify soc.qar has correct sub_dirs
+        assert "soc.qar" in result
+        qar = result["soc.qar"]
+        assert qar.sub_dirs == {"scdm_snapshot": "soc.scdm"}
+
+        # Verify soc.qmr has correct sub_dirs
+        assert "soc.qmr" in result
+        qmr = result["soc.qmr"]
+        assert qmr.sub_dirs == {"scdm_snapshot": "soc.scdm"}
