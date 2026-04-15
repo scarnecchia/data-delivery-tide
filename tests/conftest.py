@@ -5,6 +5,28 @@ from fastapi.testclient import TestClient
 
 from pipeline.registry_api.db import init_db, get_db
 from pipeline.registry_api.main import app
+from pipeline.lexicons.models import Lexicon, MetadataField
+
+
+TEST_LEXICON = Lexicon(
+    id="soc.qar",
+    statuses=("pending", "passed", "failed"),
+    transitions={"pending": ("passed", "failed"), "passed": (), "failed": ()},
+    dir_map={"msoc": "passed", "msoc_new": "pending"},
+    actionable_statuses=("passed",),
+    metadata_fields={"passed_at": MetadataField(type="datetime", set_on="passed")},
+    derive_hook=None,
+)
+
+TEST_SUB_LEXICON = Lexicon(
+    id="test.sub",
+    statuses=("pending", "passed", "failed"),
+    transitions={"pending": ("passed", "failed"), "passed": (), "failed": ()},
+    dir_map={"msoc": "passed", "msoc_new": "pending"},
+    actionable_statuses=("passed",),
+    metadata_fields={},
+    derive_hook=None,
+)
 
 
 @pytest.fixture
@@ -34,6 +56,7 @@ def client(test_db):
     Create a FastAPI TestClient with dependency overrides.
 
     Overrides the get_db dependency to use the in-memory test database.
+    Sets up app.state.lexicons with test lexicon data.
     Cleans up the overrides after the test completes.
     """
 
@@ -41,6 +64,7 @@ def client(test_db):
         yield test_db
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.lexicons = {"soc.qar": TEST_LEXICON, "test.sub": TEST_SUB_LEXICON}
 
     yield TestClient(app)
 

@@ -1,23 +1,28 @@
 {
+  "lexicons_dir": "lexicons",
   "scan_roots": [
     {
       "path": "/requests/qa",
       "label": "QA Package Results",
+      "lexicon": "soc.qar",
       "target": "packages"
     },
     {
       "path": "/requests/qm",
       "label": "MIL QA Package Results",
+      "lexicon": "soc.qmr",
       "target": "packages"
     },
     {
       "path": "/requests/qad",
       "label": "QA Internal DP Data",
+      "lexicon": "soc.qar",
       "target": "packages"
     },
     {
       "path": "/requests/qmd",
       "label": "MIL QA Internal DP Data",
+      "lexicon": "soc.qmr",
       "target": "packages"
     }
   ],

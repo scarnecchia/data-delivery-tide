@@ -22,7 +22,8 @@ class CrawlManifest(TypedDict):
     source_path: str
     scan_root: str
     parsed: ParsedMetadata
-    qa_status: str
+    lexicon_id: str
+    status: str
     fingerprint: str
     files: list[dict]
     file_count: int
@@ -51,6 +52,7 @@ def build_manifest(
     fingerprint: str,
     crawler_version: str,
     crawled_at: str,
+    lexicon_id: str,
 ) -> CrawlManifest:
     """Build a crawl manifest dict from parsed metadata and file inventory."""
     delivery_id = make_delivery_id(parsed.source_path)
@@ -68,7 +70,8 @@ def build_manifest(
             "dp_id": parsed.dp_id,
             "version": parsed.version,
         },
-        "qa_status": parsed.qa_status,
+        "lexicon_id": lexicon_id,
+        "status": parsed.status,
         "fingerprint": fingerprint,
         "files": [dict(f) for f in files],
         "file_count": len(files),

@@ -4,11 +4,14 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from pipeline.lexicons import load_all_lexicons, LexiconLoadError
+
 
 @dataclass
 class ScanRoot:
     path: str
     label: str
+    lexicon: str
     target: str = "packages"
 
 
@@ -24,6 +27,7 @@ class PipelineConfig:
     dp_id_exclusions: list[str]
     crawl_manifest_dir: str
     crawler_version: str
+    lexicons_dir: str
 
 
 def load_config(path: str | None = None) -> PipelineConfig:
@@ -43,10 +47,27 @@ def load_config(path: str | None = None) -> PipelineConfig:
         ScanRoot(
             path=root["path"],
             label=root["label"],
+            lexicon=root["lexicon"],
             target=root.get("target", "packages"),
         )
         for root in data["scan_roots"]
     ]
+
+    lexicons_dir_raw = data.get("lexicons_dir")
+    if lexicons_dir_raw is None:
+        raise ValueError("config missing required field 'lexicons_dir'")
+
+    lexicons_dir = str((config_path.parent / lexicons_dir_raw).resolve())
+
+    loaded_lexicons = load_all_lexicons(lexicons_dir)
+
+    bad_refs = [
+        f"scan root '{root.label}' references unknown lexicon '{root.lexicon}'"
+        for root in scan_roots
+        if root.lexicon not in loaded_lexicons
+    ]
+    if bad_refs:
+        raise LexiconLoadError(bad_refs)
 
     return PipelineConfig(
         scan_roots=scan_roots,
@@ -59,6 +80,7 @@ def load_config(path: str | None = None) -> PipelineConfig:
         dp_id_exclusions=data.get("dp_id_exclusions", []),
         crawl_manifest_dir=data.get("crawl_manifest_dir", "pipeline/crawl_manifests"),
         crawler_version=data.get("crawler_version", "1.0.0"),
+        lexicons_dir=lexicons_dir,
     )
 
 

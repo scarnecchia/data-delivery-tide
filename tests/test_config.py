@@ -2,15 +2,36 @@ import json
 import pytest
 
 from pipeline.config import load_config, PipelineConfig, ScanRoot
+from pipeline.lexicons import LexiconLoadError
+
+
+def _make_lexicons(tmp_path, lexicon_id="soc.qar"):
+    """Create a minimal valid lexicons directory for config tests."""
+    parts = lexicon_id.split(".")
+    # soc.qar -> soc/qar.json
+    lex_dir = tmp_path / "lexicons"
+    lex_file = lex_dir / "/".join(parts[:-1]) / f"{parts[-1]}.json"
+    lex_file.parent.mkdir(parents=True, exist_ok=True)
+    lex_file.write_text(json.dumps({
+        "statuses": ["pending", "passed", "failed"],
+        "transitions": {"pending": ["passed", "failed"], "passed": [], "failed": []},
+        "dir_map": {"msoc": "passed", "msoc_new": "pending"},
+        "actionable_statuses": ["passed"],
+        "metadata_fields": {},
+    }))
+    return str(lex_dir)
 
 
 class TestLoadConfig:
     def test_load_config_from_explicit_path(self, tmp_path):
         """Test loading config from an explicitly provided path."""
+        _make_lexicons(tmp_path, "soc.qar")
+
         config_data = {
+            "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/test/qa", "label": "Test QA"},
-                {"path": "/test/qm", "label": "Test QM"},
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+                {"path": "/test/qm", "label": "Test QM", "lexicon": "soc.qar"},
             ],
             "registry_api_url": "http://test:8000",
             "output_root": "/test/output",
@@ -35,14 +56,19 @@ class TestLoadConfig:
         assert len(config.scan_roots) == 2
         assert config.scan_roots[0].path == "/test/qa"
         assert config.scan_roots[0].label == "Test QA"
+        assert config.scan_roots[0].lexicon == "soc.qar"
         assert config.scan_roots[1].path == "/test/qm"
         assert config.scan_roots[1].label == "Test QM"
+        assert config.scan_roots[1].lexicon == "soc.qar"
 
     def test_load_config_from_env_var(self, tmp_path, monkeypatch):
         """Test loading config from PIPELINE_CONFIG env var."""
+        _make_lexicons(tmp_path, "soc.qar")
+
         config_data = {
+            "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/env/qa", "label": "Env QA"},
+                {"path": "/env/qa", "label": "Env QA", "lexicon": "soc.qar"},
             ],
             "registry_api_url": "http://env:9000",
             "output_root": "/env/output",
@@ -60,6 +86,7 @@ class TestLoadConfig:
         assert config.registry_api_url == "http://env:9000"
         assert config.output_root == "/env/output"
         assert config.scan_roots[0].path == "/env/qa"
+        assert config.scan_roots[0].lexicon == "soc.qar"
 
     def test_load_config_falls_back_to_default(self, monkeypatch):
         """Test fallback to pipeline/config.json relative to package root when no env var is set."""
@@ -77,9 +104,12 @@ class TestLoadConfig:
 
     def test_load_config_with_dp_id_exclusions(self, tmp_path):
         """Test loading config with dp_id_exclusions field."""
+        _make_lexicons(tmp_path, "soc.qar")
+
         config_data = {
+            "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/test/qa", "label": "Test QA"},
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
             ],
             "registry_api_url": "http://test:8000",
             "output_root": "/test/output",
@@ -98,9 +128,12 @@ class TestLoadConfig:
 
     def test_load_config_dp_id_exclusions_defaults_to_empty_list(self, tmp_path):
         """Test that dp_id_exclusions defaults to empty list if absent."""
+        _make_lexicons(tmp_path, "soc.qar")
+
         config_data = {
+            "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/test/qa", "label": "Test QA"},
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
             ],
             "registry_api_url": "http://test:8000",
             "output_root": "/test/output",
@@ -118,9 +151,12 @@ class TestLoadConfig:
 
     def test_load_config_target_explicit_packages(self, tmp_path):
         """Test that scan root with explicit target='packages' loads correctly (AC1.1)."""
+        _make_lexicons(tmp_path, "soc.qar")
+
         config_data = {
+            "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/test/qa", "label": "Test QA", "target": "packages"},
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar", "target": "packages"},
             ],
             "registry_api_url": "http://test:8000",
             "output_root": "/test/output",
@@ -138,9 +174,12 @@ class TestLoadConfig:
 
     def test_load_config_target_defaults_to_packages(self, tmp_path):
         """Test that scan root without target field defaults to 'packages' (AC1.2)."""
+        _make_lexicons(tmp_path, "soc.qar")
+
         config_data = {
+            "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/test/qa", "label": "Test QA"},
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
             ],
             "registry_api_url": "http://test:8000",
             "output_root": "/test/output",
@@ -158,9 +197,12 @@ class TestLoadConfig:
 
     def test_load_config_target_non_default(self, tmp_path):
         """Test that scan root with non-default target='compare' loads correctly (AC1.3)."""
+        _make_lexicons(tmp_path, "soc.qar")
+
         config_data = {
+            "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/test/qa", "label": "Test QA", "target": "compare"},
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar", "target": "compare"},
             ],
             "registry_api_url": "http://test:8000",
             "output_root": "/test/output",
@@ -183,3 +225,73 @@ class TestLoadConfig:
         config = load_config()
 
         assert all(root.target == "packages" for root in config.scan_roots)
+
+    # AC2.1-AC2.3 tests
+    def test_load_config_valid_lexicon_reference(self, tmp_path):
+        """AC2.1: Scan root with valid lexicon reference loads successfully."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.scan_roots[0].lexicon == "soc.qar"
+
+    def test_load_config_invalid_lexicon_reference(self, tmp_path):
+        """AC2.2: Scan root referencing non-existent lexicon ID fails at startup."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.nonexistent"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        with pytest.raises(LexiconLoadError) as exc_info:
+            load_config(str(config_file))
+
+        assert "soc.nonexistent" in str(exc_info.value)
+        assert "Test QA" in str(exc_info.value)
+
+    def test_load_config_missing_lexicons_dir(self, tmp_path):
+        """AC2.3: Missing lexicons_dir in config fails at startup."""
+        config_data = {
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        with pytest.raises(ValueError) as exc_info:
+            load_config(str(config_file))
+
+        assert "lexicons_dir" in str(exc_info.value)

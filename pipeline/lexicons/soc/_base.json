@@ -1,0 +1,14 @@
+{
+  "$schema": "../lexicon.schema.json",
+  "statuses": ["pending", "passed", "failed"],
+  "transitions": {
+    "pending": ["passed", "failed"],
+    "passed": [],
+    "failed": []
+  },
+  "dir_map": {
+    "msoc": "passed",
+    "msoc_new": "pending"
+  },
+  "actionable_statuses": ["passed"]
+}

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,6 +11,8 @@ def make_delivery_payload(**overrides):
     Helper to create a valid DeliveryCreate payload with sensible defaults.
 
     Allows overriding any field via keyword arguments.
+
+    Default lexicon_id is "soc.qar" (matches TEST_LEXICON in conftest).
     """
     defaults = {
         "request_id": "req-001",
@@ -19,7 +22,8 @@ def make_delivery_payload(**overrides):
         "dp_id": "dp-001",
         "version": "1.0.0",
         "scan_root": "/data/scans",
-        "qa_status": "pending",
+        "lexicon_id": "soc.qar",
+        "status": "pending",
         "source_path": "/source/test",
     }
     defaults.update(overrides)
@@ -67,7 +71,8 @@ class TestCreateDelivery:
         assert data["dp_id"] == "dp-001"
         assert data["version"] == "1.0.0"
         assert data["scan_root"] == "/data/scans"
-        assert data["qa_status"] == "pending"
+        assert data["lexicon_id"] == "soc.qar"
+        assert data["status"] == "pending"
         assert data["source_path"] == "/source/test"
         assert data["first_seen_at"]
 
@@ -90,10 +95,10 @@ class TestCreateDelivery:
         first_seen_at_1 = response1.json()["first_seen_at"]
         delivery_id = response1.json()["delivery_id"]
 
-        # Second POST with same source_path but different qa_status
+        # Second POST with same source_path but different status
         payload_updated = make_delivery_payload(
             source_path="/data/unique-scan",
-            qa_status="passed",
+            status="passed",
         )
         response2 = client.post("/deliveries", json=payload_updated)
 
@@ -104,8 +109,8 @@ class TestCreateDelivery:
         assert data2["delivery_id"] == delivery_id
         # first_seen_at should be preserved
         assert data2["first_seen_at"] == first_seen_at_1
-        # qa_status should be updated
-        assert data2["qa_status"] == "passed"
+        # status should be updated
+        assert data2["status"] == "passed"
 
     def test_create_missing_required_field(self, client):
         """AC3.1: POST /deliveries without required field returns 422."""
@@ -115,9 +120,10 @@ class TestCreateDelivery:
         response = client.post("/deliveries", json=payload)
         assert response.status_code == 422
 
-    def test_create_invalid_qa_status(self, client):
-        """AC3.2: POST /deliveries with invalid qa_status returns 422."""
-        payload = make_delivery_payload(qa_status="invalid")
+    def test_create_missing_lexicon_id(self, client):
+        """AC3.2: POST /deliveries without required lexicon_id returns 422."""
+        payload = make_delivery_payload()
+        del payload["lexicon_id"]
         response = client.post("/deliveries", json=payload)
         assert response.status_code == 422
 
@@ -161,26 +167,26 @@ class TestListDeliveries:
         data = response.json()
         assert len(data) == 2
 
-    def test_list_filtered_by_qa_status(self, client):
-        """GET /deliveries?qa_status=pending filters by qa_status."""
+    def test_list_filtered_by_status(self, client):
+        """GET /deliveries?status=pending filters by status."""
         payload_pending = make_delivery_payload(
             source_path="/data/filter-pending",
-            qa_status="pending",
+            status="pending",
         )
         payload_passed = make_delivery_payload(
             source_path="/data/filter-passed",
-            qa_status="passed",
+            status="passed",
         )
 
         client.post("/deliveries", json=payload_pending)
         client.post("/deliveries", json=payload_passed)
 
-        response = client.get("/deliveries?qa_status=pending")
+        response = client.get("/deliveries?status=pending")
 
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
-        assert data[0]["qa_status"] == "pending"
+        assert data[0]["status"] == "pending"
 
     def test_list_filtered_by_dp_id(self, client):
         """GET /deliveries?dp_id=X filters by dp_id."""
@@ -199,58 +205,49 @@ class TestListDeliveries:
 
 
 class TestActionableDeliveries:
-    """Test GET /deliveries/actionable endpoint."""
+    """Test GET /deliveries/actionable endpoint.
+
+    Returns deliveries with status in lexicon's actionable_statuses
+    AND parquet_converted_at IS NULL.
+    """
 
     def test_actionable_returns_passed_unconverted(self, client):
         """AC1.8: GET /deliveries/actionable returns passed+unconverted deliveries."""
-        # Create one passed+unconverted (actionable)
-        payload_actionable = make_delivery_payload(
-            source_path="/data/actionable-1",
-            qa_status="passed",
-        )
-
-        # Create one pending (not actionable)
+        # Create a pending delivery (not actionable)
         payload_pending = make_delivery_payload(
-            source_path="/data/not-actionable-1",
-            qa_status="pending",
+            source_path="/data/actionable-pending",
+            status="pending",
         )
-
-        # Create one passed delivery that we'll mark as converted
-        payload_for_converted = make_delivery_payload(
-            source_path="/data/converted-1",
-            qa_status="passed",
-        )
-
-        client.post("/deliveries", json=payload_actionable)
         client.post("/deliveries", json=payload_pending)
-        post3 = client.post("/deliveries", json=payload_for_converted)
 
-        # Mark the third delivery as converted via PATCH
-        converted_id = post3.json()["delivery_id"]
-        client.patch(
-            f"/deliveries/{converted_id}",
-            json={"parquet_converted_at": "2026-04-09T10:00:00+00:00"},
+        # Create a passed delivery without parquet_converted_at (actionable)
+        payload_passed = make_delivery_payload(
+            source_path="/data/actionable-passed",
+            status="passed",
         )
+        client.post("/deliveries", json=payload_passed)
 
         response = client.get("/deliveries/actionable")
 
         assert response.status_code == 200
         data = response.json()
-
-        # Should only return the passed+unconverted one
         assert len(data) == 1
-        assert data[0]["qa_status"] == "passed"
-        assert data[0]["parquet_converted_at"] is None
-        assert data[0]["source_path"] == "/data/actionable-1"
+        assert data[0]["status"] == "passed"
+        assert data[0]["source_path"] == "/data/actionable-passed"
 
     def test_actionable_empty_when_none_match(self, client):
         """GET /deliveries/actionable returns empty list when no deliveries are actionable."""
-        payload_pending = make_delivery_payload(
-            source_path="/data/pending-only",
-            qa_status="pending",
+        # Create only pending deliveries (not actionable)
+        payload1 = make_delivery_payload(
+            source_path="/data/actionable-test-1",
+            status="pending",
         )
-
-        client.post("/deliveries", json=payload_pending)
+        payload2 = make_delivery_payload(
+            source_path="/data/actionable-test-2",
+            status="pending",
+        )
+        client.post("/deliveries", json=payload1)
+        client.post("/deliveries", json=payload2)
 
         response = client.get("/deliveries/actionable")
 
@@ -267,7 +264,7 @@ class TestUpdateDelivery:
         payload = make_delivery_payload(source_path="/data/update-test")
         post_response = client.post("/deliveries", json=payload)
         delivery_id = post_response.json()["delivery_id"]
-        original_qa_status = post_response.json()["qa_status"]
+        original_status = post_response.json()["status"]
 
         # PATCH only output_path
         update_payload = {"output_path": "/new/output/path"}
@@ -276,7 +273,7 @@ class TestUpdateDelivery:
         assert response.status_code == 200
         data = response.json()
         assert data["output_path"] == "/new/output/path"
-        assert data["qa_status"] == original_qa_status
+        assert data["status"] == original_status
 
     def test_update_delivery_empty_body_noop(self, client):
         """AC3.3: PATCH /deliveries/{delivery_id} with empty body {} is a no-op."""
@@ -291,7 +288,7 @@ class TestUpdateDelivery:
         assert response.status_code == 200
         data = response.json()
         # All fields should remain unchanged
-        assert data["qa_status"] == original_data["qa_status"]
+        assert data["status"] == original_data["status"]
         assert data["output_path"] == original_data["output_path"]
 
     def test_update_delivery_not_found(self, client):
@@ -303,22 +300,22 @@ class TestUpdateDelivery:
         assert response.status_code == 404
 
     def test_update_delivery_qa_status(self, client):
-        """PATCH /deliveries/{delivery_id} can update qa_status."""
+        """PATCH /deliveries/{delivery_id} can update status."""
         payload = make_delivery_payload(
             source_path="/data/status-update",
-            qa_status="pending",
+            status="pending",
         )
         post_response = client.post("/deliveries", json=payload)
         delivery_id = post_response.json()["delivery_id"]
 
         response = client.patch(
             f"/deliveries/{delivery_id}",
-            json={"qa_status": "passed"},
+            json={"status": "passed"},
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["qa_status"] == "passed"
+        assert data["status"] == "passed"
 
     def test_update_delivery_parquet_converted_at(self, client):
         """PATCH /deliveries/{delivery_id} can update parquet_converted_at."""
@@ -334,6 +331,150 @@ class TestUpdateDelivery:
         assert response.status_code == 200
         data = response.json()
         assert data["parquet_converted_at"] == "2026-04-09T15:30:00+00:00"
+
+
+class TestLexiconValidation:
+    """Test lexicon-based validation of statuses and transitions (AC4.1-AC4.6)."""
+
+    def test_ac4_1_post_with_valid_status(self, client):
+        """AC4.1: POST with valid status for lexicon succeeds."""
+        payload = make_delivery_payload(
+            source_path="/data/ac4-1-test",
+            lexicon_id="soc.qar",
+            status="pending",
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "pending"
+        assert data["lexicon_id"] == "soc.qar"
+
+    def test_post_with_unknown_lexicon_id(self, client):
+        """POST with unknown lexicon_id returns 422 with "unknown lexicon_id" detail."""
+        payload = make_delivery_payload(
+            source_path="/data/unknown-lexicon-test",
+            lexicon_id="nonexistent.lexicon",
+            status="pending",
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert "unknown lexicon_id" in detail
+
+    def test_ac4_2_post_with_invalid_status(self, client):
+        """AC4.2: POST with status not in lexicon's statuses returns 422."""
+        payload = make_delivery_payload(
+            source_path="/data/ac4-2-test",
+            lexicon_id="soc.qar",
+            status="nonexistent",
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert "not valid for lexicon" in detail
+
+    def test_ac4_3_patch_with_legal_transition(self, client):
+        """AC4.3: PATCH with legal transition succeeds."""
+        # Create with pending status
+        payload = make_delivery_payload(
+            source_path="/data/ac4-3-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # PATCH to passed (legal transition: pending -> passed)
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        assert data["status"] == "passed"
+
+    def test_ac4_4_patch_with_illegal_transition(self, client):
+        """AC4.4: PATCH with illegal transition returns 422."""
+        # Create with passed status
+        payload = make_delivery_payload(
+            source_path="/data/ac4-4-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # First transition to passed (legal)
+        client.patch(f"/deliveries/{delivery_id}", json={"status": "passed"})
+
+        # Now try to transition back to pending (illegal: passed -> pending not in transitions)
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "pending"},
+        )
+
+        assert patch_response.status_code == 422
+        detail = patch_response.json()["detail"]
+        assert "not allowed" in detail or "transition" in detail
+
+    def test_ac4_5_set_on_metadata_auto_populated(self, client):
+        """AC4.5: set_on metadata field auto-populated on matching status transition."""
+        # Create with pending status
+        payload = make_delivery_payload(
+            source_path="/data/ac4-5-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+        assert post_response.json().get("metadata", {}).get("passed_at") is None
+
+        # PATCH to passed (should trigger set_on for passed_at)
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        assert data["status"] == "passed"
+        # Verify passed_at is populated with a valid ISO timestamp
+        assert "passed_at" in data["metadata"]
+        assert data["metadata"]["passed_at"] is not None
+        # Verify it parses as a valid ISO datetime
+        datetime.fromisoformat(data["metadata"]["passed_at"])
+
+    def test_ac4_6_no_status_change_no_metadata_auto_pop(self, client, test_db):
+        """AC4.6: PATCH without status change produces no event and no metadata auto-population."""
+        # Create with pending status
+        payload = make_delivery_payload(
+            source_path="/data/ac4-6-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # Count events before PATCH
+        events_before = get_events(test_db)
+        initial_event_count = len(events_before)
+
+        # PATCH without changing status
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "pending"},  # Same as current status
+        )
+
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        assert data["status"] == "pending"
+
+        # Verify no new event was created
+        events_after = get_events(test_db)
+        assert len(events_after) == initial_event_count
+
+        # Verify passed_at was NOT auto-populated
+        assert "passed_at" not in data["metadata"] or data["metadata"].get("passed_at") is None
 
 
 class TestDeliveryCreatedEvents:
@@ -356,7 +497,7 @@ class TestDeliveryCreatedEvents:
         assert event["delivery_id"] == delivery_id
         assert event["payload"]["delivery_id"] == delivery_id
         assert event["payload"]["source_path"] == "/data/new-event-test"
-        assert event["payload"]["qa_status"] == "pending"
+        assert event["payload"]["status"] == "pending"
 
     def test_recrawl_no_event(self, client, test_db):
         """event-stream.AC1.3: Re-crawl of existing delivery produces no event."""
@@ -389,7 +530,7 @@ class TestDeliveryCreatedEvents:
         assert data["request_id"] == "req-001"
         assert data["project"] == "test-project"
         assert data["source_path"] == "/data/compat-test"
-        assert data["qa_status"] == "pending"
+        assert data["status"] == "pending"
         assert data["first_seen_at"]
 
 
@@ -457,7 +598,7 @@ class TestAPIRestartDeliveryDistinction:
         source_path = "/data/restart-existing"
 
         # Simulate pre-restart state: insert delivery directly into DB
-        payload = make_delivery_payload(source_path=source_path, qa_status="pending")
+        payload = make_delivery_payload(source_path=source_path, status="pending")
         pre_restart_delivery = upsert_delivery(test_db, payload)
         test_db.commit()
 
@@ -505,10 +646,10 @@ class TestDeliveryStatusChangedEvents:
     """Test delivery.status_changed event emission on PATCH /deliveries/{id}."""
 
     def test_status_pending_to_passed_creates_event(self, client, test_db):
-        """event-stream.AC2.1: PATCH with qa_status pending→passed creates event."""
+        """event-stream.AC2.1: PATCH with status pending→passed creates event."""
         payload = make_delivery_payload(
             source_path="/data/status-change-1",
-            qa_status="pending",
+            status="pending",
         )
         post_response = client.post("/deliveries", json=payload)
         delivery_id = post_response.json()["delivery_id"]
@@ -518,7 +659,7 @@ class TestDeliveryStatusChangedEvents:
         # PATCH to change status
         patch_response = client.patch(
             f"/deliveries/{delivery_id}",
-            json={"qa_status": "passed"},
+            json={"status": "passed"},
         )
 
         assert patch_response.status_code == 200
@@ -530,13 +671,13 @@ class TestDeliveryStatusChangedEvents:
         event = new_events[0]
         assert event["event_type"] == "delivery.status_changed"
         assert event["delivery_id"] == delivery_id
-        assert event["payload"]["qa_status"] == "passed"
+        assert event["payload"]["status"] == "passed"
 
     def test_status_pending_to_failed_creates_event(self, client, test_db):
-        """event-stream.AC2.2: PATCH with qa_status pending→failed creates event."""
+        """event-stream.AC2.2: PATCH with status pending→failed creates event."""
         payload = make_delivery_payload(
             source_path="/data/status-change-2",
-            qa_status="pending",
+            status="pending",
         )
         post_response = client.post("/deliveries", json=payload)
         delivery_id = post_response.json()["delivery_id"]
@@ -546,7 +687,7 @@ class TestDeliveryStatusChangedEvents:
         # PATCH to change status to failed
         patch_response = client.patch(
             f"/deliveries/{delivery_id}",
-            json={"qa_status": "failed"},
+            json={"status": "failed"},
         )
 
         assert patch_response.status_code == 200
@@ -557,13 +698,13 @@ class TestDeliveryStatusChangedEvents:
         event = new_events[0]
         assert event["event_type"] == "delivery.status_changed"
         assert event["delivery_id"] == delivery_id
-        assert event["payload"]["qa_status"] == "failed"
+        assert event["payload"]["status"] == "failed"
 
     def test_event_payload_reflects_new_status(self, client, test_db):
         """event-stream.AC2.3: Event payload contains updated delivery record."""
         payload = make_delivery_payload(
             source_path="/data/payload-test",
-            qa_status="pending",
+            status="pending",
         )
         post_response = client.post("/deliveries", json=payload)
         delivery_id = post_response.json()["delivery_id"]
@@ -573,7 +714,7 @@ class TestDeliveryStatusChangedEvents:
         # PATCH to change status and output_path
         patch_response = client.patch(
             f"/deliveries/{delivery_id}",
-            json={"qa_status": "passed", "output_path": "/new/output"},
+            json={"status": "passed", "output_path": "/new/output"},
         )
 
         assert patch_response.status_code == 200
@@ -583,7 +724,7 @@ class TestDeliveryStatusChangedEvents:
         assert len(new_events) == 1
         event = new_events[0]
         # Payload should reflect new status
-        assert event["payload"]["qa_status"] == "passed"
+        assert event["payload"]["status"] == "passed"
         assert event["payload"]["output_path"] == "/new/output"
 
     def test_no_event_on_non_status_update(self, client, test_db):
@@ -608,10 +749,10 @@ class TestDeliveryStatusChangedEvents:
         assert len(new_events) == 0  # No event should be created for non-status changes
 
     def test_no_event_on_same_status_patch(self, client, test_db):
-        """event-stream.AC2.5: PATCH with same qa_status value produces no event."""
+        """event-stream.AC2.5: PATCH with same status value produces no event."""
         payload = make_delivery_payload(
             source_path="/data/same-status-test",
-            qa_status="pending",
+            status="pending",
         )
         post_response = client.post("/deliveries", json=payload)
         delivery_id = post_response.json()["delivery_id"]
@@ -621,7 +762,7 @@ class TestDeliveryStatusChangedEvents:
         # PATCH with same status value
         patch_response = client.patch(
             f"/deliveries/{delivery_id}",
-            json={"qa_status": "pending"},
+            json={"status": "pending"},
         )
 
         assert patch_response.status_code == 200
@@ -629,6 +770,161 @@ class TestDeliveryStatusChangedEvents:
         events_after = get_events(test_db)
         new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
         assert len(new_events) == 0  # No event should be created
+
+
+class TestEventPayloadShape:
+    """Test event payload shape contains new lexicon system fields (AC6.1-AC6.3)."""
+
+    def test_ac6_1_delivery_created_contains_lexicon_id_status_metadata(self, client, test_db):
+        """AC6.1: delivery.created event payload contains lexicon_id, status, metadata."""
+        payload = make_delivery_payload(
+            source_path="/data/ac6-1-test",
+            lexicon_id="soc.qar",
+            status="pending",
+            metadata={"custom_field": "custom_value"},
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Query events
+        events = get_events(test_db)
+        assert len(events) >= 1
+
+        # Find the delivery.created event
+        created_event = None
+        for event in events:
+            if event["event_type"] == "delivery.created" and event["delivery_id"] == delivery_id:
+                created_event = event
+                break
+
+        assert created_event is not None, "No delivery.created event found"
+
+        # Verify payload contains required fields
+        payload_dict = created_event["payload"]
+        assert "lexicon_id" in payload_dict
+        assert "status" in payload_dict
+        assert "metadata" in payload_dict
+
+        # Verify values
+        assert payload_dict["lexicon_id"] == "soc.qar"
+        assert payload_dict["status"] == "pending"
+        assert isinstance(payload_dict["metadata"], dict)
+        assert payload_dict["metadata"].get("custom_field") == "custom_value"
+
+    def test_ac6_2_delivery_status_changed_contains_status_and_metadata(self, client, test_db):
+        """AC6.2: delivery.status_changed event payload contains updated status and metadata."""
+        # Create with pending status
+        payload = make_delivery_payload(
+            source_path="/data/ac6-2-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # PATCH to change status to passed
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        # Query events
+        events = get_events(test_db)
+
+        # Find the delivery.status_changed event
+        status_changed_event = None
+        for event in events:
+            if (
+                event["event_type"] == "delivery.status_changed"
+                and event["delivery_id"] == delivery_id
+            ):
+                status_changed_event = event
+                break
+
+        assert status_changed_event is not None, "No delivery.status_changed event found"
+
+        # Verify payload contains required fields
+        payload_dict = status_changed_event["payload"]
+        assert "status" in payload_dict
+        assert "metadata" in payload_dict
+
+        # Verify values
+        assert payload_dict["status"] == "passed"
+        assert isinstance(payload_dict["metadata"], dict)
+        # Verify passed_at was populated by set_on rule
+        assert "passed_at" in payload_dict["metadata"]
+        assert payload_dict["metadata"]["passed_at"] is not None
+        # Verify it's a valid ISO timestamp
+        datetime.fromisoformat(payload_dict["metadata"]["passed_at"])
+
+    def test_ac6_3_delivery_created_does_not_contain_old_field_names(self, client, test_db):
+        """AC6.3: delivery.created event payload does not contain qa_status or qa_passed_at."""
+        payload = make_delivery_payload(
+            source_path="/data/ac6-3-created-test",
+            status="pending",
+        )
+        response = client.post("/deliveries", json=payload)
+
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Query events
+        events = get_events(test_db)
+
+        # Find the delivery.created event
+        created_event = None
+        for event in events:
+            if event["event_type"] == "delivery.created" and event["delivery_id"] == delivery_id:
+                created_event = event
+                break
+
+        assert created_event is not None
+
+        # Verify old field names are NOT present
+        payload_dict = created_event["payload"]
+        assert "qa_status" not in payload_dict
+        assert "qa_passed_at" not in payload_dict
+
+    def test_ac6_3_delivery_status_changed_does_not_contain_old_field_names(self, client, test_db):
+        """AC6.3: delivery.status_changed event payload does not contain qa_status or qa_passed_at."""
+        # Create with pending status
+        payload = make_delivery_payload(
+            source_path="/data/ac6-3-changed-test",
+            status="pending",
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # PATCH to change status
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "passed"},
+        )
+
+        assert patch_response.status_code == 200
+
+        # Query events
+        events = get_events(test_db)
+
+        # Find the delivery.status_changed event
+        status_changed_event = None
+        for event in events:
+            if (
+                event["event_type"] == "delivery.status_changed"
+                and event["delivery_id"] == delivery_id
+            ):
+                status_changed_event = event
+                break
+
+        assert status_changed_event is not None
+
+        # Verify old field names are NOT present
+        payload_dict = status_changed_event["payload"]
+        assert "qa_status" not in payload_dict
+        assert "qa_passed_at" not in payload_dict
 
 
 class TestCatchUpEndpoint:
@@ -747,3 +1043,139 @@ class TestCatchUpEndpoint:
         assert event["event_type"] == "delivery.created"
         assert event["delivery_id"] == "test-id"
         assert event["payload"] == {"key": "value"}
+
+
+class TestSubDeliveryIntegration:
+    """Test sub-delivery integration through the API (AC5.1-AC5.4)."""
+
+    def test_sub_delivery_queryable_by_lexicon_id(self, client):
+        """AC5.1: Sub-deliveries appear in GET /deliveries?lexicon_id=test.sub."""
+        # POST parent delivery with lexicon_id="soc.qar"
+        parent_payload = make_delivery_payload(
+            source_path="/data/parent-sub-test",
+            lexicon_id="soc.qar",
+            status="passed",
+        )
+        parent_response = client.post("/deliveries", json=parent_payload)
+        assert parent_response.status_code == 200
+
+        # POST sub-delivery with lexicon_id="test.sub"
+        sub_payload = make_delivery_payload(
+            source_path="/data/parent-sub-test/sub",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        sub_response = client.post("/deliveries", json=sub_payload)
+        assert sub_response.status_code == 200
+
+        # Query by test.sub lexicon_id
+        response = client.get("/deliveries?lexicon_id=test.sub")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Only the sub-delivery should be returned
+        assert len(data) == 1
+        assert data[0]["lexicon_id"] == "test.sub"
+        assert data[0]["source_path"] == "/data/parent-sub-test/sub"
+
+    def test_parent_and_sub_correlated_by_identity(self, client):
+        """AC5.2: Parent and sub-delivery are correlated by identity fields."""
+        # POST parent delivery
+        parent_payload = make_delivery_payload(
+            request_id="req-correlation",
+            workplan_id="wp-correlation",
+            dp_id="dp-correlation",
+            version="1.0.0",
+            source_path="/data/parent-corr",
+            lexicon_id="soc.qar",
+            status="passed",
+        )
+        parent_response = client.post("/deliveries", json=parent_payload)
+        assert parent_response.status_code == 200
+        parent_id = parent_response.json()["delivery_id"]
+
+        # POST sub-delivery with same identity fields, different source_path
+        sub_payload = make_delivery_payload(
+            request_id="req-correlation",
+            workplan_id="wp-correlation",
+            dp_id="dp-correlation",
+            version="1.0.0",
+            source_path="/data/parent-corr/sub",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        sub_response = client.post("/deliveries", json=sub_payload)
+        assert sub_response.status_code == 200
+        sub_id = sub_response.json()["delivery_id"]
+
+        # Query all deliveries with request_id
+        response = client.get("/deliveries?request_id=req-correlation")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Both parent and sub should be returned
+        assert len(data) == 2
+
+        # Find parent and sub by lexicon_id
+        parent = next(d for d in data if d["lexicon_id"] == "soc.qar")
+        sub = next(d for d in data if d["lexicon_id"] == "test.sub")
+
+        # Verify identity fields match
+        assert parent["request_id"] == sub["request_id"] == "req-correlation"
+        assert parent["workplan_id"] == sub["workplan_id"] == "wp-correlation"
+        assert parent["dp_id"] == sub["dp_id"] == "dp-correlation"
+        assert parent["version"] == sub["version"] == "1.0.0"
+
+        # Verify they are different deliveries
+        assert parent["delivery_id"] != sub["delivery_id"]
+        assert parent["delivery_id"] == parent_id
+        assert sub["delivery_id"] == sub_id
+
+    def test_sub_delivery_appears_in_actionable(self, client):
+        """AC5.3: Sub-deliveries appear in actionable when status matches actionable_statuses."""
+        # POST sub-delivery with status="passed" (in test.sub's actionable_statuses)
+        # and parquet_converted_at=null (not yet converted)
+        sub_payload = make_delivery_payload(
+            source_path="/data/sub-actionable",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        sub_response = client.post("/deliveries", json=sub_payload)
+        assert sub_response.status_code == 200
+
+        # Query actionable deliveries
+        response = client.get("/deliveries/actionable")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Sub-delivery should appear in actionable list
+        actionable_subs = [d for d in data if d["lexicon_id"] == "test.sub"]
+        assert len(actionable_subs) == 1
+        assert actionable_subs[0]["source_path"] == "/data/sub-actionable"
+        assert actionable_subs[0]["status"] == "passed"
+
+    def test_sub_delivery_creation_emits_event(self, client, test_db):
+        """AC5.4: POST sub-delivery emits delivery.created event with correct lexicon_id."""
+        # POST sub-delivery
+        sub_payload = make_delivery_payload(
+            source_path="/data/sub-event-test",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        response = client.post("/deliveries", json=sub_payload)
+        assert response.status_code == 200
+        sub_delivery_id = response.json()["delivery_id"]
+
+        # Get events
+        events = get_events(test_db)
+
+        # Find the event for this sub-delivery
+        sub_event = next(
+            (e for e in events if e["delivery_id"] == sub_delivery_id),
+            None,
+        )
+
+        assert sub_event is not None
+        assert sub_event["event_type"] == "delivery.created"
+        assert sub_event["payload"]["lexicon_id"] == "test.sub"
+        assert sub_event["payload"]["source_path"] == "/data/sub-event-test"
