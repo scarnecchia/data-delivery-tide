@@ -117,6 +117,25 @@ def _import_hook(hook_path: str) -> object:
     return getattr(module, attr_name)
 
 
+def _validate_sub_dirs(lexicons: dict[str, Lexicon]) -> list[str]:
+    """Validate sub_dirs references across all loaded lexicons."""
+    errors: list[str] = []
+    for lid, lex in lexicons.items():
+        for dir_name, sub_lexicon_id in lex.sub_dirs.items():
+            if sub_lexicon_id not in lexicons:
+                errors.append(
+                    f"{lid}: sub_dirs['{dir_name}'] references "
+                    f"unknown lexicon '{sub_lexicon_id}'"
+                )
+            elif lexicons[sub_lexicon_id].sub_dirs:
+                errors.append(
+                    f"{lid}: sub_dirs['{dir_name}'] references lexicon "
+                    f"'{sub_lexicon_id}' which itself has sub_dirs "
+                    f"(recursive nesting not allowed)"
+                )
+    return errors
+
+
 def _validate_lexicon(lid: str, data: dict) -> list[str]:
     """Validate a single resolved lexicon dict. Return list of error strings."""
     errors: list[str] = []
@@ -168,6 +187,8 @@ def _build_lexicon(data: dict, hook: object | None) -> Lexicon:
             set_on=field_def.get("set_on"),
         )
 
+    sub_dirs = dict(data.get("sub_dirs", {}))
+
     return Lexicon(
         id=data["id"],
         statuses=tuple(data.get("statuses", ())),
@@ -176,6 +197,7 @@ def _build_lexicon(data: dict, hook: object | None) -> Lexicon:
         actionable_statuses=tuple(data.get("actionable_statuses", ())),
         metadata_fields=metadata_fields,
         derive_hook=hook,
+        sub_dirs=sub_dirs,
     )
 
 
@@ -239,6 +261,11 @@ def load_all_lexicons(lexicons_dir: str | Path) -> dict[str, Lexicon]:
     result: dict[str, Lexicon] = {}
     for lid, data in resolved.items():
         result[lid] = _build_lexicon(data, hook_map.get(lid))
+
+    # Validate sub_dirs references (must happen after all lexicons are built)
+    sub_dir_errors = _validate_sub_dirs(result)
+    if sub_dir_errors:
+        raise LexiconLoadError(sub_dir_errors)
 
     return result
 

@@ -720,3 +720,181 @@ class TestSchemaFileSkipping:
 
         assert "soc._base" in result
         assert result["soc._base"].statuses == ("pending", "passed")
+
+
+class TestSubDirs:
+    """Test sub_dirs field: AC1.1, AC1.2, AC1.3, AC2.1, AC2.2, AC2.3, AC2.4."""
+
+    def test_lexicon_without_sub_dirs_has_empty_dict(self, make_lexicon_file, lexicons_dir):
+        """AC1.2, AC2.3: Lexicon without sub_dirs field has empty dict."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+
+        result = load_all_lexicons(lexicons_dir)
+        assert result["soc._base"].sub_dirs == {}
+
+    def test_lexicon_with_valid_sub_dirs_loads(self, make_lexicon_file, lexicons_dir):
+        """AC1.1, AC2.1: Lexicon with valid sub_dirs references loads successfully."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+        make_lexicon_file(
+            "soc/scdm.json",
+            {
+                "extends": "soc._base",
+            },
+        )
+        make_lexicon_file(
+            "soc/qar.json",
+            {
+                "extends": "soc._base",
+                "sub_dirs": {"scdm_snapshot": "soc.scdm"},
+            },
+        )
+
+        result = load_all_lexicons(lexicons_dir)
+        assert result["soc.qar"].sub_dirs == {"scdm_snapshot": "soc.scdm"}
+
+    def test_sub_dirs_reference_to_unknown_lexicon_fails(self, make_lexicon_file, lexicons_dir):
+        """AC2.2: Lexicon with sub_dirs referencing non-existent lexicon fails."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+        make_lexicon_file(
+            "soc/qar.json",
+            {
+                "extends": "soc._base",
+                "sub_dirs": {"scdm_snapshot": "nonexistent.lexicon"},
+            },
+        )
+
+        with pytest.raises(LexiconLoadError) as exc_info:
+            load_all_lexicons(lexicons_dir)
+
+        assert any("unknown lexicon" in e for e in exc_info.value.errors)
+
+    def test_sub_dirs_recursive_nesting_rejected(self, make_lexicon_file, lexicons_dir):
+        """AC2.4: sub_dirs entry referencing lexicon with its own sub_dirs rejected."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+        make_lexicon_file(
+            "soc/scdm.json",
+            {
+                "extends": "soc._base",
+                "sub_dirs": {"nested": "soc._base"},
+            },
+        )
+        make_lexicon_file(
+            "soc/qar.json",
+            {
+                "extends": "soc._base",
+                "sub_dirs": {"scdm_snapshot": "soc.scdm"},
+            },
+        )
+
+        with pytest.raises(LexiconLoadError) as exc_info:
+            load_all_lexicons(lexicons_dir)
+
+        assert any("recursive nesting" in e for e in exc_info.value.errors)
+
+    def test_sub_dirs_inherited_via_extends(self, make_lexicon_file, lexicons_dir):
+        """AC1.3: Child inherits sub_dirs from base when not overridden."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+        make_lexicon_file(
+            "soc/scdm.json",
+            {
+                "extends": "soc._base",
+            },
+        )
+        make_lexicon_file(
+            "soc/parent.json",
+            {
+                "extends": "soc._base",
+                "sub_dirs": {"scdm_snapshot": "soc.scdm"},
+            },
+        )
+        make_lexicon_file(
+            "soc/child.json",
+            {
+                "extends": "soc.parent",
+            },
+        )
+
+        result = load_all_lexicons(lexicons_dir)
+        assert result["soc.child"].sub_dirs == {"scdm_snapshot": "soc.scdm"}
+
+    def test_sub_dirs_overridden_via_extends(self, make_lexicon_file, lexicons_dir):
+        """AC1.3: Child's sub_dirs deep-merged with base's (both keys present)."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+        make_lexicon_file(
+            "soc/lex_a.json",
+            {
+                "extends": "soc._base",
+            },
+        )
+        make_lexicon_file(
+            "soc/lex_b.json",
+            {
+                "extends": "soc._base",
+            },
+        )
+        make_lexicon_file(
+            "soc/parent.json",
+            {
+                "extends": "soc._base",
+                "sub_dirs": {"a": "soc.lex_a"},
+            },
+        )
+        make_lexicon_file(
+            "soc/child.json",
+            {
+                "extends": "soc.parent",
+                "sub_dirs": {"b": "soc.lex_b"},
+            },
+        )
+
+        result = load_all_lexicons(lexicons_dir)
+        child = result["soc.child"]
+        assert child.sub_dirs == {"a": "soc.lex_a", "b": "soc.lex_b"}

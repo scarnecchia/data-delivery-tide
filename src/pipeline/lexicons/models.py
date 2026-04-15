@@ -1,5 +1,5 @@
 # pattern: Functional Core
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 
@@ -18,3 +18,4 @@ class Lexicon:
     actionable_statuses: tuple[str, ...]
     metadata_fields: dict[str, MetadataField]
     derive_hook: Callable | None = None
+    sub_dirs: dict[str, str] = field(default_factory=dict)
