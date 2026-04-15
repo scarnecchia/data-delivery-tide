@@ -531,30 +531,12 @@ class TestSubDeliveryDiscovery:
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_sub_delivery_created_when_sub_dir_exists(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+        self, mock_post, sub_delivery_setup
     ):
         """AC4.1, AC4.2: Sub-delivery created when sub-dir exists, with correct source_path."""
-        scan_root = tmp_path / "requests" / "qa"
-        scan_root.mkdir(parents=True)
-
-        # Create parent directory (msoc) with a file
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
-        parent_path.mkdir(parents=True)
-        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
-
-        # Create sub-directory (scdm_snapshot) with a file
-        sub_path = parent_path / "scdm_snapshot"
-        sub_path.mkdir()
-        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
-
-        # Create lexicon config with sub_dirs
-        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
-        soc_qar_config = json.loads(soc_qar_path.read_text())
-        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
-        soc_qar_path.write_text(json.dumps(soc_qar_config))
-
-        config = make_crawler_config(
-            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
         )
 
         logger = MagicMock()
@@ -570,27 +552,12 @@ class TestSubDeliveryDiscovery:
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_sub_delivery_inherits_parent_identity(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+        self, mock_post, sub_delivery_setup
     ):
         """AC4.3: Sub-delivery inherits request_id, project, workplan_id, dp_id, version from parent."""
-        scan_root = tmp_path / "requests" / "qa"
-        scan_root.mkdir(parents=True)
-
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
-        parent_path.mkdir(parents=True)
-        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
-
-        sub_path = parent_path / "scdm_snapshot"
-        sub_path.mkdir()
-        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
-
-        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
-        soc_qar_config = json.loads(soc_qar_path.read_text())
-        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
-        soc_qar_path.write_text(json.dumps(soc_qar_config))
-
-        config = make_crawler_config(
-            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
         )
 
         logger = MagicMock()
@@ -609,28 +576,13 @@ class TestSubDeliveryDiscovery:
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_sub_delivery_inherits_parent_status(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+        self, mock_post, sub_delivery_setup
     ):
         """AC4.4: Sub-delivery inherits status from parent's dir_map resolution."""
-        scan_root = tmp_path / "requests" / "qa"
-        scan_root.mkdir(parents=True)
-
-        # Create parent under msoc (which maps to "passed")
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
-        parent_path.mkdir(parents=True)
-        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
-
-        sub_path = parent_path / "scdm_snapshot"
-        sub_path.mkdir()
-        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
-
-        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
-        soc_qar_config = json.loads(soc_qar_path.read_text())
-        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
-        soc_qar_path.write_text(json.dumps(soc_qar_config))
-
-        config = make_crawler_config(
-            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
+            parent_status="passed",
         )
 
         logger = MagicMock()
@@ -644,29 +596,14 @@ class TestSubDeliveryDiscovery:
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_sub_delivery_has_own_delivery_id(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+        self, mock_post, sub_delivery_setup
     ):
         """AC4.5: Sub-delivery has its own delivery_id (SHA-256 of its source_path)."""
         import hashlib
 
-        scan_root = tmp_path / "requests" / "qa"
-        scan_root.mkdir(parents=True)
-
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
-        parent_path.mkdir(parents=True)
-        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
-
-        sub_path = parent_path / "scdm_snapshot"
-        sub_path.mkdir()
-        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
-
-        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
-        soc_qar_config = json.loads(soc_qar_path.read_text())
-        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
-        soc_qar_path.write_text(json.dumps(soc_qar_config))
-
-        config = make_crawler_config(
-            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent.sas7bdat", 100)],
+            sub_files=[("sub.sas7bdat", 50)],
         )
 
         logger = MagicMock()
@@ -676,38 +613,26 @@ class TestSubDeliveryDiscovery:
         parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
-        # delivery_ids should be different
+        # delivery_ids should be different (verified via source_path uniqueness)
         assert parent_payload["source_path"] != sub_payload["source_path"]
-        # Note: delivery_id is not directly in payload, it's in manifest. We verify via source_path uniqueness.
-        # The manifest would have delivery_id = sha256(source_path)
-        expected_sub_id = hashlib.sha256(sub_payload["source_path"].encode()).hexdigest()
-        # Verify the sub-delivery's source_path is unique
-        assert sub_payload["source_path"] != parent_payload["source_path"]
+
+        # Verify manifest file exists with delivery_id = sha256(sub_source_path)
+        expected_sub_delivery_id = hashlib.sha256(sub_payload["source_path"].encode()).hexdigest()
+        manifest_path = Path(config.crawl_manifest_dir) / f"{expected_sub_delivery_id}.json"
+        assert manifest_path.exists(), f"Manifest for sub-delivery not found at {manifest_path}"
+
+        # Verify manifest contains the correct delivery_id
+        manifest_content = json.loads(manifest_path.read_text())
+        assert manifest_content["delivery_id"] == expected_sub_delivery_id
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_sub_delivery_has_own_file_inventory(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+        self, mock_post, sub_delivery_setup
     ):
         """AC4.6: Sub-delivery has its own file inventory and fingerprint."""
-        scan_root = tmp_path / "requests" / "qa"
-        scan_root.mkdir(parents=True)
-
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
-        parent_path.mkdir(parents=True)
-        (parent_path / "parent1.sas7bdat").write_bytes(b"\x00" * 100)
-        (parent_path / "parent2.sas7bdat").write_bytes(b"\x00" * 200)
-
-        sub_path = parent_path / "scdm_snapshot"
-        sub_path.mkdir()
-        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
-
-        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
-        soc_qar_config = json.loads(soc_qar_path.read_text())
-        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
-        soc_qar_path.write_text(json.dumps(soc_qar_config))
-
-        config = make_crawler_config(
-            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        scan_root, config, parent_path, sub_path = sub_delivery_setup(
+            parent_files=[("parent1.sas7bdat", 100), ("parent2.sas7bdat", 200)],
+            sub_files=[("sub.sas7bdat", 50)],
         )
 
         logger = MagicMock()
@@ -737,8 +662,7 @@ class TestSubDeliveryDiscovery:
         parent_path.mkdir(parents=True)
         (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
 
-        # Do NOT create scdm_snapshot directory
-
+        # Patch lexicon to reference non-existent sub-directory
         soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
         soc_qar_config = json.loads(soc_qar_path.read_text())
         soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
@@ -764,7 +688,7 @@ class TestSubDeliveryDiscovery:
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
-        # Create v01 (pending)
+        # Create v01 (pending from msoc_new)
         parent_v1 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc_new"
         parent_v1.mkdir(parents=True)
         (parent_v1 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
@@ -773,7 +697,7 @@ class TestSubDeliveryDiscovery:
         sub_v1.mkdir()
         (sub_v1 / "sub.sas7bdat").write_bytes(b"\x00" * 50)
 
-        # Create v02 (passed)
+        # Create v02 (passed from msoc)
         parent_v2 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc"
         parent_v2.mkdir(parents=True)
         (parent_v2 / "parent.sas7bdat").write_bytes(b"\x00" * 100)

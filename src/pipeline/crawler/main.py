@@ -230,7 +230,7 @@ def crawl(config, logger) -> int:
 
     # --- Pass 2: Derive statuses by lexicon, POST to registry ---
     # Build lexicon lookup by ID for derivation (includes all loaded lexicons, not just root ones)
-    lexicon_by_id = {lid: lex for lid, lex in lexicons.items()}
+    lexicon_by_id = dict(lexicons)
 
     # Group deliveries by lexicon_id for derivation
     deliveries_by_lexicon: dict[str, list[ParsedDelivery]] = {}

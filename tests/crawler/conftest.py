@@ -159,3 +159,69 @@ def make_crawler_config(tmp_path, lexicons_dir):
         )
 
     return _make
+
+
+@pytest.fixture
+def sub_delivery_setup(tmp_path, make_crawler_config, lexicons_dir):
+    """Fixture for sub-delivery tests that handles directory tree creation and lexicon patching.
+
+    Returns a factory function that:
+    1. Creates scan root directory
+    2. Creates parent and sub directories with optional .sas7bdat files
+    3. Patches soc.qar lexicon with sub_dirs configuration
+    4. Returns (scan_root_path, config, parent_path, sub_path) tuple
+    """
+    def _make(
+        parent_files=None,
+        sub_files=None,
+        sub_dir_name="scdm_snapshot",
+        sub_lexicon_id="soc.scdm",
+        parent_status="passed",
+    ):
+        """Create sub-delivery test environment.
+
+        Args:
+            parent_files: List of (filename, size) tuples for parent directory
+            sub_files: List of (filename, size) tuples for sub directory
+            sub_dir_name: Name of sub-directory (default "scdm_snapshot")
+            sub_lexicon_id: Lexicon ID for sub-directory (default "soc.scdm")
+            parent_status: Terminal directory name ("passed" -> msoc, else -> msoc_new)
+
+        Returns:
+            Tuple of (scan_root, config, parent_path, sub_path)
+        """
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        terminal = "msoc" if parent_status == "passed" else "msoc_new"
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / terminal
+        parent_path.mkdir(parents=True)
+
+        # Create parent files
+        if parent_files:
+            for filename, size in parent_files:
+                (parent_path / filename).write_bytes(b"\x00" * size)
+
+        # Create sub-directory
+        sub_path = parent_path / sub_dir_name
+        sub_path.mkdir()
+
+        # Create sub files
+        if sub_files:
+            for filename, size in sub_files:
+                (sub_path / filename).write_bytes(b"\x00" * size)
+
+        # Patch soc.qar lexicon with sub_dirs
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {sub_dir_name: sub_lexicon_id}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        # Create crawler config
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        return scan_root, config, parent_path, sub_path
+
+    return _make
