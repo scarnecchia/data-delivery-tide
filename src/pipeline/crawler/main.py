@@ -184,9 +184,53 @@ def crawl(config, logger) -> int:
         delivery_data[result.source_path] = (files, fingerprint, manifest)
         delivery_lexicons[result.source_path] = (lexicon_id, lexicon)
 
+        # --- Sub-delivery discovery ---
+        for sub_dir_name, sub_lexicon_id in lexicon.sub_dirs.items():
+            sub_path = os.path.join(source_path, sub_dir_name)
+            if not os.path.isdir(sub_path):
+                continue
+
+            sub_lexicon = lexicons.get(sub_lexicon_id)
+            if sub_lexicon is None:
+                # Should not happen — loader validates sub_dirs references.
+                # Log and skip defensively.
+                logger.warning(
+                    f"sub_dirs references unknown lexicon '{sub_lexicon_id}', skipping",
+                    extra={"source_path": source_path, "sub_dir": sub_dir_name},
+                )
+                continue
+
+            sub_delivery = ParsedDelivery(
+                request_id=result.request_id,
+                project=result.project,
+                request_type=result.request_type,
+                workplan_id=result.workplan_id,
+                dp_id=result.dp_id,
+                version=result.version,
+                status=result.status,
+                source_path=sub_path,
+                scan_root=result.scan_root,
+            )
+
+            sub_files = inventory_files(sub_path)
+            sub_fingerprint = compute_fingerprint(sub_files)
+            sub_manifest = build_manifest(
+                sub_delivery, sub_files, sub_fingerprint,
+                config.crawler_version, now, sub_lexicon_id,
+            )
+
+            sub_delivery_id = sub_manifest["delivery_id"]
+            sub_manifest_path = os.path.join(manifest_dir, f"{sub_delivery_id}.json")
+            with open(sub_manifest_path, "w") as f:
+                json.dump(sub_manifest, f, indent=2)
+
+            parsed_deliveries.append(sub_delivery)
+            delivery_data[sub_delivery.source_path] = (sub_files, sub_fingerprint, sub_manifest)
+            delivery_lexicons[sub_delivery.source_path] = (sub_lexicon_id, sub_lexicon)
+
     # --- Pass 2: Derive statuses by lexicon, POST to registry ---
-    # Build lexicon lookup by ID for derivation
-    lexicon_by_id = {lid: lex for lid, lex in root_lexicon_map.values()}
+    # Build lexicon lookup by ID for derivation (includes all loaded lexicons, not just root ones)
+    lexicon_by_id = {lid: lex for lid, lex in lexicons.items()}
 
     # Group deliveries by lexicon_id for derivation
     deliveries_by_lexicon: dict[str, list[ParsedDelivery]] = {}

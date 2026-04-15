@@ -87,6 +87,27 @@ def lexicons_dir(tmp_path):
     with open(soc_qar_path, "w") as f:
         json.dump(soc_qar, f)
 
+    # Create soc.scdm lexicon (sub-lexicon with no sub_dirs)
+    soc_scdm = {
+        "id": "soc.scdm",
+        "statuses": ["pending", "passed", "failed"],
+        "transitions": {
+            "pending": ["passed", "failed"],
+            "passed": [],
+            "failed": []
+        },
+        "dir_map": {
+            "scdm": "passed",
+            "scdm_new": "pending"
+        },
+        "actionable_statuses": ["passed", "failed"],
+        "metadata_fields": {}
+    }
+
+    soc_scdm_path = lexicons_dir / "soc" / "scdm.json"
+    with open(soc_scdm_path, "w") as f:
+        json.dump(soc_scdm, f)
+
     return str(lexicons_dir)
 
 

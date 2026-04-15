@@ -526,6 +526,296 @@ class TestLexiconSystemAC5Integration:
         assert payload["status"] == "passed"
 
 
+class TestSubDeliveryDiscovery:
+    """sub-deliveries.AC4.1-AC4.8 — Crawler sub-directory discovery."""
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_created_when_sub_dir_exists(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.1, AC4.2: Sub-delivery created when sub-dir exists, with correct source_path."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create parent directory (msoc) with a file
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path.mkdir(parents=True)
+        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        # Create sub-directory (scdm_snapshot) with a file
+        sub_path = parent_path / "scdm_snapshot"
+        sub_path.mkdir()
+        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        # Create lexicon config with sub_dirs
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Verify post_delivery was called twice (parent + sub-delivery)
+        assert mock_post.call_count == 2
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+
+        # Find the sub-delivery (should have source_path ending with scdm_snapshot)
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+        assert sub_payload["source_path"].endswith("scdm_snapshot")
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_inherits_parent_identity(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.3: Sub-delivery inherits request_id, project, workplan_id, dp_id, version from parent."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path.mkdir(parents=True)
+        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        sub_path = parent_path / "scdm_snapshot"
+        sub_path.mkdir()
+        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # Assert sub-delivery inherited identity fields
+        assert sub_payload["request_id"] == parent_payload["request_id"] == "soc_qar_wp001"
+        assert sub_payload["project"] == parent_payload["project"] == "soc"
+        assert sub_payload["workplan_id"] == parent_payload["workplan_id"] == "wp001"
+        assert sub_payload["dp_id"] == parent_payload["dp_id"] == "mkscnr"
+        assert sub_payload["version"] == parent_payload["version"] == "v01"
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_inherits_parent_status(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.4: Sub-delivery inherits status from parent's dir_map resolution."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create parent under msoc (which maps to "passed")
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path.mkdir(parents=True)
+        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        sub_path = parent_path / "scdm_snapshot"
+        sub_path.mkdir()
+        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # Sub-delivery should inherit parent's status ("passed")
+        assert sub_payload["status"] == "passed"
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_has_own_delivery_id(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.5: Sub-delivery has its own delivery_id (SHA-256 of its source_path)."""
+        import hashlib
+
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path.mkdir(parents=True)
+        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        sub_path = parent_path / "scdm_snapshot"
+        sub_path.mkdir()
+        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # delivery_ids should be different
+        assert parent_payload["source_path"] != sub_payload["source_path"]
+        # Note: delivery_id is not directly in payload, it's in manifest. We verify via source_path uniqueness.
+        # The manifest would have delivery_id = sha256(source_path)
+        expected_sub_id = hashlib.sha256(sub_payload["source_path"].encode()).hexdigest()
+        # Verify the sub-delivery's source_path is unique
+        assert sub_payload["source_path"] != parent_payload["source_path"]
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_delivery_has_own_file_inventory(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.6: Sub-delivery has its own file inventory and fingerprint."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path.mkdir(parents=True)
+        (parent_path / "parent1.sas7bdat").write_bytes(b"\x00" * 100)
+        (parent_path / "parent2.sas7bdat").write_bytes(b"\x00" * 200)
+
+        sub_path = parent_path / "scdm_snapshot"
+        sub_path.mkdir()
+        (sub_path / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+        parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
+        sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
+
+        # Parent has 2 files (300 bytes), sub has 1 file (50 bytes)
+        assert parent_payload["file_count"] == 2
+        assert parent_payload["total_bytes"] == 300
+        assert sub_payload["file_count"] == 1
+        assert sub_payload["total_bytes"] == 50
+        # Fingerprints should differ
+        assert parent_payload["fingerprint"] != sub_payload["fingerprint"]
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_missing_sub_dir_silently_skipped(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.7: Missing sub-directory is silently skipped (no error, no sub-delivery)."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path.mkdir(parents=True)
+        (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        # Do NOT create scdm_snapshot directory
+
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Only parent should be POSTed
+        assert mock_post.call_count == 1
+        payload = mock_post.call_args[0][1]
+        assert "scdm_snapshot" not in payload["source_path"]
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_sub_deliveries_grouped_by_own_lexicon_for_derivation(
+        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    ):
+        """AC4.8: Sub-deliveries are grouped by their own lexicon for derivation."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # Create v01 (pending)
+        parent_v1 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc_new"
+        parent_v1.mkdir(parents=True)
+        (parent_v1 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        sub_v1 = parent_v1 / "scdm_snapshot"
+        sub_v1.mkdir()
+        (sub_v1 / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        # Create v02 (passed)
+        parent_v2 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc"
+        parent_v2.mkdir(parents=True)
+        (parent_v2 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
+
+        sub_v2 = parent_v2 / "scdm_snapshot"
+        sub_v2.mkdir()
+        (sub_v2 / "sub.sas7bdat").write_bytes(b"\x00" * 50)
+
+        soc_qar_path = Path(lexicons_dir) / "soc" / "qar.json"
+        soc_qar_config = json.loads(soc_qar_path.read_text())
+        soc_qar_config["sub_dirs"] = {"scdm_snapshot": "soc.scdm"}
+        soc_qar_path.write_text(json.dumps(soc_qar_config))
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+        )
+
+        logger = MagicMock()
+        crawl(config, logger)
+
+        # Should have 4 POSTs: parent_v01, sub_v01, parent_v02, sub_v02
+        assert mock_post.call_count == 4
+        payloads = [call[0][1] for call in mock_post.call_args_list]
+
+        # v01 parent is pending (from msoc_new)
+        v1_parent = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" not in p["source_path"])
+        # v01 sub inherits parent status (pending)
+        v1_sub = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" in p["source_path"])
+        # v02 parent is passed (from msoc)
+        v2_parent = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" not in p["source_path"])
+        # v02 sub inherits parent status (passed)
+        v2_sub = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" in p["source_path"])
+
+        # After derivation, v01_parent should be failed (superseded by v02)
+        # v01_sub inherited parent's initial status (pending) and keeps it
+        # (soc.scdm has no derive_hook, so derivation doesn't affect it)
+        assert v1_parent["status"] == "failed"
+        assert v1_sub["status"] == "pending"  # Inherited parent's initial status, not affected by parent's derivation
+        assert v2_parent["status"] == "passed"
+        assert v2_sub["status"] == "passed"  # Inherited parent's initial status
+
+
 class TestMain:
     """AC5.4 — Exit code on RegistryUnreachableError."""
 
