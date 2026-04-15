@@ -97,29 +97,152 @@ uv run pytest
 
 ## Lexicons
 
-Lexicons define the status vocabulary for a delivery type. Each lexicon is a JSON file under `pipeline/lexicons/` that declares:
+Lexicons define the status vocabulary for a delivery type. Different delivery types have different lifecycles — a QA package moves through `pending → passed / failed`, while a query package might move through `run → distributed → inputfiles_updated`. Lexicons make these differences configurable without changing the pipeline code.
 
-| Field | Purpose |
-|-------|---------|
-| `statuses` | Valid status values (e.g., `["pending", "passed", "failed"]`) |
-| `transitions` | Allowed status transitions (e.g., `pending` can become `passed` or `failed`) |
-| `dir_map` | Maps terminal directory names to statuses (e.g., `"msoc"` → `"passed"`) |
-| `actionable_statuses` | Which statuses mean a delivery is ready for downstream processing |
-| `metadata_fields` | Per-status metadata (e.g., `passed_at` auto-populated when status becomes `"passed"`) |
-| `derive_hook` | Optional Python function for status derivation logic (e.g., marking superseded versions as failed) |
-| `extends` | Inherit from another lexicon (child keys override, nested dicts merge) |
-| `sub_dirs` | Maps subdirectory names inside terminal directories to lexicon IDs for sub-delivery registration |
+Each lexicon is a JSON file under `pipeline/lexicons/`. The file's path determines its ID: `soc/qar.json` becomes `soc.qar`.
 
-The lexicon format is defined by a JSON Schema at `pipeline/lexicons/lexicon.schema.json`. Lexicon files include a `$schema` reference for editor validation (autocompletion, inline errors in VS Code). The schema file itself is excluded from lexicon loading.
+### Lexicon fields
 
-The current configuration ships with two lexicons:
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `statuses` | yes* | Valid status values (e.g., `["pending", "passed", "failed"]`) |
+| `transitions` | yes* | Allowed status transitions — keys are source statuses, values are arrays of valid targets. Empty array = terminal state |
+| `dir_map` | yes* | Maps terminal directory names to statuses (e.g., `"msoc"` → `"passed"`) |
+| `actionable_statuses` | yes* | Which statuses mean a delivery is ready for downstream processing |
+| `extends` | no | Inherit from another lexicon ID. Child keys override; nested dicts merge recursively. Max depth: 3 |
+| `metadata_fields` | no | Fields auto-populated on status transitions (see below) |
+| `derive_hook` | no | Python function for status derivation logic, as `"module.path:function"` |
+| `sub_dirs` | no | Maps subdirectory names to lexicon IDs for sub-delivery registration |
 
-- **`soc._base`** (`pipeline/lexicons/soc/_base.json`) — base lexicon defining the tri-state QA model (pending/passed/failed), directory mappings, and transitions
-- **`soc.qar`** (`pipeline/lexicons/soc/qar.json`) — extends `soc._base`, adds `passed_at` metadata field and a derivation hook that marks pending deliveries as failed when superseded by a newer version
+*Required unless the lexicon uses `extends` to inherit these from a parent.
 
-Lexicons can declare `sub_dirs` to register subsidiary data (e.g., SCDM snapshots inside QAR/QMR deliveries) as separate, independently queryable deliveries. Sub-deliveries inherit status from their parent but have their own file inventory and conversion tracking.
+The format is defined by a JSON Schema at `pipeline/lexicons/lexicon.schema.json`. Include a `$schema` reference in your lexicon files for editor validation (autocompletion and inline errors in VS Code).
 
-To add a new delivery type, create a new lexicon JSON file under `pipeline/lexicons/`, reference it in the scan root config, and optionally implement a derivation hook.
+### Creating a lexicon
+
+**1. Define your status vocabulary.** What states can a delivery be in, and what transitions between them are valid?
+
+**2. Create the JSON file.** Place it under `pipeline/lexicons/` in a namespace directory. For example, a query package lexicon at `pipeline/lexicons/requests/query_pkg.json` gets the ID `requests.query_pkg`:
+
+```json
+{
+  "$schema": "../lexicon.schema.json",
+  "statuses": ["run", "distributed", "inputfiles_updated"],
+  "transitions": {
+    "run": ["distributed"],
+    "distributed": ["inputfiles_updated"],
+    "inputfiles_updated": []
+  },
+  "dir_map": {
+    "run": "run",
+    "distributed": "distributed",
+    "inputfiles_updated": "inputfiles_updated"
+  },
+  "actionable_statuses": ["distributed"]
+}
+```
+
+**3. Wire it to a scan root** in `pipeline/config.json`:
+
+```json
+{
+  "scan_roots": [
+    {
+      "path": "/data/requests/mplr",
+      "label": "MPLR Requests",
+      "lexicon": "requests.query_pkg",
+      "target": "packages"
+    }
+  ]
+}
+```
+
+That's it for a basic lexicon. The crawler will use `dir_map` to derive statuses from directories, and the registry API will enforce `transitions` on any PATCH.
+
+### Inheriting from a base lexicon
+
+If multiple delivery types share the same status model, define a base lexicon with a `_` prefix (convention, not enforced) and extend it:
+
+```json
+{
+  "$schema": "../lexicon.schema.json",
+  "extends": "soc._base",
+  "metadata_fields": {
+    "passed_at": {
+      "type": "datetime",
+      "set_on": "passed"
+    }
+  }
+}
+```
+
+The child inherits `statuses`, `transitions`, `dir_map`, and `actionable_statuses` from the parent. Any field declared in the child overrides the parent; nested objects (like `transitions`) merge recursively.
+
+### Metadata fields
+
+Metadata fields are auto-populated when a delivery transitions to a specific status. They live in the delivery's `metadata` JSON dict (separate from the top-level `status` field).
+
+Each metadata field specifies a `type` and a `set_on` status:
+
+```json
+"metadata_fields": {
+  "passed_at": { "type": "datetime", "set_on": "passed" },
+  "reviewed":  { "type": "boolean",  "set_on": "passed" },
+  "outcome":   { "type": "string",   "set_on": "distributed" }
+}
+```
+
+| Type | Value set on transition |
+|------|------------------------|
+| `datetime` | UTC ISO 8601 timestamp |
+| `boolean` | `true` |
+| `string` | The new status value |
+
+Metadata is only populated via the registry API's PATCH endpoint when a status transition occurs. It is not set on initial delivery creation.
+
+### Derivation hooks
+
+A derive hook is a Python function that runs during the crawler's second pass, after directories are parsed but before POSTing to the registry. It can modify statuses based on cross-delivery logic (e.g., marking older versions as failed).
+
+The function signature is:
+
+```python
+def derive(
+    deliveries: list[ParsedDelivery],
+    lexicon: Lexicon,
+) -> list[ParsedDelivery]:
+```
+
+It receives all deliveries for a given lexicon and must return a new list (no mutation). Reference the hook in your lexicon as `"module.path:function"`:
+
+```json
+{
+  "derive_hook": "pipeline.lexicons.soc.qa:derive"
+}
+```
+
+### Sub-directories
+
+Lexicons can declare `sub_dirs` to register subsidiary data (e.g., SCDM snapshots inside QAR deliveries) as separate deliveries with their own lexicon:
+
+```json
+{
+  "sub_dirs": {
+    "scdm_snapshot": "soc.scdm"
+  }
+}
+```
+
+The crawler checks for these directories inside matched terminal directories and registers them as independent deliveries correlated to the parent. Sub-deliveries get their own file inventory and conversion tracking.
+
+Constraint: the target lexicon of a `sub_dirs` entry cannot itself declare `sub_dirs` (no recursive nesting).
+
+### Shipped lexicons
+
+- **`soc._base`** — base lexicon defining the tri-state QA model (pending/passed/failed), directory mappings, and transitions
+- **`soc.qar`** — extends `soc._base`, adds `passed_at` metadata and a derivation hook that marks pending deliveries as failed when superseded by a newer version
+- **`soc.qmr`** — extends `soc._base`, same additions as `soc.qar` for QMR deliveries
+- **`soc.scdm`** — extends `soc._base`, minimal lexicon for SCDM snapshot sub-deliveries
 
 ## For consumers
 
