@@ -1,4 +1,5 @@
 {
+  "$schema": "../lexicon.schema.json",
   "statuses": ["pending", "passed", "failed"],
   "transitions": {
     "pending": ["passed", "failed"],

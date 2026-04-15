@@ -38,3 +38,5 @@ Configurable status vocabulary system. Defines valid statuses, transitions, dire
 - `load_all_lexicons` always loads ALL lexicons in the directory even when you only need one -- this is intentional for cross-validation of extends references
 - Lexicon JSON files live in `pipeline/lexicons/` (runtime config), not `src/pipeline/lexicons/` (which has the Python code)
 - The `soc._base` lexicon has no `derive_hook` and no `metadata_fields`; `soc.qar` extends it to add the QA hook and `passed_at` metadata
+- `*.schema.json` files in the lexicons directory are skipped during discovery — they define the format, not a lexicon
+- `$schema` keys in lexicon JSON files are stripped at parse time so they don't interfere with validation or building

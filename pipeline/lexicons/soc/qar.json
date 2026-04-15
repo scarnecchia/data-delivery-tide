@@ -1,4 +1,5 @@
 {
+  "$schema": "../lexicon.schema.json",
   "extends": "soc._base",
   "derive_hook": "pipeline.lexicons.soc.qa:derive",
   "metadata_fields": {

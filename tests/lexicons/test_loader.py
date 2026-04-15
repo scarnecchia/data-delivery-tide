@@ -677,3 +677,46 @@ class TestErrorEdgeCases:
             load_all_lexicons(lexicons_dir)
 
         assert any("depth" in e.lower() for e in exc_info.value.errors)
+
+
+class TestSchemaFileSkipping:
+    """Schema files (*.schema.json) are excluded from lexicon discovery."""
+
+    def test_schema_file_not_loaded_as_lexicon(self, make_lexicon_file, lexicons_dir):
+        """A .schema.json file in the lexicons dir is ignored by the loader."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+        make_lexicon_file(
+            "lexicon.schema.json",
+            {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"},
+        )
+
+        result = load_all_lexicons(lexicons_dir)
+
+        assert "lexicon.schema" not in result
+        assert "soc._base" in result
+
+    def test_schema_ref_in_lexicon_stripped(self, make_lexicon_file, lexicons_dir):
+        """A $schema key in a lexicon file is stripped during loading."""
+        make_lexicon_file(
+            "soc/_base.json",
+            {
+                "$schema": "../lexicon.schema.json",
+                "statuses": ["pending", "passed"],
+                "transitions": {"pending": ["passed"]},
+                "dir_map": {"msoc": "passed"},
+                "actionable_statuses": ["passed"],
+            },
+        )
+
+        result = load_all_lexicons(lexicons_dir)
+
+        assert "soc._base" in result
+        assert result["soc._base"].statuses == ("pending", "passed")

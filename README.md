@@ -109,6 +109,8 @@ Lexicons define the status vocabulary for a delivery type. Each lexicon is a JSO
 | `derive_hook` | Optional Python function for status derivation logic (e.g., marking superseded versions as failed) |
 | `extends` | Inherit from another lexicon (child keys override, nested dicts merge) |
 
+The lexicon format is defined by a JSON Schema at `pipeline/lexicons/lexicon.schema.json`. Lexicon files include a `$schema` reference for editor validation (autocompletion, inline errors in VS Code). The schema file itself is excluded from lexicon loading.
+
 The current configuration ships with two lexicons:
 
 - **`soc._base`** (`pipeline/lexicons/soc/_base.json`) — base lexicon defining the tri-state QA model (pending/passed/failed), directory mappings, and transitions

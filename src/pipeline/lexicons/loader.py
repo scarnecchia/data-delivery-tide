@@ -23,6 +23,8 @@ def _discover_lexicon_files(lexicons_dir: Path) -> dict[str, Path]:
     """Walk lexicons_dir, return mapping of lexicon_id -> file path."""
     result: dict[str, Path] = {}
     for json_file in sorted(lexicons_dir.rglob("*.json")):
+        if json_file.name.endswith(".schema.json"):
+            continue
         relative = json_file.relative_to(lexicons_dir)
         lexicon_id = str(relative.with_suffix("")).replace("/", ".").replace("\\", ".")
         result[lexicon_id] = json_file
@@ -196,7 +198,9 @@ def load_all_lexicons(lexicons_dir: str | Path) -> dict[str, Lexicon]:
     for lid, path in file_map.items():
         try:
             with open(path) as f:
-                raw[lid] = json.load(f)
+                data = json.load(f)
+            data.pop("$schema", None)
+            raw[lid] = data
         except (json.JSONDecodeError, OSError) as exc:
             parse_errors.append(f"{lid}: failed to read {path}: {exc}")
 
