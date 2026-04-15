@@ -108,6 +108,7 @@ Lexicons define the status vocabulary for a delivery type. Each lexicon is a JSO
 | `metadata_fields` | Per-status metadata (e.g., `passed_at` auto-populated when status becomes `"passed"`) |
 | `derive_hook` | Optional Python function for status derivation logic (e.g., marking superseded versions as failed) |
 | `extends` | Inherit from another lexicon (child keys override, nested dicts merge) |
+| `sub_dirs` | Maps subdirectory names inside terminal directories to lexicon IDs for sub-delivery registration |
 
 The lexicon format is defined by a JSON Schema at `pipeline/lexicons/lexicon.schema.json`. Lexicon files include a `$schema` reference for editor validation (autocompletion, inline errors in VS Code). The schema file itself is excluded from lexicon loading.
 
@@ -115,6 +116,8 @@ The current configuration ships with two lexicons:
 
 - **`soc._base`** (`pipeline/lexicons/soc/_base.json`) — base lexicon defining the tri-state QA model (pending/passed/failed), directory mappings, and transitions
 - **`soc.qar`** (`pipeline/lexicons/soc/qar.json`) — extends `soc._base`, adds `passed_at` metadata field and a derivation hook that marks pending deliveries as failed when superseded by a newer version
+
+Lexicons can declare `sub_dirs` to register subsidiary data (e.g., SCDM snapshots inside QAR/QMR deliveries) as separate, independently queryable deliveries. Sub-deliveries inherit status from their parent but have their own file inventory and conversion tracking.
 
 To add a new delivery type, create a new lexicon JSON file under `pipeline/lexicons/`, reference it in the scan root config, and optionally implement a derivation hook.
 

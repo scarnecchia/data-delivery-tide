@@ -48,6 +48,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Delivery IDs are deterministic SHA-256 of source_path
 - Config loaded lazily via module-level `__getattr__` on `pipeline.config.settings`
 - Status semantics are defined by lexicons, not hardcoded. Each lexicon declares valid statuses, allowed transitions, directory-to-status mappings (`dir_map`), actionable statuses, metadata fields, and an optional `derive_hook`. Lexicon JSON files live in `pipeline/lexicons/` and support single-level inheritance via `extends`
+- Lexicons can declare `sub_dirs` mapping subdirectory names to lexicon IDs; the crawler discovers these inside terminal directories and registers them as separate deliveries correlated to the parent by shared identity fields
 - Crawler uses a two-pass approach: (1) walk/parse/fingerprint/write manifests, (2) derive statuses via lexicon hooks then POST to registry
 - Config fields `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, and `lexicons_dir` control crawler behaviour
 - `ScanRoot` has `path`, `label`, `lexicon`, and `target` fields; `target` (default `"packages"`) controls which subdirectory the crawler enters under each dpid; `lexicon` references a lexicon ID (e.g. `"soc.qar"`)
