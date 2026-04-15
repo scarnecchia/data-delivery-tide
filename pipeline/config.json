@@ -10,7 +10,7 @@
     {
       "path": "/requests/qm",
       "label": "MIL QA Package Results",
-      "lexicon": "soc.qar",
+      "lexicon": "soc.qmr",
       "target": "packages"
     },
     {
@@ -22,7 +22,7 @@
     {
       "path": "/requests/qmd",
       "label": "MIL QA Internal DP Data",
-      "lexicon": "soc.qar",
+      "lexicon": "soc.qmr",
       "target": "packages"
     }
   ],
