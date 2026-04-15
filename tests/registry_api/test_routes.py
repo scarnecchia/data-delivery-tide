@@ -1043,3 +1043,139 @@ class TestCatchUpEndpoint:
         assert event["event_type"] == "delivery.created"
         assert event["delivery_id"] == "test-id"
         assert event["payload"] == {"key": "value"}
+
+
+class TestSubDeliveryIntegration:
+    """Test sub-delivery integration through the API (AC5.1-AC5.4)."""
+
+    def test_sub_delivery_queryable_by_lexicon_id(self, client):
+        """AC5.1: Sub-deliveries appear in GET /deliveries?lexicon_id=test.sub."""
+        # POST parent delivery with lexicon_id="soc.qar"
+        parent_payload = make_delivery_payload(
+            source_path="/data/parent-sub-test",
+            lexicon_id="soc.qar",
+            status="passed",
+        )
+        parent_response = client.post("/deliveries", json=parent_payload)
+        assert parent_response.status_code == 200
+
+        # POST sub-delivery with lexicon_id="test.sub"
+        sub_payload = make_delivery_payload(
+            source_path="/data/parent-sub-test/sub",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        sub_response = client.post("/deliveries", json=sub_payload)
+        assert sub_response.status_code == 200
+
+        # Query by test.sub lexicon_id
+        response = client.get("/deliveries?lexicon_id=test.sub")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Only the sub-delivery should be returned
+        assert len(data) == 1
+        assert data[0]["lexicon_id"] == "test.sub"
+        assert data[0]["source_path"] == "/data/parent-sub-test/sub"
+
+    def test_parent_and_sub_correlated_by_identity(self, client):
+        """AC5.2: Parent and sub-delivery are correlated by identity fields."""
+        # POST parent delivery
+        parent_payload = make_delivery_payload(
+            request_id="req-correlation",
+            workplan_id="wp-correlation",
+            dp_id="dp-correlation",
+            version="1.0.0",
+            source_path="/data/parent-corr",
+            lexicon_id="soc.qar",
+            status="passed",
+        )
+        parent_response = client.post("/deliveries", json=parent_payload)
+        assert parent_response.status_code == 200
+        parent_id = parent_response.json()["delivery_id"]
+
+        # POST sub-delivery with same identity fields, different source_path
+        sub_payload = make_delivery_payload(
+            request_id="req-correlation",
+            workplan_id="wp-correlation",
+            dp_id="dp-correlation",
+            version="1.0.0",
+            source_path="/data/parent-corr/sub",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        sub_response = client.post("/deliveries", json=sub_payload)
+        assert sub_response.status_code == 200
+        sub_id = sub_response.json()["delivery_id"]
+
+        # Query all deliveries with request_id
+        response = client.get("/deliveries?request_id=req-correlation")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Both parent and sub should be returned
+        assert len(data) == 2
+
+        # Find parent and sub by lexicon_id
+        parent = next(d for d in data if d["lexicon_id"] == "soc.qar")
+        sub = next(d for d in data if d["lexicon_id"] == "test.sub")
+
+        # Verify identity fields match
+        assert parent["request_id"] == sub["request_id"] == "req-correlation"
+        assert parent["workplan_id"] == sub["workplan_id"] == "wp-correlation"
+        assert parent["dp_id"] == sub["dp_id"] == "dp-correlation"
+        assert parent["version"] == sub["version"] == "1.0.0"
+
+        # Verify they are different deliveries
+        assert parent["delivery_id"] != sub["delivery_id"]
+        assert parent["delivery_id"] == parent_id
+        assert sub["delivery_id"] == sub_id
+
+    def test_sub_delivery_appears_in_actionable(self, client):
+        """AC5.3: Sub-deliveries appear in actionable when status matches actionable_statuses."""
+        # POST sub-delivery with status="passed" (in test.sub's actionable_statuses)
+        # and parquet_converted_at=null (not yet converted)
+        sub_payload = make_delivery_payload(
+            source_path="/data/sub-actionable",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        sub_response = client.post("/deliveries", json=sub_payload)
+        assert sub_response.status_code == 200
+
+        # Query actionable deliveries
+        response = client.get("/deliveries/actionable")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Sub-delivery should appear in actionable list
+        actionable_subs = [d for d in data if d["lexicon_id"] == "test.sub"]
+        assert len(actionable_subs) == 1
+        assert actionable_subs[0]["source_path"] == "/data/sub-actionable"
+        assert actionable_subs[0]["status"] == "passed"
+
+    def test_sub_delivery_creation_emits_event(self, client, test_db):
+        """AC5.4: POST sub-delivery emits delivery.created event with correct lexicon_id."""
+        # POST sub-delivery
+        sub_payload = make_delivery_payload(
+            source_path="/data/sub-event-test",
+            lexicon_id="test.sub",
+            status="passed",
+        )
+        response = client.post("/deliveries", json=sub_payload)
+        assert response.status_code == 200
+        sub_delivery_id = response.json()["delivery_id"]
+
+        # Get events
+        events = get_events(test_db)
+
+        # Find the event for this sub-delivery
+        sub_event = next(
+            (e for e in events if e["delivery_id"] == sub_delivery_id),
+            None,
+        )
+
+        assert sub_event is not None
+        assert sub_event["event_type"] == "delivery.created"
+        assert sub_event["payload"]["lexicon_id"] == "test.sub"
+        assert sub_event["payload"]["source_path"] == "/data/sub-event-test"

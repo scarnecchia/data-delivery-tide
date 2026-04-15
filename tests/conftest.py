@@ -18,6 +18,16 @@ TEST_LEXICON = Lexicon(
     derive_hook=None,
 )
 
+TEST_SUB_LEXICON = Lexicon(
+    id="test.sub",
+    statuses=("pending", "passed", "failed"),
+    transitions={"pending": ("passed", "failed"), "passed": (), "failed": ()},
+    dir_map={"msoc": "passed", "msoc_new": "pending"},
+    actionable_statuses=("passed",),
+    metadata_fields={},
+    derive_hook=None,
+)
+
 
 @pytest.fixture
 def test_db():
@@ -54,7 +64,7 @@ def client(test_db):
         yield test_db
 
     app.dependency_overrides[get_db] = override_get_db
-    app.state.lexicons = {"soc.qar": TEST_LEXICON}
+    app.state.lexicons = {"soc.qar": TEST_LEXICON, "test.sub": TEST_SUB_LEXICON}
 
     yield TestClient(app)
 
