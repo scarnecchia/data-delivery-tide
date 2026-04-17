@@ -192,12 +192,15 @@ def _handle_failure(
         "converter_version": converter_version,
     }
 
-    # Best-effort: if the PATCH itself fails we still log and re-raise — the
-    # operator will see the conversion.failed entry never landed in events,
-    # and the crawler's next delivery.created re-run will clear the field.
-    http_module.patch_delivery(
-        api_url, delivery_id, {"metadata": {"conversion_error": error_dict}}
-    )
+    try:
+        http_module.patch_delivery(
+            api_url, delivery_id, {"metadata": {"conversion_error": error_dict}}
+        )
+    except Exception:
+        logger.warning(
+            "failed to PATCH conversion_error to registry",
+            extra={"delivery_id": delivery_id, "source_path": source_path},
+        )
 
     event_payload = {
         "delivery_id": delivery_id,
@@ -205,7 +208,13 @@ def _handle_failure(
         "error_message": error_message,
         "at": now,
     }
-    http_module.emit_event(api_url, "conversion.failed", delivery_id, event_payload)
+    try:
+        http_module.emit_event(api_url, "conversion.failed", delivery_id, event_payload)
+    except Exception:
+        logger.warning(
+            "failed to emit conversion.failed event",
+            extra={"delivery_id": delivery_id, "source_path": source_path},
+        )
 
     logger.error(
         "conversion failed",
