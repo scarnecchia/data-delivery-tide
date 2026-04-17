@@ -95,6 +95,104 @@ pytest
 uv run pytest
 ```
 
+## Converter (`registry-convert`, `registry-convert-daemon`)
+
+Streams registered SAS7BDAT deliveries to Parquet files, writing output
+in place under each delivery's `source_path/parquet/` directory. The
+converter is status-blind: any delivery with null `parquet_converted_at`
+and no `metadata.conversion_error` is eligible.
+
+### Install
+
+```bash
+uv pip install -e ".[converter]"
+```
+
+Also required when running the daemon:
+
+```bash
+uv pip install -e ".[consumer]"
+```
+
+### Backfill CLI
+
+Drain the unconverted backlog and exit:
+
+```bash
+uv run registry-convert
+```
+
+Flags:
+
+- `--limit N` — process at most N deliveries.
+- `--shard I/N` — process only deliveries whose `delivery_id` hashes to shard `I` of `N`. Use for horizontal scale across multiple CLI invocations.
+- `--include-failed` — re-attempt deliveries with `metadata.conversion_error` set (clears the field first).
+
+Exits 0 on drain, 1 on registry unreachable, 130 on SIGINT.
+
+### Daemon
+
+Long-running event-driven service. Catches up on missed events via
+`GET /events` on startup, then opens a WebSocket for steady-state
+consumption. Persists `last_seq` after each processed event to
+`converter_state_path`.
+
+```bash
+uv run registry-convert-daemon
+```
+
+Use the watchdog script from cron or a systemd timer:
+
+```bash
+* * * * * /path/to/qa_registry/pipeline/scripts/ensure_converter.sh
+```
+
+Stop with `SIGTERM` or `SIGINT`: the daemon finishes the in-flight
+conversion, persists state, and exits cleanly.
+
+### Output layout
+
+Every delivery — parent or sub — gets:
+
+```
+{source_path}/parquet/{source_path.name}.parquet
+```
+
+Each Parquet file carries the SAS column labels, value labels, and
+declared encoding as file-level key-value metadata:
+
+```python
+import pyarrow.parquet as pq
+meta = pq.read_metadata("/path/to/parquet/x.parquet").metadata
+column_labels = json.loads(meta[b"sas_labels"])
+encoding      = meta[b"sas_encoding"].decode()
+```
+
+### Failure semantics
+
+Classified failures are written to `metadata.conversion_error` on the
+delivery row and broadcast as `conversion.failed` events. The converter
+does not retry automatically. Operators clear the error by PATCHing
+`{"metadata": {"conversion_error": null}}` on the delivery, or by
+re-crawling (a new fingerprint clears the field via crawler upsert).
+
+Error classes: `source_missing`, `source_permission`, `source_io`,
+`parse_error`, `encoding_mismatch`, `schema_drift`, `oom`,
+`arrow_error`, `unknown`.
+
+### Configuration
+
+New config fields (with defaults; all settable via `pipeline/config.json`):
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `converter_version` | `"0.1.0"` | Embedded in Parquet file metadata |
+| `converter_chunk_size` | `100000` | Rows per pyreadstat chunk / Parquet row group |
+| `converter_compression` | `"zstd"` | Parquet codec |
+| `converter_state_path` | `"pipeline/.converter_state.json"` | Daemon `last_seq` persistence |
+| `converter_cli_batch_size` | `200` | Page size for `GET /deliveries?converted=false` |
+| `converter_cli_sleep_empty_secs` | `0` | (reserved for future poll-loop mode) |
+
 ## Lexicons
 
 Lexicons define the status vocabulary for a delivery type. Different delivery types have different lifecycles — a QA package moves through `pending → passed / failed`, while a query package might move through `run → distributed → inputfiles_updated`. Lexicons make these differences configurable without changing the pipeline code.
