@@ -28,6 +28,12 @@ class PipelineConfig:
     crawl_manifest_dir: str
     crawler_version: str
     lexicons_dir: str
+    converter_version: str
+    converter_chunk_size: int
+    converter_compression: str
+    converter_state_path: str
+    converter_cli_batch_size: int
+    converter_cli_sleep_empty_secs: int
 
 
 def load_config(path: str | None = None) -> PipelineConfig:
@@ -81,6 +87,12 @@ def load_config(path: str | None = None) -> PipelineConfig:
         crawl_manifest_dir=data.get("crawl_manifest_dir", "pipeline/crawl_manifests"),
         crawler_version=data.get("crawler_version", "1.0.0"),
         lexicons_dir=lexicons_dir,
+        converter_version=data.get("converter_version", "0.1.0"),
+        converter_chunk_size=data.get("converter_chunk_size", 100_000),
+        converter_compression=data.get("converter_compression", "zstd"),
+        converter_state_path=data.get("converter_state_path", "pipeline/.converter_state.json"),
+        converter_cli_batch_size=data.get("converter_cli_batch_size", 200),
+        converter_cli_sleep_empty_secs=data.get("converter_cli_sleep_empty_secs", 0),
     )
 
 
