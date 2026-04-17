@@ -18,6 +18,60 @@ def make_delivery_id(source_path: str) -> str:
     return hashlib.sha256(source_path.encode()).hexdigest()
 
 
+def _migrate_events_check_constraint(conn: sqlite3.Connection) -> None:
+    """
+    Migrate events table CHECK constraint to include conversion event types.
+
+    This is an idempotent migration that detects old schema and recreates
+    the table with the extended constraint. Uses a substring check to detect
+    if migration has already been applied.
+
+    Args:
+        conn: sqlite3.Connection to migrate
+    """
+    cursor = conn.cursor()
+
+    # Check if events table exists
+    cursor.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='events'"
+    )
+    row = cursor.fetchone()
+    if row is None:
+        # Fresh DB with no events table yet, migration not needed
+        return
+
+    current_sql = row[0]
+
+    # Check if migration already applied (simple substring check for 'conversion.completed')
+    if "conversion.completed" in current_sql:
+        # Migration already applied
+        return
+
+    # Migration needed: recreate table with extended CHECK constraint
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        cursor.execute(
+            """
+            CREATE TABLE events_new (
+                seq         INTEGER PRIMARY KEY,
+                event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed', 'conversion.completed', 'conversion.failed')),
+                delivery_id TEXT NOT NULL,
+                payload     TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            "INSERT INTO events_new (seq, event_type, delivery_id, payload, created_at) SELECT seq, event_type, delivery_id, payload, created_at FROM events"
+        )
+        cursor.execute("DROP TABLE events")
+        cursor.execute("ALTER TABLE events_new RENAME TO events")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
     """
     Initialize the database schema.
@@ -63,18 +117,21 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
             """
         )
 
-        # Create the events table
+        # Create the events table with all four allowed event types in CHECK constraint
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS events (
                 seq         INTEGER PRIMARY KEY,
-                event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed')),
+                event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed', 'conversion.completed', 'conversion.failed')),
                 delivery_id TEXT NOT NULL,
                 payload     TEXT NOT NULL,
                 created_at  TEXT NOT NULL
             )
             """
         )
+
+        # Run migration to update old schemas
+        _migrate_events_check_constraint(conn)
 
         # Create indexes
         cursor.execute(
