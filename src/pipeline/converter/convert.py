@@ -1,9 +1,9 @@
-# pattern: Functional Core
+# pattern: Functional Core (file I/O only; no network, registry, or config)
 
 import json
 import os
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator

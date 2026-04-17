@@ -2,7 +2,7 @@
 
 import pytest
 import pyarrow as pa
-from pyreadstat import ReadstatError
+from pyreadstat import PyreadstatError, ReadstatError
 
 from pipeline.converter.classify import classify_exception, SchemaDriftError
 
@@ -13,6 +13,7 @@ class TestClassifyException:
         (PermissionError("x"),               "source_permission"),
         (OSError("x"),                       "source_io"),
         (ReadstatError("x"),                 "parse_error"),
+        (PyreadstatError("x"),               "parse_error"),
         (UnicodeDecodeError("utf-8", b"", 0, 1, "x"), "encoding_mismatch"),
         (SchemaDriftError("x"),              "schema_drift"),
         (MemoryError("x"),                   "oom"),

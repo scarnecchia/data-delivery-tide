@@ -3,7 +3,7 @@
 from typing import Literal
 
 import pyarrow as pa
-from pyreadstat import ReadstatError
+from pyreadstat import PyreadstatError, ReadstatError
 
 
 ErrorClass = Literal[
@@ -43,7 +43,7 @@ def classify_exception(exc: BaseException) -> ErrorClass:
         return "encoding_mismatch"
     if isinstance(exc, MemoryError):
         return "oom"
-    if isinstance(exc, ReadstatError):
+    if isinstance(exc, (ReadstatError, PyreadstatError)):
         return "parse_error"
     if isinstance(exc, pa.ArrowException):
         return "arrow_error"

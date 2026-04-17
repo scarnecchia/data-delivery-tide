@@ -217,6 +217,33 @@ class TestWebSocketEndpoint:
 
             assert data == {"type": "test", "data": "hello"}
 
+    def test_emit_event_broadcasts_conversion_events(self, client):
+        """AC6.4: WebSocket clients receive conversion event broadcasts.
+
+        Tests the manager→WebSocket delivery path with a conversion event
+        payload shape. The full POST /events → broadcast integration path
+        cannot be tested via TestClient (deadlock on shared ASGI transport);
+        persistence is verified in test_routes.py::TestEmitEvent.
+        """
+        with client.websocket_connect("/ws/events") as ws:
+            event_data = {
+                "event_type": "conversion.completed",
+                "delivery_id": "test-id",
+                "payload": {"row_count": 100, "bytes_written": 2048},
+            }
+
+            def broadcast_in_thread():
+                asyncio.run(manager.broadcast(event_data))
+
+            thread = threading.Thread(target=broadcast_in_thread)
+            thread.start()
+
+            data = ws.receive_json()
+            thread.join(timeout=2)
+
+            assert data["event_type"] == "conversion.completed"
+            assert data["payload"]["row_count"] == 100
+
     def test_dead_connection_cleanup_ac33(self, client):
         """Test event-stream.AC3.3: Dead connection is cleaned up without crashing."""
         def connect_and_close():

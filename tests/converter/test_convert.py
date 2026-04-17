@@ -169,9 +169,9 @@ class TestConvertAtomicWrite:
     def test_source_missing_leaves_no_tmp_file(self, tmp_path):
         # AC2.3: exception before the writer opens -> no tmp file.
         out = tmp_path / "parquet" / "test.parquet"
-        # Note: pyreadstat raises ReadstatError (subclass of Exception) when file doesn't exist,
-        # not FileNotFoundError. This is caught and re-raised by convert_sas_to_parquet.
-        with pytest.raises(Exception):  # ReadstatError is caught by convert_sas_to_parquet
+        from pyreadstat import PyreadstatError
+
+        with pytest.raises(PyreadstatError):
             convert_sas_to_parquet(tmp_path / "does_not_exist.sav", out)
 
         # Parent dir was created (AC2.5); no tmp, no final.

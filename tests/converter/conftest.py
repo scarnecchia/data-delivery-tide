@@ -72,8 +72,7 @@ def sas_fixture_factory(tmp_path):
         variable_value_labels: dict[str, dict] | None = None,
         filename: str = "test.sas7bdat",
     ) -> Path:
-        # Convert .sas7bdat to .sav since we use SAV (SPSS) format
-        sav_filename = filename.replace(".sas7bdat", ".sav")
+        sav_filename = Path(filename).with_suffix(".sav").name
         path = tmp_path / sav_filename
 
         _make_test_sas_file(df, path, column_labels, variable_value_labels)

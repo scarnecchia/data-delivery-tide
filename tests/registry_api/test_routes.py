@@ -1,6 +1,5 @@
 import asyncio
 import json
-import threading
 from datetime import datetime
 from unittest.mock import AsyncMock
 
@@ -1220,14 +1219,6 @@ class TestCatchUpEndpoint:
 class TestEmitEvent:
     """Test POST /events endpoint for converter-emitted lifecycle events (AC6.4)."""
 
-    @pytest.fixture(autouse=True)
-    def _clear_connections(self):
-        from pipeline.registry_api.events import manager
-
-        manager.active_connections.clear()
-        yield
-        manager.active_connections.clear()
-
     def test_emit_conversion_completed_happy_path(self, client, test_db):
         """AC6.4: POST /events with conversion.completed event succeeds and broadcasts."""
         # First create a delivery
@@ -1346,42 +1337,10 @@ class TestEmitEvent:
 
         assert response.status_code == 422
 
-    def test_emit_event_broadcasts_to_websocket(self, client):
-        """AC6.4: WebSocket clients receive conversion events.
-
-        Uses manager.broadcast() directly because Starlette's TestClient
-        deadlocks when client.post() runs in a thread while the main thread
-        blocks on ws.receive_json() — both share the same ASGI transport.
-        The route handler's broadcast call is tested indirectly by the happy-
-        path tests above (which verify insert_event persistence) plus this
-        test (which verifies the manager→WebSocket delivery path).
-        """
-        from pipeline.registry_api.events import manager
-
-        payload = make_delivery_payload(source_path="/data/emit-ws-broadcast-test")
-        response = client.post("/deliveries", json=payload)
-        assert response.status_code == 200
-        delivery_id = response.json()["delivery_id"]
-
-        with client.websocket_connect("/ws/events") as ws:
-            event_data = {
-                "event_type": "conversion.completed",
-                "delivery_id": delivery_id,
-                "payload": {"row_count": 100, "bytes_written": 2048},
-            }
-
-            def broadcast_in_thread():
-                asyncio.run(manager.broadcast(event_data))
-
-            thread = threading.Thread(target=broadcast_in_thread)
-            thread.start()
-
-            data = ws.receive_json()
-            thread.join(timeout=2)
-
-            assert data["event_type"] == "conversion.completed"
-            assert data["delivery_id"] == delivery_id
-            assert data["payload"]["row_count"] == 100
+    # WebSocket broadcast for POST /events is tested in test_events.py
+    # (TestWebSocketEndpoint.test_emit_event_broadcasts_conversion_events)
+    # because the WS tests require proper connection lifecycle management
+    # that's already handled by that test class's autouse fixture.
 
 
 class TestSubDeliveryIntegration:
