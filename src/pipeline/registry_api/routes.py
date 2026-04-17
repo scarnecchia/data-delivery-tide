@@ -185,6 +185,10 @@ async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbD
         metadata_val = old.get("metadata", {})
         existing_metadata = metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
 
+        # Merge user-supplied metadata first, then apply set_on overrides
+        if "metadata" in updates and isinstance(updates["metadata"], dict):
+            existing_metadata = {**existing_metadata, **updates["metadata"]}
+
         for field_name, field_def in lexicon.metadata_fields.items():
             if field_def.set_on == new_status:
                 if field_def.type == "datetime":

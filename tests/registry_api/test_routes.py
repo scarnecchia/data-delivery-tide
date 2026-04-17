@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 from datetime import datetime
 from unittest.mock import AsyncMock
 
@@ -459,6 +460,49 @@ class TestUpdateDelivery:
         assert data["metadata"]["other"] == "keep"
         # Error is None
         assert data["metadata"]["conversion_error"] is None
+
+    def test_status_and_metadata_combined(self, client):
+        """
+        PATCH with both status transition AND user-supplied metadata merges all three sources:
+        1. Existing metadata from the delivery
+        2. User-supplied metadata from the PATCH body
+        3. Lexicon-derived set_on fields applied to the new status
+        """
+        # Create with initial metadata and pending status
+        payload = make_delivery_payload(
+            source_path="/data/status-metadata-combined",
+            status="pending",
+            metadata={"existing_key": "existing_value", "preserved": "yes"},
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+        assert post_response.json()["metadata"]["existing_key"] == "existing_value"
+
+        # PATCH with both status (pending -> passed) and new metadata
+        # The soc.qar lexicon has a set_on field that fires on "passed" status
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={
+                "status": "passed",
+                "metadata": {"user_supplied": "new_value"},
+            },
+        )
+
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        assert data["status"] == "passed"
+
+        # Verify the union of all three metadata sources:
+        # 1. Existing metadata preserved
+        assert data["metadata"]["existing_key"] == "existing_value"
+        assert data["metadata"]["preserved"] == "yes"
+        # 2. User-supplied metadata merged in
+        assert data["metadata"]["user_supplied"] == "new_value"
+        # 3. Lexicon-derived set_on field applied (soc.qar lexicon sets
+        # "passed_at" as datetime when transitioning to "passed")
+        assert "passed_at" in data["metadata"]
+        # Verify it's an ISO datetime string
+        assert "T" in data["metadata"]["passed_at"]
 
 
 class TestLexiconValidation:
@@ -1176,6 +1220,14 @@ class TestCatchUpEndpoint:
 class TestEmitEvent:
     """Test POST /events endpoint for converter-emitted lifecycle events (AC6.4)."""
 
+    @pytest.fixture(autouse=True)
+    def _clear_connections(self):
+        from pipeline.registry_api.events import manager
+
+        manager.active_connections.clear()
+        yield
+        manager.active_connections.clear()
+
     def test_emit_conversion_completed_happy_path(self, client, test_db):
         """AC6.4: POST /events with conversion.completed event succeeds and broadcasts."""
         # First create a delivery
@@ -1293,6 +1345,35 @@ class TestEmitEvent:
         response = client.post("/events", json=event_payload)
 
         assert response.status_code == 422
+
+    def test_emit_event_broadcasts_to_websocket(self, client):
+        """AC6.4: POST /events broadcasts event to connected WebSocket clients."""
+        from pipeline.registry_api.events import manager
+
+        payload = make_delivery_payload(source_path="/data/emit-ws-broadcast-test")
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        with client.websocket_connect("/ws/events") as ws:
+            event_data = {
+                "event_type": "conversion.completed",
+                "delivery_id": delivery_id,
+                "payload": {"row_count": 100, "bytes_written": 2048},
+            }
+
+            def broadcast_in_thread():
+                asyncio.run(manager.broadcast(event_data))
+
+            thread = threading.Thread(target=broadcast_in_thread)
+            thread.start()
+
+            data = ws.receive_json()
+            thread.join(timeout=2)
+
+            assert data["event_type"] == "conversion.completed"
+            assert data["delivery_id"] == delivery_id
+            assert data["payload"]["row_count"] == 100
 
 
 class TestSubDeliveryIntegration:

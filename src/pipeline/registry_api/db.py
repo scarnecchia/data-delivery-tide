@@ -48,7 +48,7 @@ def _migrate_events_check_constraint(conn: sqlite3.Connection) -> None:
         return
 
     # Migration needed: recreate table with extended CHECK constraint
-    conn.execute("BEGIN TRANSACTION")
+    # Use implicit transaction management (autocommit=False is the default)
     try:
         cursor.execute(
             """
@@ -525,9 +525,16 @@ def insert_event(
 
     Args:
         conn: sqlite3.Connection
-        event_type: One of 'delivery.created' or 'delivery.status_changed'
+        event_type: One of 'delivery.created', 'delivery.status_changed',
+                    'conversion.completed', or 'conversion.failed'
         delivery_id: The delivery ID this event relates to
-        payload: Full delivery record as a dict (DeliveryResponse.model_dump() output)
+        payload: Event payload (shape varies by event_type):
+            - 'delivery.created' / 'delivery.status_changed': full delivery record
+              (DeliveryResponse.model_dump() output)
+            - 'conversion.completed': converter-computed dict with row_count,
+              bytes_written, output_path, etc.
+            - 'conversion.failed': converter-computed dict with error_class,
+              error_message, etc.
 
     Returns:
         dict: The inserted event row as a dict, including the auto-assigned seq.

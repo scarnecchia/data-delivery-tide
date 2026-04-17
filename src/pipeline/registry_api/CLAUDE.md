@@ -1,6 +1,6 @@
 # Registry API
 
-Last verified: 2026-04-14
+Last verified: 2026-04-16
 
 ## Purpose
 
@@ -10,14 +10,15 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 
 - **Exposes**: REST API on port 8000 via FastAPI
   - `POST /deliveries` -- upsert a delivery (idempotent, keyed on source_path)
-  - `GET /deliveries` -- list with filters (dp_id, project, status, lexicon_id, version="latest", etc.)
+  - `GET /deliveries` -- list with filters (dp_id, project, status, lexicon_id, version="latest", etc.); supports keyset pagination via `after=` and `limit=`
   - `GET /deliveries/actionable` -- status matches lexicon's actionable_statuses and not yet converted
   - `GET /deliveries/{delivery_id}` -- single delivery by ID
-  - `PATCH /deliveries/{delivery_id}` -- partial update (parquet_converted_at, output_path, metadata only)
+  - `PATCH /deliveries/{delivery_id}` -- partial update (status, parquet_converted_at, output_path, metadata); metadata deep-merges with existing
   - `GET /health` -- health check
   - `WS /ws/events` -- one-way WebSocket broadcast of delivery lifecycle events
   - `GET /events?after={seq}&limit={n}` -- catch-up endpoint for events after a sequence number (limit default 100, max 1000)
-- **Event types**: `delivery.created` (new delivery, not re-crawl), `delivery.status_changed` (status transition)
+  - `POST /events` -- emit converter-lifecycle events (conversion.completed, conversion.failed); verifies delivery exists, inserts event, broadcasts to WebSocket clients
+- **Event types**: `delivery.created` (new delivery, not re-crawl), `delivery.status_changed` (status transition), `conversion.completed` (converter finished), `conversion.failed` (converter error)
 - **Guarantees**: delivery_id is SHA-256 of source_path (deterministic, stable). first_seen_at is never overwritten on upsert. last_updated_at only changes when fingerprint changes. Event seq is monotonically increasing (SQLite INTEGER PRIMARY KEY).
 - **Expects**: SQLite database path from config. Callers provide valid Pydantic models. Lexicons loaded at startup via `load_all_lexicons(settings.lexicons_dir)` and stored on `app.state.lexicons`.
 
@@ -42,12 +43,14 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 - status values are validated at request time against lexicon.statuses
 - lexicon_id must exist in loaded lexicons; unknown lexicons are rejected at POST time
 - first_seen_at is immutable after initial insert (COALESCE preserves it on conflict)
-- metadata is JSON-serialized dict (nullable, defaults to {})
+- metadata is JSON-serialized dict (nullable, defaults to {}); PATCH deep-merges at the top level (existing keys preserved, new keys added, null values allowed)
 - actionable = status matches lexicon.actionable_statuses AND parquet_converted_at IS NULL
-- event_type is constrained to "delivery.created" or "delivery.status_changed" (CHECK constraint)
+- event_type is constrained to four values via CHECK constraint: "delivery.created", "delivery.status_changed", "conversion.completed", "conversion.failed"
 - event seq is auto-incrementing INTEGER PRIMARY KEY (monotonic, gap-free under normal operation)
 - delivery.created fires only on genuinely new deliveries (not idempotent re-crawls)
 - delivery.status_changed fires only when status actually transitions to a different value
+- conversion.completed and conversion.failed are emitted via POST /events with converter-computed payloads (not stored as delivery columns)
+- PATCH with both status AND metadata merges all three sources: existing metadata, user-supplied metadata, and lexicon-derived set_on fields
 
 ## Key Files
 
