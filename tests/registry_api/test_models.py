@@ -6,6 +6,7 @@ from pipeline.registry_api.models import (
     DeliveryUpdate,
     DeliveryResponse,
     DeliveryFilters,
+    EventCreate,
     EventRecord,
 )
 
@@ -337,6 +338,34 @@ class TestDeliveryFilters:
 
         model_none = DeliveryFilters(converted=None)
         assert model_none.converted is None
+
+
+class TestEventCreate:
+    def test_accepts_conversion_completed(self):
+        e = EventCreate(
+            event_type="conversion.completed",
+            delivery_id="abc",
+            payload={"k": "v"},
+        )
+        assert e.event_type == "conversion.completed"
+
+    def test_accepts_conversion_failed(self):
+        e = EventCreate(event_type="conversion.failed", delivery_id="abc", payload={})
+        assert e.event_type == "conversion.failed"
+
+    def test_rejects_registry_internal_types(self):
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="delivery.created", delivery_id="abc", payload={})
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="delivery.status_changed", delivery_id="abc", payload={})
+
+    def test_rejects_arbitrary_strings(self):
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="nonsense", delivery_id="abc", payload={})
+
+    def test_payload_must_be_dict(self):
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="conversion.completed", delivery_id="abc", payload="not a dict")
 
 
 class TestEventRecord:
