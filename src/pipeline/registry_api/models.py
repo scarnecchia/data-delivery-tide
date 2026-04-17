@@ -76,7 +76,12 @@ class EventRecord(BaseModel):
     """Persisted event record for delivery lifecycle changes."""
 
     seq: int
-    event_type: Literal["delivery.created", "delivery.status_changed"]
+    event_type: Literal[
+        "delivery.created",
+        "delivery.status_changed",
+        "conversion.completed",
+        "conversion.failed",
+    ]
     delivery_id: str
     payload: dict
     created_at: str

@@ -368,6 +368,30 @@ class TestEventRecord:
 
         assert model.event_type == "delivery.status_changed"
 
+    def test_event_record_accepts_conversion_completed(self):
+        """AC6.1: EventRecord accepts 'conversion.completed' event_type."""
+        model = EventRecord(
+            seq=3,
+            event_type="conversion.completed",
+            delivery_id="abc123",
+            payload={"row_count": 100, "bytes_written": 1024},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.event_type == "conversion.completed"
+
+    def test_event_record_accepts_conversion_failed(self):
+        """AC6.1: EventRecord accepts 'conversion.failed' event_type."""
+        model = EventRecord(
+            seq=4,
+            event_type="conversion.failed",
+            delivery_id="abc123",
+            payload={"error_class": "ParseError", "error_message": "invalid format"},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.event_type == "conversion.failed"
+
     def test_event_record_rejects_invalid_event_type(self):
         """Test EventRecord with invalid event_type raises ValidationError."""
         with pytest.raises(ValidationError):
