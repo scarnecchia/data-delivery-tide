@@ -332,6 +332,78 @@ class TestUpdateDelivery:
         data = response.json()
         assert data["parquet_converted_at"] == "2026-04-09T15:30:00+00:00"
 
+    def test_ac7_2_metadata_merge_preserves_existing_keys(self, client):
+        """AC7.2: PATCH metadata deep-merges, preserving existing keys."""
+        # Create with initial metadata
+        payload = make_delivery_payload(
+            source_path="/data/metadata-merge-test",
+            metadata={"qa_passed_at": "2026-04-15T00:00:00Z", "other": "keep"},
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+        assert post_response.json()["metadata"]["qa_passed_at"] == "2026-04-15T00:00:00Z"
+        assert post_response.json()["metadata"]["other"] == "keep"
+
+        # PATCH to add conversion_error
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={
+                "metadata": {
+                    "conversion_error": {
+                        "class": "parse_error",
+                        "message": "bad",
+                        "at": "2026-04-16T00:00:00Z",
+                        "converter_version": "0.1.0",
+                    }
+                }
+            },
+        )
+
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        # All three keys should be present
+        assert data["metadata"]["qa_passed_at"] == "2026-04-15T00:00:00Z"
+        assert data["metadata"]["other"] == "keep"
+        assert data["metadata"]["conversion_error"]["class"] == "parse_error"
+        assert data["metadata"]["conversion_error"]["message"] == "bad"
+
+    def test_ac7_3_metadata_clear_error_by_null(self, client):
+        """AC7.3: PATCH with conversion_error: null clears the error, preserves other keys."""
+        # First, create and add error
+        payload = make_delivery_payload(
+            source_path="/data/metadata-clear-test",
+            metadata={"qa_passed_at": "2026-04-15T00:00:00Z", "other": "keep"},
+        )
+        post_response = client.post("/deliveries", json=payload)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # Add error
+        client.patch(
+            f"/deliveries/{delivery_id}",
+            json={
+                "metadata": {
+                    "conversion_error": {
+                        "class": "parse_error",
+                        "message": "bad",
+                    }
+                }
+            },
+        )
+
+        # Now clear the error by setting to null
+        clear_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"metadata": {"conversion_error": None}},
+        )
+
+        assert clear_response.status_code == 200
+        data = clear_response.json()
+        # Existing keys preserved
+        assert data["metadata"]["qa_passed_at"] == "2026-04-15T00:00:00Z"
+        assert data["metadata"]["other"] == "keep"
+        # Error is None
+        assert data["metadata"]["conversion_error"] is None
+
 
 class TestLexiconValidation:
     """Test lexicon-based validation of statuses and transitions (AC4.1-AC4.6)."""

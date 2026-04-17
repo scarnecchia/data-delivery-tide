@@ -195,7 +195,13 @@ async def update_single_delivery(delivery_id: str, data: DeliveryUpdate, db: DbD
         updates["metadata"] = json.dumps(existing_metadata)
 
     elif "metadata" in updates:
-        updates["metadata"] = json.dumps(updates["metadata"])
+        # Deep-merge metadata: preserve existing keys, merge in new keys
+        metadata_val = old.get("metadata", {})
+        existing_metadata = (
+            metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
+        )
+        merged = {**existing_metadata, **updates["metadata"]}
+        updates["metadata"] = json.dumps(merged)
 
     result = update_delivery(db, delivery_id, updates)
     if result is None:
