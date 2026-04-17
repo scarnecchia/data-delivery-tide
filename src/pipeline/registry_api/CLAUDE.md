@@ -1,6 +1,6 @@
 # Registry API
 
-Last verified: 2026-04-16
+Last verified: 2026-04-17
 
 ## Purpose
 
@@ -56,7 +56,7 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
 
 - `main.py` -- FastAPI app with lifespan (schema init on startup), WebSocket /ws/events endpoint
 - `db.py` -- all SQLite operations (init_db, upsert, get, list, actionable, update, insert_event, get_events_after, delivery_exists)
-- `models.py` -- Pydantic request/response models (including EventRecord)
+- `models.py` -- Pydantic request/response models (including EventRecord, EventCreate)
 - `routes.py` -- API route definitions (REST endpoints including GET /events)
 - `events.py` -- ConnectionManager for WebSocket broadcast; module-level `manager` singleton
 

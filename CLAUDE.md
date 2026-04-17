@@ -1,7 +1,7 @@
 # QA Registry Pipeline
 
-Last verified: 2026-04-16
-Last context update: 2026-04-16
+Last verified: 2026-04-17
+Last context update: 2026-04-17
 
 ## Purpose
 
@@ -12,7 +12,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Python 3.10+ (target environment: RHEL, no Docker, no systemd)
 - FastAPI + Uvicorn (registry API)
 - SQLite via stdlib sqlite3 (registry backing store, WAL mode)
-- pyreadstat + pyarrow (SAS-to-Parquet conversion)
+- pyreadstat + pyarrow + pandas (SAS-to-Parquet conversion)
 - websockets (WebSocket event stream)
 - pytest + pytest-asyncio + httpx (testing)
 - hatchling (build system)
@@ -45,6 +45,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
   - `config.json` -- default pipeline configuration
   - `lexicons/` -- lexicon JSON definitions (namespace directories, e.g. `soc/`)
   - `scripts/ensure_registry.sh` -- PID-based watchdog for registry API
+  - `scripts/ensure_converter.sh` -- PID-based watchdog for converter daemon
 - `tests/` -- mirrors src structure
 - `docs/implementation-plans/` -- phased implementation plans
 - `output/` -- pipeline output directory

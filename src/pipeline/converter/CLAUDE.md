@@ -1,6 +1,6 @@
 # Converter
 
-Last verified: 2026-04-16
+Last verified: 2026-04-17
 
 ## Purpose
 
@@ -16,7 +16,7 @@ Streams SAS7BDAT files to Parquet files, one delivery at a time, writing output 
 ## Dependencies
 
 - **Uses**: `pipeline.config.settings`, `pipeline.json_logging.get_logger`, `pipeline.events.consumer.EventConsumer` (daemon only), `pipeline.registry_api.models` (for wire shapes).
-- **Uses**: `pyreadstat`, `pyarrow`, `websockets` (daemon), `httpx` (daemon — via EventConsumer).
+- **Uses**: `pyreadstat`, `pyarrow`, `pandas` (DataFrame intermediary from pyreadstat), `websockets` (daemon), `httpx` (daemon -- via EventConsumer).
 - **Boundary**: no imports from `pipeline.registry_api.db`, `pipeline.registry_api.routes`, or crawler internals. Models are shared; nothing else.
 
 ## Key Files
