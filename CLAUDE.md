@@ -1,7 +1,7 @@
 # QA Registry Pipeline
 
-Last verified: 2026-04-14
-Last context update: 2026-04-14
+Last verified: 2026-04-16
+Last context update: 2026-04-16
 
 ## Purpose
 
@@ -12,7 +12,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Python 3.10+ (target environment: RHEL, no Docker, no systemd)
 - FastAPI + Uvicorn (registry API)
 - SQLite via stdlib sqlite3 (registry backing store, WAL mode)
-- pyreadstat + pyarrow (SAS-to-Parquet conversion, not yet implemented)
+- pyreadstat + pyarrow (SAS-to-Parquet conversion)
 - websockets (WebSocket event stream)
 - pytest + pytest-asyncio + httpx (testing)
 - hatchling (build system)
@@ -23,6 +23,13 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - `uv run registry-api` -- start the registry API on port 8000
 - `uv pip install -e ".[registry,dev]"` -- install with registry and dev deps
 - `uv pip install -e ".[consumer]"` -- install event consumer deps (websockets, httpx)
+- `uv pip install -e ".[converter]"` -- install SAS-to-Parquet converter deps (pyreadstat, pyarrow)
+- `uv run registry-convert` -- drain unconverted deliveries backlog (backfill CLI)
+- `uv run registry-convert --limit 10` -- process at most 10 deliveries
+- `uv run registry-convert --shard 0/4` -- process shard 0 of 4 (horizontal split)
+- `uv run registry-convert --include-failed` -- re-attempt errored deliveries
+- `uv run registry-convert-daemon` -- start the event-driven converter daemon
+- `pipeline/scripts/ensure_converter.sh` -- PID-based watchdog for the daemon
 
 ## Project Structure
 
@@ -33,7 +40,7 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
   - `registry_api/` -- FastAPI app, SQLite db, Pydantic models, routes, WebSocket event stream
   - `crawler/` -- filesystem crawler (see `src/pipeline/crawler/CLAUDE.md`)
   - `events/` -- reference EventConsumer for WebSocket + REST catch-up consumption
-  - `converter/` -- SAS-to-Parquet converter (placeholder)
+  - `converter/` -- SAS-to-Parquet converter (see `src/pipeline/converter/CLAUDE.md`)
 - `pipeline/` -- runtime config and scripts
   - `config.json` -- default pipeline configuration
   - `lexicons/` -- lexicon JSON definitions (namespace directories, e.g. `soc/`)
@@ -55,6 +62,8 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 - Event stream uses WebSocket for real-time broadcast + REST GET /events for catch-up; events are persisted in SQLite with monotonic sequence numbers
 - Events are emitted only for genuine state changes: delivery.created on first POST (not re-crawl), delivery.status_changed on status transitions
 - Database stores `lexicon_id`, `status`, and `metadata` (JSON dict) per delivery instead of the former `qa_status`/`qa_passed_at` columns
+- Converter writes per-delivery Parquet at `{source_path}/parquet/{stem}.parquet` — Shape A from `docs/design-plans/2026-04-16-aggregation-design-notes.md`. No hive layout, no cross-delivery aggregation.
+- Converter event emission flows through `POST /events` (not PATCH side-effects), keeping registry as the single event writer while allowing converter-computed payload fields.
 
 ## Boundaries
 
