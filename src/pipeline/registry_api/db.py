@@ -341,14 +341,17 @@ def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
 
 def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
     """
-    List deliveries with optional filtering.
+    List deliveries with optional filtering and keyset pagination.
 
     Supported filter keys:
     - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match with =
     - converted: boolean, if True: parquet_converted_at IS NOT NULL, if False: IS NULL
     - version: if "latest", returns highest version per (dp_id, workplan_id); otherwise exact match
+    - after: delivery_id cursor for keyset pagination (returns rows with delivery_id > after)
+    - limit: maximum number of rows to return (capped at 1000)
 
     All filters combine with AND. Empty filters dict returns all rows.
+    Results are always ordered by delivery_id ascending.
 
     Args:
         conn: sqlite3.Connection
@@ -386,10 +389,22 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
             where_clauses.append("version = ?")
             params.append(filters["version"])
 
+    if "after" in filters and filters["after"] is not None:
+        where_clauses.append("delivery_id > ?")
+        params.append(filters["after"])
+
     # Build query
     query = "SELECT * FROM deliveries"
     if where_clauses:
         query += " WHERE " + " AND ".join(where_clauses)
+
+    # Always order by delivery_id for deterministic pagination
+    query += " ORDER BY delivery_id ASC"
+
+    # Apply limit if specified
+    if "limit" in filters and filters["limit"] is not None:
+        capped = min(int(filters["limit"]), 1000)
+        query += f" LIMIT {capped}"
 
     cursor.execute(query, params)
     rows = cursor.fetchall()

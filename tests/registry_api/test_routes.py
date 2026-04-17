@@ -203,6 +203,62 @@ class TestListDeliveries:
         assert len(data) == 1
         assert data[0]["dp_id"] == "dp-alpha"
 
+    def test_list_with_pagination_after_limit(self, client):
+        """AC7.1 combined: GET /deliveries?after=X&limit=N uses keyset pagination."""
+        # Create 4 deliveries to paginate through
+        for i in range(1, 5):
+            payload = make_delivery_payload(source_path=f"/data/page-test-{i}")
+            client.post("/deliveries", json=payload)
+
+        # Get all to determine delivery_ids
+        all_response = client.get("/deliveries")
+        all_data = all_response.json()
+        assert len(all_data) == 4
+
+        # Test pagination: get first 2
+        response1 = client.get("/deliveries?limit=2")
+        data1 = response1.json()
+        assert len(data1) == 2
+        assert data1[0]["delivery_id"] <= data1[1]["delivery_id"]
+
+        # Test after: get next 2 after first delivery_id
+        cursor_id = data1[0]["delivery_id"]
+        response2 = client.get(f"/deliveries?after={cursor_id}&limit=2")
+        data2 = response2.json()
+        assert len(data2) == 2
+        assert all(d["delivery_id"] > cursor_id for d in data2)
+
+    def test_list_with_converted_and_pagination(self, client):
+        """AC7.1: Pagination works with converted=false filter."""
+        # Create mixed converted/unconverted deliveries
+        for i in range(1, 5):
+            payload = make_delivery_payload(
+                source_path=f"/data/converted-test-{i}",
+                status="passed",
+            )
+            resp = client.post("/deliveries", json=payload)
+            if i % 2 == 0:
+                # Mark every other as converted
+                did = resp.json()["delivery_id"]
+                client.patch(
+                    f"/deliveries/{did}",
+                    json={"parquet_converted_at": "2026-01-01T00:00:00Z"},
+                )
+
+        # Get unconverted with pagination
+        response1 = client.get("/deliveries?converted=false&limit=1")
+        data1 = response1.json()
+        assert len(data1) == 1
+        assert data1[0]["parquet_converted_at"] is None
+
+        # Get next unconverted
+        cursor_id = data1[0]["delivery_id"]
+        response2 = client.get(f"/deliveries?converted=false&after={cursor_id}&limit=1")
+        data2 = response2.json()
+        assert len(data2) == 1
+        assert data2[0]["delivery_id"] > cursor_id
+        assert data2[0]["parquet_converted_at"] is None
+
 
 class TestActionableDeliveries:
     """Test GET /deliveries/actionable endpoint.

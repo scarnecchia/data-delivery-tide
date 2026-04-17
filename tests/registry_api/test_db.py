@@ -701,6 +701,89 @@ class TestListDeliveries:
         assert results[0]["project"] == "proj-a"
         assert results[0]["status"] == "passed"
 
+    def test_list_deliveries_ordering_by_delivery_id(
+        self, memory_db, sample_deliveries
+    ):
+        """AC7.1: list_deliveries returns rows sorted by delivery_id ascending."""
+        results = list_deliveries(memory_db, {})
+
+        # All 4 results should be present and ordered by delivery_id
+        assert len(results) == 4
+        delivery_ids = [r["delivery_id"] for r in results]
+        assert delivery_ids == sorted(delivery_ids), (
+            "Results should be ordered by delivery_id ascending"
+        )
+
+    def test_list_deliveries_after_keyset_pagination(
+        self, memory_db, sample_deliveries
+    ):
+        """AC7.1 after: list_deliveries with after= returns rows strictly greater than cursor."""
+        results_all = list_deliveries(memory_db, {})
+        cursor_id = results_all[1]["delivery_id"]
+
+        results_after = list_deliveries(memory_db, {"after": cursor_id})
+
+        # Should return rows 2, 3 (indices after 1)
+        assert len(results_after) == 2
+        for r in results_after:
+            assert r["delivery_id"] > cursor_id, (
+                "All rows after should have delivery_id > cursor"
+            )
+
+    def test_list_deliveries_limit(self, memory_db, sample_deliveries):
+        """AC7.1 limit: list_deliveries with limit= returns at most N rows."""
+        results = list_deliveries(memory_db, {"limit": 2})
+
+        assert len(results) == 2
+        # Verify they are the two smallest delivery_ids
+        all_results = list_deliveries(memory_db, {})
+        expected_ids = [all_results[0]["delivery_id"], all_results[1]["delivery_id"]]
+        actual_ids = [r["delivery_id"] for r in results]
+        assert actual_ids == expected_ids
+
+    def test_list_deliveries_after_and_limit_combined(
+        self, memory_db, sample_deliveries
+    ):
+        """AC7.1 combined: after= and limit= both work together."""
+        results_all = list_deliveries(memory_db, {})
+        cursor_id = results_all[0]["delivery_id"]
+
+        results = list_deliveries(memory_db, {"after": cursor_id, "limit": 2})
+
+        # Should return at most 2 rows, all strictly > cursor_id
+        assert len(results) == 2
+        assert all(r["delivery_id"] > cursor_id for r in results)
+        # Should be rows at indices 1 and 2
+        assert results[0]["delivery_id"] == results_all[1]["delivery_id"]
+        assert results[1]["delivery_id"] == results_all[2]["delivery_id"]
+
+    def test_list_deliveries_limit_capped_at_1000(
+        self, memory_db, sample_deliveries
+    ):
+        """AC7.1 cap: limit larger than 1000 is capped, returns all available rows without error."""
+        # With only 4 rows seeded, requesting 5000 should return all 4
+        results = list_deliveries(memory_db, {"limit": 5000})
+
+        assert len(results) == 4, "Should return all 4 available rows"
+
+    def test_list_deliveries_after_with_converted_filter(
+        self, memory_db, sample_deliveries
+    ):
+        """AC7.1 after with filters: pagination works with other filters like converted=."""
+        results_all = list_deliveries(memory_db, {"converted": False})
+        # Should have 3 unconverted rows
+        assert len(results_all) == 3
+
+        cursor_id = results_all[0]["delivery_id"]
+        results_after = list_deliveries(
+            memory_db, {"converted": False, "after": cursor_id, "limit": 2}
+        )
+
+        # Should return at most 2 unconverted rows strictly > cursor_id
+        assert len(results_after) == 2
+        assert all(r["parquet_converted_at"] is None for r in results_after)
+        assert all(r["delivery_id"] > cursor_id for r in results_after)
+
 
 class TestGetActionable:
     @pytest.fixture
