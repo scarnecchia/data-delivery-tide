@@ -30,6 +30,7 @@ dev = [
 [project.scripts]
 registry-api = "pipeline.registry_api.main:run"
 registry-convert = "pipeline.converter.cli:main"
+registry-convert-daemon = "pipeline.converter.daemon:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
