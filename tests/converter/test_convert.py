@@ -223,3 +223,61 @@ class TestConvertSchemaStability:
         table = pq.read_table(out)
         assert table.num_rows == 250
         assert set(table.column_names) == {"int_col", "str_col", "float_col"}
+
+
+class TestConvertSchemaDrift:
+    def _meta_stub(self, columns):
+        class _Meta:
+            column_labels = ["" for _ in columns]
+            variable_value_labels = {}
+            file_encoding = "UTF-8"
+            column_names = list(columns)
+        return _Meta()
+
+    def test_dtype_drift_raises_schema_drift_error(self, tmp_path):
+        # AC3.2: chunk 2 has str where chunk 1 had int -> SchemaDriftError.
+        src = tmp_path / "unused.sav"
+        src.write_bytes(b"")  # unused by the stub factory
+        out = tmp_path / "test.parquet"
+
+        drift_meta = self._meta_stub(["a"])
+
+        def drift_iter(source_path, chunk_size):
+            yield pd.DataFrame({"a": [1, 2, 3]}), drift_meta
+            yield pd.DataFrame({"a": ["four", "five"]}), drift_meta  # dtype drift
+
+        with pytest.raises(SchemaDriftError):
+            convert_sas_to_parquet(src, out, chunk_iter_factory=drift_iter)
+
+    def test_schema_drift_cleans_up_tmp(self, tmp_path):
+        # AC3.3
+        src = tmp_path / "unused.sav"
+        src.write_bytes(b"")
+        out = tmp_path / "parquet" / "test.parquet"
+
+        drift_meta = self._meta_stub(["a"])
+
+        def drift_iter(source_path, chunk_size):
+            yield pd.DataFrame({"a": [1, 2, 3]}), drift_meta
+            yield pd.DataFrame({"a": ["four"]}), drift_meta
+
+        with pytest.raises(SchemaDriftError):
+            convert_sas_to_parquet(src, out, chunk_iter_factory=drift_iter)
+
+        assert list(out.parent.glob("test.parquet.tmp-*")) == []
+        assert not out.exists()
+
+    def test_column_missing_raises_schema_drift_error(self, tmp_path):
+        # Structural drift (ArrowInvalid path).
+        src = tmp_path / "unused.sav"
+        src.write_bytes(b"")
+        out = tmp_path / "test.parquet"
+
+        drift_meta = self._meta_stub(["a", "b"])
+
+        def drift_iter(source_path, chunk_size):
+            yield pd.DataFrame({"a": [1], "b": [2]}), drift_meta
+            yield pd.DataFrame({"a": [3]}), drift_meta  # missing "b"
+
+        with pytest.raises(SchemaDriftError):
+            convert_sas_to_parquet(src, out, chunk_iter_factory=drift_iter)

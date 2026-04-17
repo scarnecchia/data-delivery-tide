@@ -152,7 +152,7 @@ def convert_sas_to_parquet(
             # Subsequent chunks — lock schema, catch drift.
             try:
                 table = pa.Table.from_pandas(df, preserve_index=False, schema=locked_schema)
-            except (pa.lib.ArrowTypeError, pa.lib.ArrowInvalid) as exc:
+            except (pa.lib.ArrowTypeError, pa.lib.ArrowInvalid, KeyError) as exc:
                 raise SchemaDriftError(
                     f"chunk schema differs from locked schema: {exc}"
                 ) from exc
