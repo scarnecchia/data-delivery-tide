@@ -162,6 +162,7 @@ Each Parquet file carries the SAS column labels, value labels, and
 declared encoding as file-level key-value metadata:
 
 ```python
+import json
 import pyarrow.parquet as pq
 meta = pq.read_metadata("/path/to/parquet/x.parquet").metadata
 column_labels = json.loads(meta[b"sas_labels"])

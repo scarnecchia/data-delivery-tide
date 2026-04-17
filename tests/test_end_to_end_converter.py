@@ -11,7 +11,6 @@ FastAPI's TestClient with a tmp-path DB, and calls engine.convert_one
 through an http_module stub that wraps TestClient's request methods.
 """
 
-import json
 import sqlite3
 from pathlib import Path
 
@@ -191,7 +190,7 @@ class TestEndToEndConverter:
         # src/pipeline/crawler/main.py). Build a logger and pass both.
         test_logger = get_logger("test-crawler", log_dir=None)
         crawl_rc = crawl(env["config"], test_logger)
-        assert crawl_rc == 0 or crawl_rc > 0, f"crawl exited with {crawl_rc}"
+        assert crawl_rc >= 2, f"crawl processed {crawl_rc} deliveries, expected at least 2"
 
         # Crawler registered two deliveries: parent + sub.
         rows_resp = env["client"].get("/deliveries?converted=false")
