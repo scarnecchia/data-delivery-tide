@@ -3,8 +3,10 @@
 import argparse
 import sys
 
+from pipeline.config import settings
 from pipeline.converter import http as converter_http
 from pipeline.converter.engine import convert_one
+from pipeline.json_logging import get_logger
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -61,3 +63,100 @@ def _in_shard(delivery_id: str, shard: tuple[int, int] | None) -> bool:
     i, n = shard
     bucket = int(delivery_id[:8], 16) % n
     return bucket == i
+
+
+def _iter_unconverted(
+    api_url: str,
+    page_size: int,
+    http_module=converter_http,
+):
+    """
+    Generator yielding delivery dicts one at a time, paging under the covers.
+
+    Stops when a page returns empty. Does not retry — the underlying
+    http_module handles transient failures; exhaustion raises RegistryUnreachableError
+    and propagates to main().
+    """
+    cursor = ""
+    while True:
+        page = http_module.list_unconverted(api_url, after=cursor, limit=page_size)
+        if not page:
+            return
+        for delivery in page:
+            yield delivery
+        cursor = page[-1]["delivery_id"]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        shard = _parse_shard(args.shard)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    return _run(args, shard, http_module=converter_http, convert_one_fn=convert_one)
+
+
+def _run(
+    args,
+    shard: tuple[int, int] | None,
+    *,
+    http_module,
+    convert_one_fn,
+) -> int:
+    """
+    Orchestrate the paged walk + per-delivery engine call. Pure shell.
+
+    Tests can inject http_module and convert_one_fn to avoid touching HTTP
+    or running the real converter.
+    """
+    logger = get_logger("converter-cli", log_dir=settings.log_dir)
+
+    api_url = settings.registry_api_url
+    processed = 0
+
+    try:
+        for delivery in _iter_unconverted(
+            api_url, settings.converter_cli_batch_size, http_module=http_module
+        ):
+            delivery_id = delivery["delivery_id"]
+
+            if not _in_shard(delivery_id, shard):
+                continue
+
+            if args.include_failed:
+                metadata = delivery.get("metadata") or {}
+                if metadata.get("conversion_error"):
+                    http_module.patch_delivery(
+                        api_url, delivery_id,
+                        {"metadata": {"conversion_error": None}},
+                    )
+
+            convert_one_fn(
+                delivery_id,
+                api_url,
+                converter_version=settings.converter_version,
+                chunk_size=settings.converter_chunk_size,
+                compression=settings.converter_compression,
+                log_dir=settings.log_dir,
+            )
+
+            processed += 1
+            if args.limit is not None and processed >= args.limit:
+                break
+
+    except converter_http.RegistryUnreachableError as exc:
+        logger.error(
+            "registry unreachable, exiting",
+            extra={"error_message": str(exc)},
+        )
+        return 1
+    except KeyboardInterrupt:
+        logger.warning("interrupted by user", extra={"processed": processed})
+        return 130
+
+    logger.info("backfill complete", extra={"processed": processed})
+    return 0

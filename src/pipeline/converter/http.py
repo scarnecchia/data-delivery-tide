@@ -73,6 +73,24 @@ def patch_delivery(api_url: str, delivery_id: str, updates: dict) -> dict:
     return _request_with_retry(request)
 
 
+def list_unconverted(
+    api_url: str,
+    after: str = "",
+    limit: int = 200,
+) -> list[dict]:
+    """
+    GET /deliveries?converted=false&after=&limit= — returns a page of delivery dicts.
+
+    Empty `after` is treated as "start from the beginning" (the registry
+    pagination builds a `delivery_id > after` condition; empty string
+    sorts before all hex digests).
+    """
+    params = f"converted=false&after={after}&limit={limit}"
+    url = f"{api_url.rstrip('/')}/deliveries?{params}"
+    request = urllib.request.Request(url, method="GET")
+    return _request_with_retry(request)
+
+
 def emit_event(api_url: str, event_type: str, delivery_id: str, payload: dict) -> dict:
     """
     POST /events with the given EventCreate body — returns the inserted EventRecord.

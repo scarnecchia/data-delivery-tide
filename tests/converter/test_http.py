@@ -12,6 +12,7 @@ from pipeline.converter.http import (
     get_delivery,
     patch_delivery,
     emit_event,
+    list_unconverted,
 )
 
 
@@ -57,6 +58,26 @@ class TestPatchDelivery:
         assert request.method == "PATCH"
         assert request.get_full_url().endswith("/deliveries/abc")
         assert json.loads(request.data) == {"output_path": "/p/x.parquet"}
+
+
+class TestListUnconverted:
+    @patch("pipeline.converter.http.urllib.request.urlopen")
+    def test_returns_list_of_delivery_dicts(self, mock_urlopen):
+        mock_urlopen.return_value = _make_urlopen_response([
+            {"delivery_id": "aaa"}, {"delivery_id": "bbb"}
+        ])
+        result = list_unconverted("http://localhost:8000", after="", limit=200)
+        assert result == [{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]
+
+    @patch("pipeline.converter.http.urllib.request.urlopen")
+    def test_builds_correct_query_string(self, mock_urlopen):
+        mock_urlopen.return_value = _make_urlopen_response([])
+        list_unconverted("http://localhost:8000", after="cursor123", limit=50)
+        request = mock_urlopen.call_args[0][0]
+        url = request.get_full_url()
+        assert "converted=false" in url
+        assert "after=cursor123" in url
+        assert "limit=50" in url
 
 
 class TestEmitEvent:
