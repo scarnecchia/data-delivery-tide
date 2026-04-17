@@ -2,8 +2,6 @@
 
 import asyncio
 import json
-from pathlib import Path
-from unittest.mock import MagicMock
 import time
 
 import pytest
