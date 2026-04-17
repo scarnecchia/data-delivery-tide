@@ -199,3 +199,27 @@ class TestConvertAtomicWrite:
 
         assert list(tmp_path.glob("test.parquet.tmp-*")) == []
         assert not out.exists()
+
+
+class TestConvertSchemaStability:
+    def test_multiple_chunks_same_schema_succeeds(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
+        # AC3.1: chunks 2 through N match chunk 1 -> all write.
+        df = pd.DataFrame({
+            "int_col": list(range(250)),
+            "str_col": [f"s{i}" for i in range(250)],
+            "float_col": [float(i) * 1.5 for i in range(250)],
+        })
+        src = sas_fixture_factory(df=df)
+        out = tmp_path / "test.parquet"
+
+        result = convert_sas_to_parquet(src, out, chunk_size=100, chunk_iter_factory=sav_chunk_iter_factory)
+
+        assert result.row_count == 250
+        assert result.column_count == 3
+        meta = pq.read_metadata(out)
+        assert meta.num_row_groups == 3  # 100, 100, 50
+
+        # Round-trip the data.
+        table = pq.read_table(out)
+        assert table.num_rows == 250
+        assert set(table.column_names) == {"int_col", "str_col", "float_col"}
