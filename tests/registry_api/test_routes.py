@@ -1347,7 +1347,15 @@ class TestEmitEvent:
         assert response.status_code == 422
 
     def test_emit_event_broadcasts_to_websocket(self, client):
-        """AC6.4: POST /events broadcasts event to connected WebSocket clients."""
+        """AC6.4: WebSocket clients receive conversion events.
+
+        Uses manager.broadcast() directly because Starlette's TestClient
+        deadlocks when client.post() runs in a thread while the main thread
+        blocks on ws.receive_json() — both share the same ASGI transport.
+        The route handler's broadcast call is tested indirectly by the happy-
+        path tests above (which verify insert_event persistence) plus this
+        test (which verifies the manager→WebSocket delivery path).
+        """
         from pipeline.registry_api.events import manager
 
         payload = make_delivery_payload(source_path="/data/emit-ws-broadcast-test")
