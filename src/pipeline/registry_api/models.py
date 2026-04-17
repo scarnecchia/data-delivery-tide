@@ -74,6 +74,14 @@ class DeliveryFilters(BaseModel):
     limit: int | None = None
 
 
+class EventCreate(BaseModel):
+    """POST body for emitting a lifecycle event from outside the registry."""
+
+    event_type: Literal["conversion.completed", "conversion.failed"]
+    delivery_id: str
+    payload: dict
+
+
 class EventRecord(BaseModel):
     """Persisted event record for delivery lifecycle changes."""
 

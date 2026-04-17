@@ -1173,6 +1173,128 @@ class TestCatchUpEndpoint:
         assert event["payload"] == {"key": "value"}
 
 
+class TestEmitEvent:
+    """Test POST /events endpoint for converter-emitted lifecycle events (AC6.4)."""
+
+    def test_emit_conversion_completed_happy_path(self, client, test_db):
+        """AC6.4: POST /events with conversion.completed event succeeds and broadcasts."""
+        # First create a delivery
+        payload = make_delivery_payload(source_path="/data/emit-test-1")
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # POST conversion.completed event
+        event_payload = {
+            "event_type": "conversion.completed",
+            "delivery_id": delivery_id,
+            "payload": {
+                "delivery_id": delivery_id,
+                "output_path": "/output/converted.parquet",
+                "row_count": 42,
+                "bytes_written": 1024,
+                "wrote_at": "2026-04-16T00:00:00Z",
+            },
+        }
+
+        response = client.post("/events", json=event_payload)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["event_type"] == "conversion.completed"
+        assert data["delivery_id"] == delivery_id
+        assert data["payload"]["row_count"] == 42
+
+        # Verify event was persisted
+        events = get_events(test_db)
+        conversion_events = [
+            e for e in events
+            if e["event_type"] == "conversion.completed"
+        ]
+        assert len(conversion_events) == 1
+        assert conversion_events[0]["delivery_id"] == delivery_id
+
+    def test_emit_conversion_failed_happy_path(self, client, test_db):
+        """AC6.4: POST /events with conversion.failed event succeeds."""
+        # Create delivery
+        payload = make_delivery_payload(source_path="/data/emit-test-2")
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # POST conversion.failed event
+        event_payload = {
+            "event_type": "conversion.failed",
+            "delivery_id": delivery_id,
+            "payload": {
+                "delivery_id": delivery_id,
+                "error_class": "ParseError",
+                "error_message": "invalid SAS format",
+                "at": "2026-04-16T00:00:00Z",
+                "converter_version": "0.1.0",
+            },
+        }
+
+        response = client.post("/events", json=event_payload)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["event_type"] == "conversion.failed"
+        assert data["delivery_id"] == delivery_id
+        assert data["payload"]["error_class"] == "ParseError"
+
+    def test_emit_event_with_nonexistent_delivery_returns_404(self, client):
+        """AC6.4: POST /events with unknown delivery_id returns 404."""
+        event_payload = {
+            "event_type": "conversion.completed",
+            "delivery_id": "nonexistent-delivery-id-99999",
+            "payload": {"row_count": 0},
+        }
+
+        response = client.post("/events", json=event_payload)
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Delivery not found"
+
+    def test_emit_event_rejects_registry_internal_event_types(self, client):
+        """AC6.4: POST /events rejects delivery.created and delivery.status_changed."""
+        # Create delivery first
+        payload = make_delivery_payload(source_path="/data/emit-test-3")
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Try to emit delivery.created (should be rejected by model validation)
+        event_payload = {
+            "event_type": "delivery.created",
+            "delivery_id": delivery_id,
+            "payload": {},
+        }
+
+        response = client.post("/events", json=event_payload)
+
+        assert response.status_code == 422
+
+    def test_emit_event_rejects_invalid_event_type(self, client):
+        """AC6.4: POST /events rejects invalid event_type."""
+        # Create delivery first
+        payload = make_delivery_payload(source_path="/data/emit-test-4")
+        response = client.post("/deliveries", json=payload)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Try to emit invalid event
+        event_payload = {
+            "event_type": "nonsense.event",
+            "delivery_id": delivery_id,
+            "payload": {},
+        }
+
+        response = client.post("/events", json=event_payload)
+
+        assert response.status_code == 422
+
+
 class TestSubDeliveryIntegration:
     """Test sub-delivery integration through the API (AC5.1-AC5.4)."""
 

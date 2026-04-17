@@ -21,6 +21,7 @@ from pipeline.registry_api.models import (
     DeliveryUpdate,
     DeliveryResponse,
     DeliveryFilters,
+    EventCreate,
     EventRecord,
 )
 from pipeline.registry_api.events import manager
@@ -230,3 +231,21 @@ async def get_events(db: DbDep, after: int, limit: int = 100):
     Returns empty array if no events match.
     """
     return get_events_after(db, after, limit)
+
+
+@router.post("/events", response_model=EventRecord, status_code=201)
+async def emit_event(data: EventCreate, db: DbDep):
+    """
+    Emit a converter lifecycle event.
+
+    Verifies the delivery exists, persists the event via insert_event,
+    and broadcasts to connected WebSocket clients.
+
+    Returns 404 if the delivery does not exist.
+    """
+    if get_delivery(db, data.delivery_id) is None:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+
+    event = insert_event(db, data.event_type, data.delivery_id, data.payload)
+    await manager.broadcast(event)
+    return event
