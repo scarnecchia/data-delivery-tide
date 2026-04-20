@@ -409,3 +409,89 @@ class TestEventRecord:
         )
 
         assert model.payload == complex_payload
+
+
+class TestMetadataSizeValidation:
+    """Test metadata size limit enforcement (Issue #13)."""
+
+    def test_create_accepts_metadata_under_limit(self):
+        """Metadata under 64KB is accepted."""
+        model = DeliveryCreate(
+            request_id="req-1",
+            project="proj",
+            request_type="scan",
+            workplan_id="wp-1",
+            dp_id="dp-1",
+            version="1",
+            scan_root="/scan",
+            lexicon_id="lex",
+            status="pending",
+            source_path="/src",
+            metadata={"key": "value"},
+        )
+        assert model.metadata == {"key": "value"}
+
+    def test_create_rejects_metadata_over_limit(self):
+        """Metadata over 64KB raises ValidationError."""
+        # Create a dict that serializes to > 64KB
+        big_metadata = {"data": "x" * 70_000}
+        with pytest.raises(ValidationError, match="metadata exceeds maximum size"):
+            DeliveryCreate(
+                request_id="req-1",
+                project="proj",
+                request_type="scan",
+                workplan_id="wp-1",
+                dp_id="dp-1",
+                version="1",
+                scan_root="/scan",
+                lexicon_id="lex",
+                status="pending",
+                source_path="/src",
+                metadata=big_metadata,
+            )
+
+    def test_update_rejects_metadata_over_limit(self):
+        """DeliveryUpdate also enforces the metadata size limit."""
+        big_metadata = {"data": "x" * 70_000}
+        with pytest.raises(ValidationError, match="metadata exceeds maximum size"):
+            DeliveryUpdate(metadata=big_metadata)
+
+    def test_create_accepts_none_metadata(self):
+        """None metadata is valid (no size check needed)."""
+        model = DeliveryCreate(
+            request_id="req-1",
+            project="proj",
+            request_type="scan",
+            workplan_id="wp-1",
+            dp_id="dp-1",
+            version="1",
+            scan_root="/scan",
+            lexicon_id="lex",
+            status="pending",
+            source_path="/src",
+            metadata=None,
+        )
+        assert model.metadata is None
+
+    def test_create_accepts_exactly_at_limit(self):
+        """Metadata at exactly 64KB is accepted."""
+        import json
+        # Build a payload that serializes to exactly 65536 bytes
+        # {"d": "aaa..."} — overhead is len('{"d": ""}') = 9 bytes
+        filler = "a" * (65_536 - 9)
+        payload = {"d": filler}
+        assert len(json.dumps(payload).encode("utf-8")) == 65_536
+        model = DeliveryCreate(
+            request_id="req-1",
+            project="proj",
+            request_type="scan",
+            workplan_id="wp-1",
+            dp_id="dp-1",
+            version="1",
+            scan_root="/scan",
+            lexicon_id="lex",
+            status="pending",
+            source_path="/src",
+            metadata=payload,
+        )
+        assert model.metadata is not None
