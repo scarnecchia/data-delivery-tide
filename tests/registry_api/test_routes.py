@@ -1437,3 +1437,49 @@ class TestUsernameInEvents:
         data = response.json()
         assert len(data) >= 1
         assert data[0]["username"] == "test-writer"
+
+
+class TestWebSocketAuth:
+    """Test WebSocket authentication (Issue #9)."""
+
+    def test_ws_connect_with_valid_token(self, client, auth_headers):
+        """WebSocket connection with valid token query param succeeds."""
+        with client.websocket_connect("/ws/events?token=test-integration-token") as ws:
+            # Connection succeeded - just close gracefully
+            pass
+
+    def test_ws_connect_without_token_rejected(self, client):
+        """WebSocket connection without token is rejected with 1008."""
+        from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+        with pytest.raises(StarletteWSDisconnect) as exc_info:
+            with client.websocket_connect("/ws/events"):
+                pass
+        assert exc_info.value.code == 1008
+
+    def test_ws_connect_with_invalid_token_rejected(self, client, auth_headers):
+        """WebSocket connection with invalid token is rejected with 1008."""
+        from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+        with pytest.raises(StarletteWSDisconnect) as exc_info:
+            with client.websocket_connect("/ws/events?token=bogus-token"):
+                pass
+        assert exc_info.value.code == 1008
+
+    def test_ws_connect_with_revoked_token_rejected(self, client, test_db):
+        """WebSocket connection with revoked token is rejected with 1008."""
+        import hashlib
+        from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+
+        # Create a revoked token
+        revoked_token = "revoked-ws-token"
+        token_hash = hashlib.sha256(revoked_token.encode()).hexdigest()
+        cursor = test_db.cursor()
+        cursor.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at, revoked_at) VALUES (?, ?, ?, ?, ?)",
+            (token_hash, "revoked-user", "read", "2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00"),
+        )
+        test_db.commit()
+
+        with pytest.raises(StarletteWSDisconnect) as exc_info:
+            with client.websocket_connect(f"/ws/events?token={revoked_token}"):
+                pass
+        assert exc_info.value.code == 1008
