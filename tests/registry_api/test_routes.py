@@ -163,7 +163,8 @@ class TestListDeliveries:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 2
+        assert data["total"] == 2
+        assert len(data["items"]) == 2
 
     def test_list_filtered_by_qa_status(self, client, auth_headers):
         """GET /deliveries?qa_status=pending filters by qa_status."""
@@ -183,8 +184,9 @@ class TestListDeliveries:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["status"] == "pending"
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["status"] == "pending"
 
     def test_list_filtered_by_dp_id(self, client, auth_headers):
         """GET /deliveries?dp_id=X filters by dp_id."""
@@ -198,8 +200,9 @@ class TestListDeliveries:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["dp_id"] == "dp-alpha"
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["dp_id"] == "dp-alpha"
 
 
 class TestActionableDeliveries:
@@ -1097,9 +1100,10 @@ class TestSubDeliveryIntegration:
         data = response.json()
 
         # Only the sub-delivery should be returned
-        assert len(data) == 1
-        assert data[0]["lexicon_id"] == "test.sub"
-        assert data[0]["source_path"] == "/data/parent-sub-test/sub"
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["lexicon_id"] == "test.sub"
+        assert data["items"][0]["source_path"] == "/data/parent-sub-test/sub"
 
     def test_parent_and_sub_correlated_by_identity(self, client, auth_headers):
         """AC5.2: Parent and sub-delivery are correlated by identity fields."""
@@ -1137,7 +1141,9 @@ class TestSubDeliveryIntegration:
         data = response.json()
 
         # Both parent and sub should be returned
-        assert len(data) == 2
+        assert data["total"] == 2
+        assert len(data["items"]) == 2
+        data = data["items"]
 
         # Find parent and sub by lexicon_id
         parent = next(d for d in data if d["lexicon_id"] == "soc.qar")
@@ -1263,3 +1269,69 @@ class TestAuthEnforcement:
             headers=read_auth_headers,
         )
         assert response.status_code == 403
+
+
+class TestPagination:
+    """Test pagination on GET /deliveries (Issue #12)."""
+
+    def test_default_pagination(self, client, auth_headers):
+        """Default limit=100, offset=0 is applied."""
+        payload = make_delivery_payload(source_path="/data/page-1")
+        client.post("/deliveries", json=payload, headers=auth_headers)
+
+        response = client.get("/deliveries", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["limit"] == 100
+        assert data["offset"] == 0
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+
+    def test_limit_and_offset(self, client, auth_headers):
+        """limit and offset control returned results."""
+        for i in range(5):
+            payload = make_delivery_payload(source_path=f"/data/paginate-{i}")
+            client.post("/deliveries", json=payload, headers=auth_headers)
+
+        response = client.get("/deliveries?limit=2&offset=0", headers=auth_headers)
+        data = response.json()
+        assert data["total"] == 5
+        assert len(data["items"]) == 2
+        assert data["limit"] == 2
+        assert data["offset"] == 0
+
+        response2 = client.get("/deliveries?limit=2&offset=2", headers=auth_headers)
+        data2 = response2.json()
+        assert data2["total"] == 5
+        assert len(data2["items"]) == 2
+        assert data2["offset"] == 2
+
+    def test_offset_beyond_results(self, client, auth_headers):
+        """offset beyond total returns empty items but correct total."""
+        payload = make_delivery_payload(source_path="/data/offset-test")
+        client.post("/deliveries", json=payload, headers=auth_headers)
+
+        response = client.get("/deliveries?offset=100", headers=auth_headers)
+        data = response.json()
+        assert data["total"] == 1
+        assert len(data["items"]) == 0
+
+    def test_limit_capped_at_1000(self, client, auth_headers):
+        """limit > 1000 is clamped to 1000."""
+        response = client.get("/deliveries?limit=5000", headers=auth_headers)
+        data = response.json()
+        assert data["limit"] == 1000
+
+    def test_invalid_limit_clamped_to_1(self, client, auth_headers):
+        """limit < 1 is clamped to 1."""
+        response = client.get("/deliveries?limit=0", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["limit"] == 1
+
+    def test_negative_offset_clamped_to_0(self, client, auth_headers):
+        """offset < 0 is clamped to 0."""
+        response = client.get("/deliveries?offset=-1", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["offset"] == 0

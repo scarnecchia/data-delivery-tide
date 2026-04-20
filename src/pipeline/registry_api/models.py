@@ -95,6 +95,31 @@ class DeliveryFilters(BaseModel):
     converted: bool | None = None
     version: str | None = None
     scan_root: str | None = None
+    limit: int = 100
+    offset: int = 0
+
+    @field_validator("limit")
+    @classmethod
+    def clamp_limit(cls, v):
+        if v < 1:
+            return 1
+        return min(v, 1000)
+
+    @field_validator("offset")
+    @classmethod
+    def check_offset(cls, v):
+        if v < 0:
+            return 0
+        return v
+
+
+class PaginatedDeliveryResponse(BaseModel):
+    """Paginated response for GET /deliveries."""
+
+    items: list[DeliveryResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class EventRecord(BaseModel):

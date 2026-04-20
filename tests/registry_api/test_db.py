@@ -604,55 +604,55 @@ class TestListDeliveries:
         self, memory_db, sample_deliveries
     ):
         """Test AC2.8: Empty filter set returns all deliveries."""
-        results = list_deliveries(memory_db, {})
+        results, _ = list_deliveries(memory_db, {})
 
         assert len(results) == 4
 
     def test_list_deliveries_filter_by_dp_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by dp_id."""
-        results = list_deliveries(memory_db, {"dp_id": "dp-1"})
+        results, _ = list_deliveries(memory_db, {"dp_id": "dp-1"})
 
         assert len(results) == 3
         assert all(r["dp_id"] == "dp-1" for r in results)
 
     def test_list_deliveries_filter_by_project(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by project."""
-        results = list_deliveries(memory_db, {"project": "proj-a"})
+        results, _ = list_deliveries(memory_db, {"project": "proj-a"})
 
         assert len(results) == 3
         assert all(r["project"] == "proj-a" for r in results)
 
     def test_list_deliveries_filter_by_request_type(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by request_type."""
-        results = list_deliveries(memory_db, {"request_type": "full"})
+        results, _ = list_deliveries(memory_db, {"request_type": "full"})
 
         assert len(results) == 3
         assert all(r["request_type"] == "full" for r in results)
 
     def test_list_deliveries_filter_by_workplan_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by workplan_id."""
-        results = list_deliveries(memory_db, {"workplan_id": "wp-100"})
+        results, _ = list_deliveries(memory_db, {"workplan_id": "wp-100"})
 
         assert len(results) == 2
         assert all(r["workplan_id"] == "wp-100" for r in results)
 
     def test_list_deliveries_filter_by_request_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by request_id."""
-        results = list_deliveries(memory_db, {"request_id": "req-1"})
+        results, _ = list_deliveries(memory_db, {"request_id": "req-1"})
 
         assert len(results) == 1
         assert results[0]["request_id"] == "req-1"
 
     def test_list_deliveries_filter_by_status(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by status."""
-        results = list_deliveries(memory_db, {"status": "passed"})
+        results, _ = list_deliveries(memory_db, {"status": "passed"})
 
         assert len(results) == 2
         assert all(r["status"] == "passed" for r in results)
 
     def test_list_deliveries_filter_by_scan_root(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by scan_root."""
-        results = list_deliveries(memory_db, {"scan_root": "/scan/1"})
+        results, _ = list_deliveries(memory_db, {"scan_root": "/scan/1"})
 
         assert len(results) == 1
         assert results[0]["scan_root"] == "/scan/1"
@@ -661,7 +661,7 @@ class TestListDeliveries:
         self, memory_db, sample_deliveries
     ):
         """Test AC2.5: list_deliveries filters by converted=True."""
-        results = list_deliveries(memory_db, {"converted": True})
+        results, _ = list_deliveries(memory_db, {"converted": True})
 
         assert len(results) == 1
         assert results[0]["parquet_converted_at"] is not None
@@ -670,14 +670,14 @@ class TestListDeliveries:
         self, memory_db, sample_deliveries
     ):
         """Test AC2.5: list_deliveries filters by converted=False."""
-        results = list_deliveries(memory_db, {"converted": False})
+        results, _ = list_deliveries(memory_db, {"converted": False})
 
         assert len(results) == 3
         assert all(r["parquet_converted_at"] is None for r in results)
 
     def test_list_deliveries_version_latest(self, memory_db, sample_deliveries):
         """Test AC2.6: version=latest returns highest version per (dp_id, workplan_id)."""
-        results = list_deliveries(
+        results, _ = list_deliveries(
             memory_db, {"version": "latest", "workplan_id": "wp-200", "dp_id": "dp-1"}
         )
 
@@ -688,7 +688,7 @@ class TestListDeliveries:
         self, memory_db, sample_deliveries
     ):
         """Test AC2.7: Multiple filters combine with AND semantics."""
-        results = list_deliveries(
+        results, _ = list_deliveries(
             memory_db, {"project": "proj-a", "status": "passed"}
         )
 
@@ -1307,8 +1307,8 @@ class TestLexiconSchema:
         )
 
         # Filter by lexicon_id
-        results_standard = list_deliveries(memory_db, {"lexicon_id": "qa-standard"})
-        results_extended = list_deliveries(memory_db, {"lexicon_id": "qa-extended"})
+        results_standard, _ = list_deliveries(memory_db, {"lexicon_id": "qa-standard"})
+        results_extended, _ = list_deliveries(memory_db, {"lexicon_id": "qa-extended"})
 
         # Verify filtering works
         assert len(results_standard) == 2
@@ -1339,9 +1339,9 @@ class TestLexiconSchema:
             )
 
         # Filter by status
-        pending_results = list_deliveries(memory_db, {"status": "pending"})
-        passed_results = list_deliveries(memory_db, {"status": "passed"})
-        failed_results = list_deliveries(memory_db, {"status": "failed"})
+        pending_results, _ = list_deliveries(memory_db, {"status": "pending"})
+        passed_results, _ = list_deliveries(memory_db, {"status": "passed"})
+        failed_results, _ = list_deliveries(memory_db, {"status": "failed"})
 
         # Verify filtering works
         assert len(pending_results) == 2

@@ -295,23 +295,25 @@ def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
     return None
 
 
-def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
+def list_deliveries(conn: sqlite3.Connection, filters: dict) -> tuple[list[dict], int]:
     """
-    List deliveries with optional filtering.
+    List deliveries with optional filtering and pagination.
 
     Supported filter keys:
     - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match with =
     - converted: boolean, if True: parquet_converted_at IS NOT NULL, if False: IS NULL
     - version: if "latest", returns highest version per (dp_id, workplan_id); otherwise exact match
+    - limit: max rows to return (default 100)
+    - offset: number of rows to skip (default 0)
 
-    All filters combine with AND. Empty filters dict returns all rows.
+    All filters combine with AND. Empty filters dict returns all rows (paginated).
 
     Args:
         conn: sqlite3.Connection
         filters: dict of filter keys and values
 
     Returns:
-        list: List of delivery dicts
+        tuple: (list of delivery dicts, total count matching filters)
     """
     cursor = conn.cursor()
 
@@ -342,14 +344,24 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
             where_clauses.append("version = ?")
             params.append(filters["version"])
 
-    # Build query
-    query = "SELECT * FROM deliveries"
+    # Build WHERE string
+    where_str = ""
     if where_clauses:
-        query += " WHERE " + " AND ".join(where_clauses)
+        where_str = " WHERE " + " AND ".join(where_clauses)
 
-    cursor.execute(query, params)
+    # Get total count
+    count_query = f"SELECT COUNT(*) FROM deliveries{where_str}"
+    cursor.execute(count_query, params)
+    total = cursor.fetchone()[0]
+
+    # Get paginated results
+    limit = filters.get("limit", 100)
+    offset = filters.get("offset", 0)
+
+    query = f"SELECT * FROM deliveries{where_str} LIMIT ? OFFSET ?"
+    cursor.execute(query, params + [limit, offset])
     rows = cursor.fetchall()
-    return [_deserialize_metadata(dict(row)) for row in rows]
+    return [_deserialize_metadata(dict(row)) for row in rows], total
 
 
 def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]) -> list[dict]:

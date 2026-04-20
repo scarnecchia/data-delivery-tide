@@ -23,6 +23,7 @@ from pipeline.registry_api.models import (
     DeliveryResponse,
     DeliveryFilters,
     EventRecord,
+    PaginatedDeliveryResponse,
 )
 from pipeline.registry_api.events import manager
 
@@ -82,17 +83,28 @@ async def create_delivery(
     return result
 
 
-@protected_router.get("/deliveries", response_model=list[DeliveryResponse])
+@protected_router.get("/deliveries", response_model=PaginatedDeliveryResponse)
 async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
     """
-    List deliveries with optional filtering.
+    List deliveries with optional filtering and pagination.
 
     Query parameters:
     - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match
     - converted: boolean, True = converted, False = not converted
     - version: exact match or "latest" for highest version per (dp_id, workplan_id)
+    - limit: max results per page (default 100, max 1000)
+    - offset: number of results to skip (default 0)
+
+    Response includes items, total count, limit, and offset for pagination.
     """
-    return list_deliveries(db, filters.model_dump(exclude_none=True))
+    filter_dict = filters.model_dump(exclude_none=True)
+    items, total = list_deliveries(db, filter_dict)
+    return PaginatedDeliveryResponse(
+        items=items,
+        total=total,
+        limit=filters.limit,
+        offset=filters.offset,
+    )
 
 
 @protected_router.get("/deliveries/actionable", response_model=list[DeliveryResponse])
