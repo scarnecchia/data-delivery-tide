@@ -71,6 +71,7 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
                 event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed')),
                 delivery_id TEXT NOT NULL,
                 payload     TEXT NOT NULL,
+                username    TEXT,
                 created_at  TEXT NOT NULL
             )
             """
@@ -485,6 +486,7 @@ def insert_event(
     event_type: str,
     delivery_id: str,
     payload: dict,
+    username: str | None = None,
 ) -> dict:
     """
     Insert an event record and return it with the assigned sequence number.
@@ -494,6 +496,7 @@ def insert_event(
         event_type: One of 'delivery.created' or 'delivery.status_changed'
         delivery_id: The delivery ID this event relates to
         payload: Full delivery record as a dict (DeliveryResponse.model_dump() output)
+        username: The authenticated user who triggered this event (optional)
 
     Returns:
         dict: The inserted event row as a dict, including the auto-assigned seq.
@@ -501,8 +504,8 @@ def insert_event(
     now = _get_iso_now()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-        (event_type, delivery_id, json.dumps(payload), now),
+        "INSERT INTO events (event_type, delivery_id, payload, username, created_at) VALUES (?, ?, ?, ?, ?)",
+        (event_type, delivery_id, json.dumps(payload), username, now),
     )
     conn.commit()
 
@@ -512,6 +515,7 @@ def insert_event(
         "event_type": event_type,
         "delivery_id": delivery_id,
         "payload": payload,
+        "username": username,
         "created_at": now,
     }
 

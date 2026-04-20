@@ -109,7 +109,7 @@ async def create_delivery(
 
     if is_new:
         response = DeliveryResponse(**result)
-        event = insert_event(db, "delivery.created", delivery_id, response.model_dump())
+        event = insert_event(db, "delivery.created", delivery_id, response.model_dump(), username=token.username)
         await manager.broadcast(event)
 
     return result
@@ -239,7 +239,7 @@ async def update_single_delivery(
     actual_new_status = result["status"]
     if actual_new_status != old_status:
         response = DeliveryResponse(**result)
-        event = insert_event(db, "delivery.status_changed", delivery_id, response.model_dump())
+        event = insert_event(db, "delivery.status_changed", delivery_id, response.model_dump(), username=token.username)
         await manager.broadcast(event)
 
     return result

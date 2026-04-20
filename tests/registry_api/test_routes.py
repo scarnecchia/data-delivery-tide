@@ -1392,3 +1392,48 @@ class TestSourcePathValidation:
         payload = make_delivery_payload(source_path="/data-exfil/secret")
         response = client.post("/deliveries", json=payload, headers=auth_headers)
         assert response.status_code == 422
+
+
+class TestUsernameInEvents:
+    """Test that username is recorded in audit events (Issue #14)."""
+
+    def test_delivery_created_event_has_username(self, client, auth_headers, test_db):
+        """delivery.created event records the authenticated username."""
+        payload = make_delivery_payload(source_path="/data/username-test-1")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+        events = get_events(test_db)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "delivery.created"
+        assert events[0]["username"] == "test-writer"
+
+    def test_status_changed_event_has_username(self, client, auth_headers, test_db):
+        """delivery.status_changed event records the authenticated username."""
+        payload = make_delivery_payload(source_path="/data/username-test-2", status="pending")
+        post_resp = client.post("/deliveries", json=payload, headers=auth_headers)
+        delivery_id = post_resp.json()["delivery_id"]
+
+        # Transition to passed
+        client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"status": "passed"},
+            headers=auth_headers,
+        )
+
+        events = get_events(test_db)
+        # Should have created + status_changed
+        status_events = [e for e in events if e["event_type"] == "delivery.status_changed"]
+        assert len(status_events) == 1
+        assert status_events[0]["username"] == "test-writer"
+
+    def test_get_events_endpoint_includes_username(self, client, auth_headers, test_db):
+        """GET /events returns username in event records."""
+        payload = make_delivery_payload(source_path="/data/username-test-3")
+        client.post("/deliveries", json=payload, headers=auth_headers)
+
+        response = client.get("/events?after=0", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1
+        assert data[0]["username"] == "test-writer"

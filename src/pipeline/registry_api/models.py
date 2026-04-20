@@ -129,4 +129,5 @@ class EventRecord(BaseModel):
     event_type: Literal["delivery.created", "delivery.status_changed"]
     delivery_id: str
     payload: dict
+    username: str | None = None
     created_at: str
