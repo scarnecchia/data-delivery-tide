@@ -28,6 +28,8 @@ class PipelineConfig:
     crawl_manifest_dir: str
     crawler_version: str
     lexicons_dir: str
+    api_host: str = "127.0.0.1"
+    api_port: int = 8000
 
 
 def load_config(path: str | None = None) -> PipelineConfig:
@@ -81,6 +83,8 @@ def load_config(path: str | None = None) -> PipelineConfig:
         crawl_manifest_dir=data.get("crawl_manifest_dir", "pipeline/crawl_manifests"),
         crawler_version=data.get("crawler_version", "1.0.0"),
         lexicons_dir=lexicons_dir,
+        api_host=data.get("api_host", "127.0.0.1"),
+        api_port=data.get("api_port", 8000),
     )
 
 
