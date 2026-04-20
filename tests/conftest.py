@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pipeline.registry_api.db import init_db, get_db
 from pipeline.registry_api.main import app
 from pipeline.lexicons.models import Lexicon, MetadataField
+from pipeline.config import ScanRoot
 
 
 TEST_LEXICON = Lexicon(
@@ -66,6 +67,13 @@ def client(test_db):
 
     app.dependency_overrides[get_db] = override_get_db
     app.state.lexicons = {"soc.qar": TEST_LEXICON, "test.sub": TEST_SUB_LEXICON}
+    app.state.scan_roots = [
+        ScanRoot(path="/data", label="Test Data", lexicon="soc.qar"),
+        ScanRoot(path="/source", label="Test Source", lexicon="soc.qar"),
+        ScanRoot(path="/requests/qa", label="QA Packages", lexicon="soc.qar"),
+        ScanRoot(path="/scan", label="Scans", lexicon="soc.qar"),
+        ScanRoot(path="/test", label="Tests", lexicon="soc.qar"),
+    ]
 
     yield TestClient(app)
 

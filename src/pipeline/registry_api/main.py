@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
     """
     init_db(settings.db_path)
     app.state.lexicons = load_all_lexicons(settings.lexicons_dir)
+    app.state.scan_roots = settings.scan_roots
     yield
 
 

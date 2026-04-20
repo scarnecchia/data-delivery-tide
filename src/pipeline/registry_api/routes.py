@@ -1,5 +1,6 @@
 # pattern: Imperative Shell
 import json
+import posixpath
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -31,6 +32,34 @@ public_router = APIRouter()
 protected_router = APIRouter(dependencies=[Depends(require_auth)])
 
 
+def _validate_source_path(source_path: str, scan_roots: list) -> None:
+    """
+    Validate that source_path resolves within a configured scan_root.
+
+    Normalizes the path (collapsing .. and .) and checks it starts with at least
+    one scan_root path. Raises HTTPException 422 if invalid.
+    """
+    if not source_path.startswith("/"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"source_path must be an absolute path, got: {source_path}",
+        )
+
+    # Normalize to collapse .. and . components
+    normalized = posixpath.normpath(source_path)
+
+    # Check against scan roots
+    for root in scan_roots:
+        root_path = root.path.rstrip("/")
+        if normalized == root_path or normalized.startswith(root_path + "/"):
+            return
+
+    raise HTTPException(
+        status_code=422,
+        detail=f"source_path '{source_path}' is not within any configured scan_root",
+    )
+
+
 @public_router.get("/health")
 async def health():
     """Health check endpoint."""
@@ -56,6 +85,9 @@ async def create_delivery(
     Emits a delivery.created event if this is a genuinely new delivery
     (not a re-crawl of an existing one).
     """
+    # Validate source_path is within a configured scan_root
+    _validate_source_path(data.source_path, request.app.state.scan_roots)
+
     lexicons = request.app.state.lexicons
     lexicon = lexicons.get(data.lexicon_id)
     if lexicon is None:

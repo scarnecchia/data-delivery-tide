@@ -1335,3 +1335,60 @@ class TestPagination:
         assert response.status_code == 200
         data = response.json()
         assert data["offset"] == 0
+
+
+class TestSourcePathValidation:
+    """Test source_path validation against scan_roots (Issue #10)."""
+
+    def test_valid_path_within_scan_root(self, client, auth_headers):
+        """source_path within a configured scan_root is accepted."""
+        payload = make_delivery_payload(source_path="/data/valid/delivery")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["source_path"] == "/data/valid/delivery"
+
+    def test_path_outside_all_scan_roots_rejected(self, client, auth_headers):
+        """source_path not within any scan_root returns 422."""
+        payload = make_delivery_payload(source_path="/unauthorized/path/file")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 422
+        assert "not within any configured scan_root" in response.json()["detail"]
+
+    def test_path_traversal_caught(self, client, auth_headers):
+        """Path traversal via .. that escapes scan_root is rejected."""
+        payload = make_delivery_payload(source_path="/data/../etc/passwd")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 422
+        assert "not within any configured scan_root" in response.json()["detail"]
+
+    def test_path_traversal_staying_within_root(self, client, auth_headers):
+        """Path with .. that still resolves within scan_root is accepted."""
+        payload = make_delivery_payload(source_path="/data/subdir/../valid/file")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_relative_path_rejected(self, client, auth_headers):
+        """Relative path (not starting with /) is rejected."""
+        payload = make_delivery_payload(source_path="relative/path/file")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 422
+        assert "absolute path" in response.json()["detail"]
+
+    def test_multiple_scan_roots_any_match(self, client, auth_headers):
+        """source_path in /source (second scan_root) is also accepted."""
+        payload = make_delivery_payload(source_path="/source/test/delivery")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_scan_root_exact_match(self, client, auth_headers):
+        """source_path equal to scan_root path itself is accepted."""
+        payload = make_delivery_payload(source_path="/data")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_scan_root_prefix_attack(self, client, auth_headers):
+        """Path that starts with scan_root as prefix but not as directory is rejected."""
+        # /data-exfil starts with /data but is not under /data/
+        payload = make_delivery_payload(source_path="/data-exfil/secret")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 422
