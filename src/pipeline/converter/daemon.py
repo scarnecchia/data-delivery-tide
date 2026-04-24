@@ -81,6 +81,7 @@ class DaemonRunner:
         converter_version: str,
         chunk_size: int,
         compression: str,
+        dp_id_exclusions: set[str] | None = None,
         log_dir: str | None,
         consumer_factory=EventConsumer,
         convert_one_fn=convert_one,
@@ -90,6 +91,7 @@ class DaemonRunner:
         self.converter_version = converter_version
         self.chunk_size = chunk_size
         self.compression = compression
+        self.dp_id_exclusions = dp_id_exclusions
         self.log_dir = log_dir
         self._consumer_factory = consumer_factory
         self._convert_one_fn = convert_one_fn
@@ -196,6 +198,7 @@ class DaemonRunner:
                     converter_version=self.converter_version,
                     chunk_size=self.chunk_size,
                     compression=self.compression,
+                    dp_id_exclusions=self.dp_id_exclusions,
                     log_dir=self.log_dir,
                 )
             except asyncio.CancelledError:
@@ -226,6 +229,7 @@ def main() -> int:
         converter_version=settings.converter_version,
         chunk_size=settings.converter_chunk_size,
         compression=settings.converter_compression,
+        dp_id_exclusions=set(settings.dp_id_exclusions),
         log_dir=settings.log_dir,
     )
     return asyncio.run(runner.run_async())

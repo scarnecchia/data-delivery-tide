@@ -53,6 +53,7 @@ def convert_one(
     converter_version: str,
     chunk_size: int,
     compression: str,
+    dp_id_exclusions: set[str] | None = None,
     log_dir: str | None = None,
     http_module=converter_http,
     convert_fn=convert_sas_to_parquet,
@@ -86,6 +87,20 @@ def convert_one(
     delivery = http_module.get_delivery(api_url, delivery_id)
     source_path_str = delivery["source_path"]
     output_path = _build_output_path(source_path_str)
+
+    # Skip guard 0: dp_id is in the exclusion set.
+    if dp_id_exclusions and delivery.get("dp_id") in dp_id_exclusions:
+        logger.info(
+            "skipped excluded dp_id",
+            extra={
+                "delivery_id": delivery_id,
+                "dp_id": delivery.get("dp_id"),
+                "source_path": source_path_str,
+                "outcome": "skipped",
+                "reason": "excluded_dp_id",
+            },
+        )
+        return ConversionResult(outcome="skipped", delivery_id=delivery_id, reason="excluded_dp_id")
 
     # Skip guard 1: already converted and file still exists.
     if delivery.get("parquet_converted_at") and output_path.exists():

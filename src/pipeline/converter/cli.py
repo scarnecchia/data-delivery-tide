@@ -97,7 +97,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    return _run(args, shard, http_module=converter_http, convert_one_fn=convert_one)
+    return _run(
+        args, shard,
+        http_module=converter_http,
+        convert_one_fn=convert_one,
+        dp_id_exclusions=set(settings.dp_id_exclusions),
+    )
 
 
 def _run(
@@ -106,6 +111,7 @@ def _run(
     *,
     http_module,
     convert_one_fn,
+    dp_id_exclusions: set[str] | None = None,
 ) -> int:
     """
     Orchestrate the paged walk + per-delivery engine call. Pure shell.
@@ -141,6 +147,7 @@ def _run(
                 converter_version=settings.converter_version,
                 chunk_size=settings.converter_chunk_size,
                 compression=settings.converter_compression,
+                dp_id_exclusions=dp_id_exclusions,
                 log_dir=settings.log_dir,
             )
 

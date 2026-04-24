@@ -1,17 +1,17 @@
 # Converter
 
-Last verified: 2026-04-17
+Last verified: 2026-04-24
 
 ## Purpose
 
-Streams SAS7BDAT files to Parquet files, one delivery at a time, writing output in place on the network share. Exposes a one-shot backfill CLI (`registry-convert`) and a long-running event-driven daemon (`registry-convert-daemon`) sharing one orchestration engine. Status-blind: any delivery with null `parquet_converted_at` and no `metadata.conversion_error` is eligible for conversion.
+Streams SAS7BDAT files to Parquet files, one delivery at a time, writing output in place on the network share. Exposes a one-shot backfill CLI (`registry-convert`) and a long-running event-driven daemon (`registry-convert-daemon`) sharing one orchestration engine. Any delivery with null `parquet_converted_at`, no `metadata.conversion_error`, and a dp_id not in `dp_id_exclusions` is eligible for conversion.
 
 ## Contracts
 
-- **Expects**: `pipeline.config.settings` with `registry_api_url`, `converter_version`, `converter_chunk_size`, `converter_compression`, `converter_state_path`, `converter_cli_batch_size`, `converter_cli_sleep_empty_secs`, `log_dir`. Registry API reachable at `registry_api_url`.
+- **Expects**: `pipeline.config.settings` with `registry_api_url`, `converter_version`, `converter_chunk_size`, `converter_compression`, `converter_state_path`, `converter_cli_batch_size`, `converter_cli_sleep_empty_secs`, `dp_id_exclusions`, `log_dir`. Registry API reachable at `registry_api_url`.
 - **Reads**: `GET /deliveries?converted=false&after=&limit=` (backfill CLI), `GET /events?after=` + `WS /ws/events` (daemon).
 - **Writes**: Parquet file at `{delivery.source_path}/parquet/{stem}.parquet`. PATCH `/deliveries/{id}` with `{output_path, parquet_converted_at}` on success or `{metadata: {conversion_error}}` on failure. POST `/events` with `conversion.completed` or `conversion.failed`.
-- **Guarantees**: Atomic writes (tmp-then-rename). No automatic retry on classified failure. Skip guards on already-converted and errored deliveries. Serial (one delivery per process). Sub-deliveries are treated identically to parent deliveries — each gets its own `parquet/` subdirectory.
+- **Guarantees**: Atomic writes (tmp-then-rename). No automatic retry on classified failure. Skip guards on excluded dp_ids, already-converted, and errored deliveries. Serial (one delivery per process). Sub-deliveries are treated identically to parent deliveries — each gets its own `parquet/` subdirectory.
 
 ## Dependencies
 

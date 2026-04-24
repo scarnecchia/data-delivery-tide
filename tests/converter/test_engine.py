@@ -34,9 +34,10 @@ class _StubHttp:
         return {"seq": 1, "event_type": event_type, "delivery_id": delivery_id, "payload": payload}
 
 
-def _make_delivery(source_path: str, parquet_converted_at=None, metadata=None):
+def _make_delivery(source_path: str, parquet_converted_at=None, metadata=None, dp_id="mkscnr"):
     return {
         "delivery_id": "d1",
+        "dp_id": dp_id,
         "source_path": source_path,
         "parquet_converted_at": parquet_converted_at,
         "metadata": metadata or {},
@@ -186,6 +187,51 @@ class TestConvertOneSkipGuards:
         assert result.reason == "errored"
         assert http.patches == []
         assert http.events == []
+
+    def test_skip_when_dp_id_excluded(self, tmp_path):
+        source_dir = tmp_path / "msoc"
+        source_dir.mkdir()
+        (source_dir / "msoc.sas7bdat").write_bytes(b"")
+
+        http = _StubHttp(_make_delivery(str(source_dir), dp_id="nsdp"))
+
+        def should_not_be_called(src, out, **kwargs):
+            raise AssertionError("convert_fn should not be invoked on excluded dp_id")
+
+        result = convert_one(
+            "d1", "http://registry",
+            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            http_module=http, convert_fn=should_not_be_called,
+            dp_id_exclusions={"nsdp"},
+        )
+        assert result.outcome == "skipped"
+        assert result.reason == "excluded_dp_id"
+        assert http.patches == []
+        assert http.events == []
+
+    def test_no_skip_when_dp_id_not_excluded(self, tmp_path):
+        source_dir = tmp_path / "msoc"
+        source_dir.mkdir()
+        (source_dir / "msoc.sas7bdat").write_bytes(b"")
+
+        http = _StubHttp(_make_delivery(str(source_dir), dp_id="mkscnr"))
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+
+        def fake_convert(src, out, **kwargs):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"")
+            return ConversionMetadata(
+                row_count=0, column_count=0, column_labels={}, value_labels={},
+                sas_encoding="", bytes_written=0, wrote_at=fake_wrote_at,
+            )
+
+        result = convert_one(
+            "d1", "http://registry",
+            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            http_module=http, convert_fn=fake_convert,
+            dp_id_exclusions={"nsdp"},
+        )
+        assert result.outcome == "success"
 
     def test_null_conversion_error_does_not_skip(self, tmp_path):
         # AC7.3 interaction: {"conversion_error": null} means processable.
