@@ -365,8 +365,8 @@ class TestConvertOneFailure:
         )
         assert call_count["n"] == 1
 
-    def test_missing_sas_file_classifies_source_missing(self, tmp_path):
-        # source_path has no .sas7bdat file at all.
+    def test_missing_sas_file_skips(self, tmp_path):
+        # source_path has no .sas7bdat file — skip, don't fail.
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         http = _StubHttp(_make_delivery(str(source_dir)))
@@ -376,8 +376,44 @@ class TestConvertOneFailure:
             converter_version="0.1.0", chunk_size=100, compression="zstd",
             http_module=http, convert_fn=lambda *a, **k: pytest.fail("should not be called"),
         )
-        assert result.outcome == "failure"
-        assert http.patches[0][1]["metadata"]["conversion_error"]["class"] == "source_missing"
+        assert result.outcome == "skipped"
+        assert result.reason == "no_sas_file"
+        assert http.patches == []
+        assert http.events == []
+
+    def test_empty_directory_skips(self, tmp_path):
+        # Empty directory (no files at all) — skip, don't fail.
+        source_dir = tmp_path / "empty"
+        source_dir.mkdir()
+        http = _StubHttp(_make_delivery(str(source_dir)))
+
+        result = convert_one(
+            "d1", "http://registry",
+            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            http_module=http, convert_fn=lambda *a, **k: pytest.fail("should not be called"),
+        )
+        assert result.outcome == "skipped"
+        assert result.reason == "no_sas_file"
+        assert http.patches == []
+        assert http.events == []
+
+    def test_multiple_sas_files_skips(self, tmp_path):
+        # Ambiguous: more than one .sas7bdat file — skip, don't fail.
+        source_dir = tmp_path / "msoc"
+        source_dir.mkdir()
+        (source_dir / "a.sas7bdat").write_bytes(b"")
+        (source_dir / "b.sas7bdat").write_bytes(b"")
+        http = _StubHttp(_make_delivery(str(source_dir)))
+
+        result = convert_one(
+            "d1", "http://registry",
+            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            http_module=http, convert_fn=lambda *a, **k: pytest.fail("should not be called"),
+        )
+        assert result.outcome == "skipped"
+        assert result.reason == "no_sas_file"
+        assert http.patches == []
+        assert http.events == []
 
     def test_error_message_truncated_to_500_chars(self, tmp_path):
         # Guards the _handle_failure 500-char cap on message length.

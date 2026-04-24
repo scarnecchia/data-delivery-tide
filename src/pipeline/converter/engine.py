@@ -133,10 +133,19 @@ def convert_one(
     source_path = Path(source_path_str)
     sas_file = _find_sas_file(source_path)
 
-    try:
-        if sas_file is None:
-            raise FileNotFoundError(f"no single .sas7bdat file found under {source_path}")
+    if sas_file is None:
+        logger.info(
+            "skipped no sas file",
+            extra={
+                "delivery_id": delivery_id,
+                "source_path": source_path_str,
+                "outcome": "skipped",
+                "reason": "no_sas_file",
+            },
+        )
+        return ConversionResult(outcome="skipped", delivery_id=delivery_id, reason="no_sas_file")
 
+    try:
         conv_meta = convert_fn(
             sas_file,
             output_path,
