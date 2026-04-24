@@ -137,6 +137,13 @@ def convert_one(
     sas_file = _find_sas_file(source_path)
 
     if sas_file is None:
+        try:
+            dir_contents = [
+                {"name": p.name, "is_file": p.is_file(), "suffix": p.suffix}
+                for p in source_path.iterdir()
+            ]
+        except OSError:
+            dir_contents = "unreadable"
         logger.info(
             "skipped no sas file",
             extra={
@@ -144,6 +151,7 @@ def convert_one(
                 "source_path": source_path_str,
                 "outcome": "skipped",
                 "reason": "no_sas_file",
+                "dir_contents": dir_contents,
             },
         )
         return ConversionResult(outcome="skipped", delivery_id=delivery_id, reason="no_sas_file")
