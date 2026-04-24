@@ -109,6 +109,29 @@ class TestConvertOneHappyPath:
         out = _build_output_path(src)
         assert out == Path("/data/dpid/packages/req/v1/msoc/scdm_snapshot/parquet/scdm_snapshot.parquet")
 
+    def test_uppercase_sas_extension_found(self, tmp_path):
+        source_dir = tmp_path / "msoc"
+        source_dir.mkdir()
+        (source_dir / "msoc.SAS7BDAT").write_bytes(b"unused by stub")
+
+        http = _StubHttp(_make_delivery(str(source_dir)))
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+
+        def fake_convert(src, out, **kwargs):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"pq")
+            return ConversionMetadata(
+                row_count=1, column_count=1, column_labels={}, value_labels={},
+                sas_encoding="UTF-8", bytes_written=2, wrote_at=fake_wrote_at,
+            )
+
+        result = convert_one(
+            "d1", "http://registry",
+            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            http_module=http, convert_fn=fake_convert,
+        )
+        assert result.outcome == "success"
+
 
 class TestConvertOneSkipGuards:
     def test_skip_when_already_converted_and_file_exists(self, tmp_path):

@@ -37,10 +37,13 @@ def _find_sas_file(source_path: Path) -> Path | None:
 
     Convention from crawler: deliveries have exactly one SAS file at the root
     of source_path (sub-deliveries live in their own source_path). If zero or
-    multiple SAS files are found, this returns None and the caller raises —
-    caller wraps as FileNotFoundError to route to source_missing classification.
+    multiple SAS files are found, this returns None and the caller skips.
+    Case-insensitive match because SAS generates varying extension casing.
     """
-    candidates = sorted(source_path.glob("*.sas7bdat"))
+    candidates = sorted(
+        p for p in source_path.iterdir()
+        if p.is_file() and p.suffix.lower() == ".sas7bdat"
+    )
     if len(candidates) == 1:
         return candidates[0]
     return None
