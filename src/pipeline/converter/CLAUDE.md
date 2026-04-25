@@ -30,7 +30,7 @@ Streams SAS7BDAT files to Parquet files, one delivery at a time, writing output 
 
 ## Invariants
 
-- Output path = `{source_path}/parquet/{source_path.name}.parquet` for both parent and sub-deliveries.
+- Output path stored in registry = `{source_path}/parquet/` (directory). Individual Parquet files = `{source_path}/parquet/{sas_stem}.parquet` for each SAS file in the delivery.
 - Parquet file-level metadata always contains `sas_labels`, `sas_value_labels`, `sas_encoding`, `converter_version` as bytes keys.
 - First chunk locks the Arrow schema; later mismatches raise `SchemaDriftError`.
 - On exception, the tmp file (`{final}.tmp-{uuid}`) is unlinked before the exception propagates.

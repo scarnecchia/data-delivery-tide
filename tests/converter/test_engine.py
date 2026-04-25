@@ -2,7 +2,6 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 import pandas as pd
@@ -11,7 +10,6 @@ import pyreadstat
 
 from pipeline.converter.convert import ConversionMetadata
 from pipeline.converter.engine import convert_one, ConversionResult, _build_parquet_dir, _find_sas_files
-from pipeline.converter.classify import SchemaDriftError
 
 
 class _StubHttp:
