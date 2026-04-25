@@ -10,7 +10,7 @@ import pyarrow.parquet as pq
 import pyreadstat
 
 from pipeline.converter.convert import ConversionMetadata
-from pipeline.converter.engine import convert_one, ConversionResult, _build_output_path
+from pipeline.converter.engine import convert_one, ConversionResult, _build_parquet_dir, _find_sas_files
 from pipeline.converter.classify import SchemaDriftError
 
 
@@ -43,6 +43,98 @@ def _make_delivery(source_path: str, parquet_converted_at=None, metadata=None, d
         "metadata": metadata or {},
         "output_path": None,
     }
+
+
+class TestHelpers:
+    """Tests for helper functions _find_sas_files and _build_parquet_dir."""
+
+    def test_find_sas_files_single_file(self, tmp_path):
+        """AC1.1: _find_sas_files returns sorted list with one .sas7bdat file."""
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+        (source_dir / "data.sas7bdat").write_bytes(b"")
+
+        result = _find_sas_files(source_dir)
+        assert result == [source_dir / "data.sas7bdat"]
+
+    def test_find_sas_files_multiple_files_sorted(self, tmp_path):
+        """AC1.1: _find_sas_files returns all files in sorted order."""
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+        (source_dir / "z_data.sas7bdat").write_bytes(b"")
+        (source_dir / "a_data.sas7bdat").write_bytes(b"")
+        (source_dir / "m_data.sas7bdat").write_bytes(b"")
+
+        result = _find_sas_files(source_dir)
+        assert len(result) == 3
+        assert result == [
+            source_dir / "a_data.sas7bdat",
+            source_dir / "m_data.sas7bdat",
+            source_dir / "z_data.sas7bdat",
+        ]
+
+    def test_find_sas_files_mixed_case_extension(self, tmp_path):
+        """AC1.1: _find_sas_files includes mixed-case extensions (.SAS7BDAT, .sas7bdat)."""
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+        (source_dir / "data1.sas7bdat").write_bytes(b"")
+        (source_dir / "data2.SAS7BDAT").write_bytes(b"")
+        (source_dir / "data3.SaS7BdAt").write_bytes(b"")
+
+        result = _find_sas_files(source_dir)
+        assert len(result) == 3
+        names = {p.name for p in result}
+        assert names == {"data1.sas7bdat", "data2.SAS7BDAT", "data3.SaS7BdAt"}
+
+    def test_find_sas_files_excludes_non_sas(self, tmp_path):
+        """AC1.2: _find_sas_files excludes non-SAS files (.lst, .pdf, .md, etc.)."""
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+        (source_dir / "data.sas7bdat").write_bytes(b"")
+        (source_dir / "log.lst").write_bytes(b"")
+        (source_dir / "report.pdf").write_bytes(b"")
+        (source_dir / "README.md").write_bytes(b"")
+
+        result = _find_sas_files(source_dir)
+        assert len(result) == 1
+        assert result[0].name == "data.sas7bdat"
+
+    def test_find_sas_files_empty_directory(self, tmp_path):
+        """AC1.3: _find_sas_files returns empty list for empty directory."""
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+
+        result = _find_sas_files(source_dir)
+        assert result == []
+
+    def test_find_sas_files_only_non_sas_files(self, tmp_path):
+        """AC1.3: _find_sas_files returns empty list when only non-SAS files present."""
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+        (source_dir / "log.lst").write_bytes(b"")
+        (source_dir / "report.pdf").write_bytes(b"")
+
+        result = _find_sas_files(source_dir)
+        assert result == []
+
+    def test_build_parquet_dir_parent_delivery(self):
+        """AC7.2: _build_parquet_dir returns Path(source_path) / 'parquet' (directory, not file)."""
+        src = "/data/dpid/packages/req/v1/msoc"
+        result = _build_parquet_dir(src)
+        assert result == Path("/data/dpid/packages/req/v1/msoc/parquet")
+
+    def test_build_parquet_dir_sub_delivery(self):
+        """AC7.2: _build_parquet_dir works for sub-deliveries too."""
+        src = "/data/dpid/packages/req/v1/msoc/scdm_snapshot"
+        result = _build_parquet_dir(src)
+        assert result == Path("/data/dpid/packages/req/v1/msoc/scdm_snapshot/parquet")
+
+    def test_build_parquet_dir_returns_directory_not_file(self):
+        """AC7.2: Result is a directory path, not a file path."""
+        src = "/some/path"
+        result = _build_parquet_dir(src)
+        assert str(result).endswith("parquet")
+        assert not str(result).endswith(".parquet")
 
 
 class TestConvertOneHappyPath:
@@ -97,17 +189,6 @@ class TestConvertOneHappyPath:
         assert payload["bytes_written"] == 2
         assert payload["wrote_at"] == fake_wrote_at.isoformat()
 
-    def test_build_output_path_parent_delivery(self):
-        # AC2.4 (shared semantic with Phase 2): parquet/{stem}.parquet under source.
-        src = "/data/dpid/packages/req/v1/msoc"
-        out = _build_output_path(src)
-        assert out == Path("/data/dpid/packages/req/v1/msoc/parquet/msoc.parquet")
-
-    def test_build_output_path_sub_delivery(self):
-        # AC10.2 (shared semantic): sub-delivery gets its own parquet dir.
-        src = "/data/dpid/packages/req/v1/msoc/scdm_snapshot"
-        out = _build_output_path(src)
-        assert out == Path("/data/dpid/packages/req/v1/msoc/scdm_snapshot/parquet/scdm_snapshot.parquet")
 
     def test_uppercase_sas_extension_found(self, tmp_path):
         source_dir = tmp_path / "msoc"

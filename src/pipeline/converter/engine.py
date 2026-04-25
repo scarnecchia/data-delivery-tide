@@ -15,38 +15,18 @@ from pipeline.json_logging import get_logger
 class ConversionResult:
     outcome: Literal["success", "failure", "skipped"]
     delivery_id: str
-    reason: str | None = None  # "already_converted", "errored", or None
+    reason: str | None = None  # "already_converted", "errored", "excluded_dp_id", "no_sas_file", or None
 
 
-def _build_output_path(source_path: str) -> Path:
-    """
-    Derive the Parquet output path: {source_path}/parquet/{stem}.parquet.
-
-    The stem is the last directory name of source_path — i.e., the delivery's
-    terminal directory. Example:
-      source_path = /scan/dpid/packages/req/ver/msoc
-      output_path = /scan/dpid/packages/req/ver/msoc/parquet/msoc.parquet
-    """
-    src = Path(source_path)
-    return src / "parquet" / f"{src.name}.parquet"
+def _build_parquet_dir(source_path: str) -> Path:
+    return Path(source_path) / "parquet"
 
 
-def _find_sas_file(source_path: Path) -> Path | None:
-    """
-    Locate the single .sas7bdat file in the delivery's source directory.
-
-    Convention from crawler: deliveries have exactly one SAS file at the root
-    of source_path (sub-deliveries live in their own source_path). If zero or
-    multiple SAS files are found, this returns None and the caller skips.
-    Case-insensitive match because SAS generates varying extension casing.
-    """
-    candidates = sorted(
+def _find_sas_files(source_path: Path) -> list[Path]:
+    return sorted(
         p for p in source_path.iterdir()
         if p.is_file() and p.suffix.lower() == ".sas7bdat"
     )
-    if len(candidates) == 1:
-        return candidates[0]
-    return None
 
 
 def convert_one(
