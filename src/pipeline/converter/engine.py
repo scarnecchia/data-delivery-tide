@@ -1,4 +1,4 @@
-# pattern: Imperative Shell
+# pattern: Imperative Shell (orchestration + side effects), with helper pure functions
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -41,35 +41,10 @@ def convert_one(
     http_module=converter_http,
     convert_fn=convert_sas_to_parquet,
 ) -> ConversionResult:
-    """
-    Convert a single delivery end-to-end.
-
-    1. GET the delivery from the registry.
-    2. Apply skip guards.
-    3. Locate the SAS file inside source_path.
-    4. Call convert_sas_to_parquet.
-    5. On success: PATCH {output_path, parquet_converted_at}, emit conversion.completed.
-    6. On failure: classify, PATCH {metadata.conversion_error}, emit conversion.failed.
-
-    Args:
-        delivery_id: Registry delivery ID.
-        api_url: Registry API base URL.
-        converter_version, chunk_size, compression: forwarded to core.
-        log_dir: Directory for JSON log file (stderr-only if None).
-        http_module: Injected for tests (defaults to converter.http).
-        convert_fn: Injected for tests (defaults to the real conversion core).
-
-    Returns:
-        ConversionResult describing the outcome.
-
-    Contract: Does NOT retry on failure. A classified error is recorded and
-    the caller moves to the next delivery.
-    """
     logger = get_logger("converter", log_dir=log_dir)
 
     delivery = http_module.get_delivery(api_url, delivery_id)
     source_path_str = delivery["source_path"]
-    output_path = _build_output_path(source_path_str)
 
     # Skip guard 0: dp_id is in the exclusion set.
     if dp_id_exclusions and delivery.get("dp_id") in dp_id_exclusions:
@@ -85,8 +60,8 @@ def convert_one(
         )
         return ConversionResult(outcome="skipped", delivery_id=delivery_id, reason="excluded_dp_id")
 
-    # Skip guard 1: already converted and file still exists.
-    if delivery.get("parquet_converted_at") and output_path.exists():
+    # Skip guard 1: already converted (trust the flag only).
+    if delivery.get("parquet_converted_at"):
         logger.info(
             "skipped already converted",
             extra={
@@ -112,18 +87,11 @@ def convert_one(
         )
         return ConversionResult(outcome="skipped", delivery_id=delivery_id, reason="errored")
 
-    # Locate source file.
+    # Discover SAS files.
     source_path = Path(source_path_str)
-    sas_file = _find_sas_file(source_path)
+    sas_files = _find_sas_files(source_path)
 
-    if sas_file is None:
-        try:
-            dir_contents = [
-                {"name": p.name, "is_file": p.is_file(), "suffix": p.suffix}
-                for p in source_path.iterdir()
-            ]
-        except OSError:
-            dir_contents = "unreadable"
+    if not sas_files:
         logger.info(
             "skipped no sas file",
             extra={
@@ -131,37 +99,137 @@ def convert_one(
                 "source_path": source_path_str,
                 "outcome": "skipped",
                 "reason": "no_sas_file",
-                "dir_contents": dir_contents,
             },
         )
         return ConversionResult(outcome="skipped", delivery_id=delivery_id, reason="no_sas_file")
 
-    try:
-        conv_meta = convert_fn(
-            sas_file,
-            output_path,
-            chunk_size=chunk_size,
-            compression=compression,
-            converter_version=converter_version,
-        )
-    except BaseException as exc:
-        return _handle_failure(
-            exc, delivery_id, source_path_str, api_url, converter_version, logger, http_module
+    # Convert each SAS file.
+    parquet_dir = _build_parquet_dir(source_path_str)
+    successes: list[tuple[str, int, int]] = []  # (parquet_filename, row_count, bytes_written)
+    failures: dict[str, dict] = {}  # sas_filename -> error dict
+    wrote_at: str | None = None
+
+    for sas_file in sas_files:
+        output = parquet_dir / f"{sas_file.stem}.parquet"
+        try:
+            conv_meta = convert_fn(
+                sas_file,
+                output,
+                chunk_size=chunk_size,
+                compression=compression,
+                converter_version=converter_version,
+            )
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as exc:
+            error_class = classify_exception(exc)
+            now = datetime.now(timezone.utc).isoformat()
+            failures[sas_file.name] = {
+                "class": error_class,
+                "message": str(exc)[:500],
+                "at": now,
+                "converter_version": converter_version,
+            }
+            logger.warning(
+                "file conversion failed",
+                extra={
+                    "delivery_id": delivery_id,
+                    "source_path": source_path_str,
+                    "sas_filename": sas_file.name,
+                    "outcome": "failure",
+                    "error_class": error_class,
+                },
+            )
+            continue
+
+        successes.append((f"{sas_file.stem}.parquet", conv_meta.row_count, conv_meta.bytes_written))
+        wrote_at = conv_meta.wrote_at.isoformat()
+        logger.info(
+            "file converted",
+            extra={
+                "delivery_id": delivery_id,
+                "source_path": source_path_str,
+                "sas_filename": sas_file.name,
+                "outcome": "success",
+                "row_count": conv_meta.row_count,
+                "bytes_written": conv_meta.bytes_written,
+            },
         )
 
-    # Success path.
+    # Total failure.
+    if not successes:
+        now = datetime.now(timezone.utc).isoformat()
+        error_dict = {
+            "class": "multi_file_failure",
+            "message": f"all {len(failures)} files failed conversion",
+            "at": now,
+            "converter_version": converter_version,
+        }
+        patch_body: dict = {
+            "metadata": {
+                "conversion_error": error_dict,
+                "conversion_errors": failures,
+            },
+        }
+        try:
+            http_module.patch_delivery(api_url, delivery_id, patch_body)
+        except Exception:
+            logger.warning(
+                "failed to PATCH conversion_error to registry",
+                extra={"delivery_id": delivery_id, "source_path": source_path_str},
+            )
+
+        event_payload = {
+            "delivery_id": delivery_id,
+            "error_class": "multi_file_failure",
+            "error_message": error_dict["message"],
+            "at": now,
+        }
+        try:
+            http_module.emit_event(api_url, "conversion.failed", delivery_id, event_payload)
+        except Exception:
+            logger.warning(
+                "failed to emit conversion.failed event",
+                extra={"delivery_id": delivery_id, "source_path": source_path_str},
+            )
+
+        logger.error(
+            "conversion failed",
+            extra={
+                "delivery_id": delivery_id,
+                "source_path": source_path_str,
+                "outcome": "failure",
+                "file_count": len(failures),
+                "failed_count": len(failures),
+            },
+        )
+        return ConversionResult(outcome="failure", delivery_id=delivery_id)
+
+    # At least one success.
+    total_rows = sum(r for _, r, _ in successes)
+    total_bytes = sum(b for _, _, b in successes)
+    converted_files = [name for name, _, _ in successes]
+
     patch_body = {
-        "output_path": str(output_path),
-        "parquet_converted_at": conv_meta.wrote_at.isoformat(),
+        "output_path": str(parquet_dir),
+        "parquet_converted_at": wrote_at,
+        "metadata": {
+            "converted_files": converted_files,
+        },
     }
+    if failures:
+        patch_body["metadata"]["conversion_errors"] = failures
+
     http_module.patch_delivery(api_url, delivery_id, patch_body)
 
     event_payload = {
         "delivery_id": delivery_id,
-        "output_path": str(output_path),
-        "row_count": conv_meta.row_count,
-        "bytes_written": conv_meta.bytes_written,
-        "wrote_at": conv_meta.wrote_at.isoformat(),
+        "output_path": str(parquet_dir),
+        "file_count": len(successes),
+        "total_rows": total_rows,
+        "total_bytes": total_bytes,
+        "failed_count": len(failures),
+        "wrote_at": wrote_at,
     }
     http_module.emit_event(api_url, "conversion.completed", delivery_id, event_payload)
 
@@ -171,74 +239,10 @@ def convert_one(
             "delivery_id": delivery_id,
             "source_path": source_path_str,
             "outcome": "success",
-            "row_count": conv_meta.row_count,
-            "bytes_written": conv_meta.bytes_written,
+            "file_count": len(successes),
+            "total_rows": total_rows,
+            "total_bytes": total_bytes,
+            "failed_count": len(failures),
         },
     )
     return ConversionResult(outcome="success", delivery_id=delivery_id)
-
-
-def _handle_failure(
-    exc: BaseException,
-    delivery_id: str,
-    source_path: str,
-    api_url: str,
-    converter_version: str,
-    logger,
-    http_module,
-) -> ConversionResult:
-    """
-    Classify the exception, PATCH the registry with conversion_error, emit
-    conversion.failed, and log. Re-raises BaseException subclasses that
-    indicate operator intent (KeyboardInterrupt, SystemExit) without writing
-    to the registry — those mean "stop now," not "this delivery failed."
-    """
-    if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-        raise exc
-
-    error_class = classify_exception(exc)
-    now = datetime.now(timezone.utc).isoformat()
-    error_message = str(exc)[:500]  # cap — real exceptions can be huge tracebacks
-
-    error_dict = {
-        "class": error_class,
-        "message": error_message,
-        "at": now,
-        "converter_version": converter_version,
-    }
-
-    try:
-        http_module.patch_delivery(
-            api_url, delivery_id, {"metadata": {"conversion_error": error_dict}}
-        )
-    except Exception:
-        logger.warning(
-            "failed to PATCH conversion_error to registry",
-            extra={"delivery_id": delivery_id, "source_path": source_path},
-        )
-
-    event_payload = {
-        "delivery_id": delivery_id,
-        "error_class": error_class,
-        "error_message": error_message,
-        "at": now,
-    }
-    try:
-        http_module.emit_event(api_url, "conversion.failed", delivery_id, event_payload)
-    except Exception:
-        logger.warning(
-            "failed to emit conversion.failed event",
-            extra={"delivery_id": delivery_id, "source_path": source_path},
-        )
-
-    logger.error(
-        "conversion failed",
-        extra={
-            "delivery_id": delivery_id,
-            "source_path": source_path,
-            "outcome": "failure",
-            "error_class": error_class,
-            "error_message": error_message,
-        },
-    )
-    return ConversionResult(outcome="failure", delivery_id=delivery_id)

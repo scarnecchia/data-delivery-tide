@@ -250,14 +250,14 @@ class TestEndToEndConverter:
         assert parent_table.num_rows == 3
         assert sub_table.num_rows == 2
 
-        # Registry rows reflect conversion.
+        # Registry rows reflect conversion (output_path is now directory, not file).
         updated_parent = env["client"].get(f"/deliveries/{parent_row['delivery_id']}").json()
         assert updated_parent["parquet_converted_at"] is not None
-        assert updated_parent["output_path"] == str(parent_out)
+        assert updated_parent["output_path"] == str(parent_out.parent)
 
         updated_sub = env["client"].get(f"/deliveries/{sub_row['delivery_id']}").json()
         assert updated_sub["parquet_converted_at"] is not None
-        assert updated_sub["output_path"] == str(sub_out)
+        assert updated_sub["output_path"] == str(sub_out.parent)
 
         # Events table contains conversion.completed for both.
         conn = sqlite3.connect(str(env["db_path"]))
