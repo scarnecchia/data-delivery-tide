@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 import pyreadstat
 
 from pipeline.converter.convert import ConversionMetadata
-from pipeline.converter.engine import convert_one, ConversionResult, _build_parquet_dir, _find_sas_files
+from pipeline.converter.engine import convert_one, _build_parquet_dir, _find_sas_files
 
 
 class _StubHttp:
