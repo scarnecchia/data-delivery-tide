@@ -1,6 +1,7 @@
 # pattern: Functional Core (file I/O only; no network, registry, or config)
 
 import json
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ import pyarrow.parquet as pq
 import pyreadstat
 
 from pipeline.converter.classify import SchemaDriftError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -179,12 +182,12 @@ def convert_sas_to_parquet(
             try:
                 writer.close()
             except Exception:
-                pass
+                logger.debug("writer close failed during cleanup", exc_info=True)
         if tmp_path.exists():
             try:
                 tmp_path.unlink()
             except OSError:
-                pass
+                logger.debug("tmp file unlink failed during cleanup", exc_info=True)
         raise
 
     # Build return value from the captured metadata (or empty defaults).

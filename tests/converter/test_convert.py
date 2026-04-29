@@ -1,6 +1,7 @@
 # pattern: test file
 
 import json
+import logging
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
@@ -281,3 +282,83 @@ class TestConvertSchemaDrift:
 
         with pytest.raises(SchemaDriftError):
             convert_sas_to_parquet(src, out, chunk_iter_factory=drift_iter)
+
+
+class TestConvertCleanupLogging:
+    def _meta_stub(self, columns):
+        class _Meta:
+            column_labels = ["" for _ in columns]
+            variable_value_labels = {}
+            file_encoding = "UTF-8"
+            column_names = list(columns)
+        return _Meta()
+
+    def _boom_after_first_chunk(self, meta):
+        def _iter(source_path, chunk_size):
+            yield pd.DataFrame({"a": [1]}), meta
+            raise RuntimeError("simulated I/O failure")
+        return _iter
+
+    def test_writer_close_failure_logs_debug(self, tmp_path, caplog, monkeypatch):
+        # GH23.AC1.1, GH23.AC1.4
+        src = tmp_path / "unused.sav"
+        src.write_bytes(b"")
+        out = tmp_path / "test.parquet"
+        meta = self._meta_stub(["a"])
+
+        def boom_close(self, *args, **kwargs):
+            raise RuntimeError("close boom")
+
+        monkeypatch.setattr(pq.ParquetWriter, "close", boom_close)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.converter.convert")
+
+        with pytest.raises(RuntimeError, match="simulated"):
+            convert_sas_to_parquet(
+                src, out, chunk_iter_factory=self._boom_after_first_chunk(meta)
+            )
+
+        records = [
+            r for r in caplog.records
+            if r.name == "pipeline.converter.convert"
+            and r.message == "writer close failed during cleanup"
+        ]
+        assert len(records) == 1
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].exc_info is not None
+        assert records[0].exc_info[0] is RuntimeError
+
+    def test_tmp_unlink_failure_logs_debug(self, tmp_path, caplog, monkeypatch):
+        # GH23.AC1.2, GH23.AC1.4
+        from pathlib import Path as _Path
+
+        src = tmp_path / "unused.sav"
+        src.write_bytes(b"")
+        out = tmp_path / "test.parquet"
+        meta = self._meta_stub(["a"])
+
+        original_unlink = _Path.unlink
+
+        def boom_unlink(self, *args, **kwargs):
+            raise OSError("unlink boom")
+
+        monkeypatch.setattr(_Path, "unlink", boom_unlink)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.converter.convert")
+
+        with pytest.raises(RuntimeError, match="simulated"):
+            convert_sas_to_parquet(
+                src, out, chunk_iter_factory=self._boom_after_first_chunk(meta)
+            )
+
+        records = [
+            r for r in caplog.records
+            if r.name == "pipeline.converter.convert"
+            and r.message == "tmp file unlink failed during cleanup"
+        ]
+        assert len(records) == 1
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].exc_info is not None
+        assert records[0].exc_info[0] is OSError
+
+        monkeypatch.setattr(_Path, "unlink", original_unlink)

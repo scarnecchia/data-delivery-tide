@@ -2,10 +2,13 @@
 
 import asyncio
 import json
+import logging
 import os
 import signal
 import uuid
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def load_last_seq(state_path: Path) -> int:
@@ -51,7 +54,7 @@ def persist_last_seq(state_path: Path, seq: int) -> None:
             try:
                 tmp.unlink()
             except OSError:
-                pass
+                logger.debug("tmp file unlink failed during cleanup", exc_info=True)
         raise
 
 
