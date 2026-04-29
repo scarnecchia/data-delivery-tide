@@ -24,6 +24,36 @@ class ConversionResult:
     )
 
 
+@dataclass(frozen=True)
+class FileConversionSuccess:
+    filename: str
+    row_count: int
+    bytes_written: int
+
+
+@dataclass(frozen=True)
+class FileConversionFailure:
+    error_class: str
+    message: str
+    at: str
+    converter_version: str
+
+
+def _failure_to_wire(failure: FileConversionFailure) -> dict[str, Any]:
+    """Translate FileConversionFailure to its wire-shape dict.
+
+    The on-the-wire dict uses key 'class' (a Python builtin); the dataclass
+    field is named 'error_class' to avoid the collision. asdict() alone would
+    not produce the right key, so we build the dict explicitly.
+    """
+    return {
+        "class": failure.error_class,
+        "message": failure.message,
+        "at": failure.at,
+        "converter_version": failure.converter_version,
+    }
+
+
 def _build_parquet_dir(source_path: str) -> Path:
     return Path(source_path) / "parquet"
 
@@ -112,8 +142,8 @@ def convert_one(
 
     # Convert each SAS file.
     parquet_dir = _build_parquet_dir(source_path_str)
-    successes: list[tuple[str, int, int]] = []  # (parquet_filename, row_count, bytes_written)
-    failures: dict[str, dict[str, Any]] = {}  # sas_filename -> error dict
+    successes: list[FileConversionSuccess] = []
+    failures: dict[str, FileConversionFailure] = {}
     wrote_at: str | None = None
 
     for sas_file in sas_files:
@@ -131,12 +161,12 @@ def convert_one(
         except BaseException as exc:
             error_class = classify_exception(exc)
             now = datetime.now(UTC).isoformat()
-            failures[sas_file.name] = {
-                "class": error_class,
-                "message": str(exc)[:500],
-                "at": now,
-                "converter_version": converter_version,
-            }
+            failures[sas_file.name] = FileConversionFailure(
+                error_class=error_class,
+                message=str(exc)[:500],
+                at=now,
+                converter_version=converter_version,
+            )
             logger.warning(
                 "file conversion failed",
                 extra={
@@ -149,7 +179,13 @@ def convert_one(
             )
             continue
 
-        successes.append((f"{sas_file.stem}.parquet", conv_meta.row_count, conv_meta.bytes_written))
+        successes.append(
+            FileConversionSuccess(
+                filename=f"{sas_file.stem}.parquet",
+                row_count=conv_meta.row_count,
+                bytes_written=conv_meta.bytes_written,
+            )
+        )
         wrote_at = conv_meta.wrote_at.isoformat()
         logger.info(
             "file converted",
@@ -175,7 +211,9 @@ def convert_one(
         patch_body: dict[str, Any] = {
             "metadata": {
                 "conversion_error": error_dict,
-                "conversion_errors": failures,
+                "conversion_errors": {
+                    name: _failure_to_wire(f) for name, f in failures.items()
+                },
             },
         }
         try:
@@ -215,9 +253,9 @@ def convert_one(
         return ConversionResult(outcome="failure", delivery_id=delivery_id)
 
     # At least one success.
-    total_rows = sum(r for _, r, _ in successes)
-    total_bytes = sum(b for _, _, b in successes)
-    converted_files = [name for name, _, _ in successes]
+    total_rows = sum(s.row_count for s in successes)
+    total_bytes = sum(s.bytes_written for s in successes)
+    converted_files = [s.filename for s in successes]
 
     patch_body = {
         "output_path": str(parquet_dir),
@@ -227,7 +265,9 @@ def convert_one(
         },
     }
     if failures:
-        patch_body["metadata"]["conversion_errors"] = failures
+        patch_body["metadata"]["conversion_errors"] = {
+            name: _failure_to_wire(f) for name, f in failures.items()
+        }
 
     http_module.patch_delivery(api_url, delivery_id, patch_body)
 
