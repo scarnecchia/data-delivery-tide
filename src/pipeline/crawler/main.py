@@ -73,7 +73,7 @@ def walk_roots(
             if not os.path.isdir(target_path):
                 if logger:
                     logger.warning(
-                        f"dpid missing target directory: {dpid_entry.name}/{target}",
+                        "dpid missing target directory",
                         extra={"scan_root": root_path, "dpid": dpid_entry.name, "target": target},
                     )
                 continue
@@ -139,12 +139,15 @@ def crawl(config, logger, token: str | None = None) -> int:
     for root in config.scan_roots:
         if not os.path.isdir(root.path):
             logger.warning(
-                f"scan root does not exist, skipping: {root.path}",
+                "scan root does not exist, skipping",
                 extra={"scan_root": root.path},
             )
 
     candidates = walk_roots(config.scan_roots, valid_terminals, exclusions, logger)
-    logger.info(f"found {len(candidates)} delivery candidates")
+    logger.info(
+        "found delivery candidates",
+        extra={"candidate_count": len(candidates)},
+    )
 
     # --- Pass 1: Parse, inventory, fingerprint, write manifests ---
     # Collect successful deliveries with their file data for pass 2
@@ -168,8 +171,8 @@ def crawl(config, logger, token: str | None = None) -> int:
             with open(error_path, "w") as f:
                 json.dump(error_manifest, f, indent=2)
             logger.warning(
-                f"parse error: {result.reason}",
-                extra={"scan_root": scan_root, "source_path": source_path},
+                "parse error",
+                extra={"scan_root": scan_root, "source_path": source_path, "reason": result.reason},
             )
             continue
 
@@ -201,8 +204,8 @@ def crawl(config, logger, token: str | None = None) -> int:
                 # Should not happen — loader validates sub_dirs references.
                 # Log and skip defensively.
                 logger.warning(
-                    f"sub_dirs references unknown lexicon '{sub_lexicon_id}', skipping",
-                    extra={"source_path": source_path, "sub_dir": sub_dir_name},
+                    "sub_dirs references unknown lexicon, skipping",
+                    extra={"source_path": source_path, "sub_dir": sub_dir_name, "lexicon_id": sub_lexicon_id},
                 )
                 continue
 
@@ -275,16 +278,20 @@ def crawl(config, logger, token: str | None = None) -> int:
         post_delivery(config.registry_api_url, payload, token=token)
 
         logger.info(
-            f"processed delivery {delivery_id[:12]}... (status={delivery.status})",
+            "processed delivery",
             extra={
                 "scan_root": delivery.scan_root,
                 "source_path": delivery.source_path,
                 "delivery_id": delivery_id,
+                "status": delivery.status,
             },
         )
         processed += 1
 
-    logger.info(f"crawl complete: {processed} deliveries processed")
+    logger.info(
+        "crawl complete",
+        extra={"processed": processed},
+    )
     return processed
 
 
@@ -307,10 +314,16 @@ def main():
                 "registry authorization failed — token lacks required role (needs write)"
             )
         else:
-            logger.error(f"registry client error: {exc}")
+            logger.error(
+                "registry client error",
+                extra={"error_message": str(exc)},
+            )
         sys.exit(1)
     except RegistryUnreachableError as exc:
-        logger.error(f"registry unreachable, aborting: {exc}")
+        logger.error(
+            "registry unreachable, aborting",
+            extra={"error_message": str(exc)},
+        )
         sys.exit(1)
 
 
