@@ -175,7 +175,7 @@ class TestWalkRoots:
 
         logger = MagicMock(spec=logging.Logger)
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         # Assert warning was logged
         assert logger.warning.called
@@ -198,7 +198,7 @@ class TestWalkRoots:
 
         logger = MagicMock(spec=logging.Logger)
         scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
-        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger)
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         # Assert warning was NOT logged
         assert not logger.warning.called
@@ -221,6 +221,20 @@ class TestWalkRoots:
         # Should discover msoc under custom target
         assert len(results) == 1
         assert (str(compare_msoc), str(scan_root)) in results
+
+    def test_exclusions_skip_dpid_directories(self, tmp_path):
+        """Excluded dpid directories are not descended into at all."""
+        scan_root = tmp_path / "requests" / "qa"
+
+        for dpid in ("mkscnr", "nsdp", "othrdp"):
+            d = scan_root / dpid / "packages" / f"soc_qar_wp001" / f"soc_qar_wp001_{dpid}_v01" / "msoc"
+            d.mkdir(parents=True)
+
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, exclusions={"nsdp"})
+
+        dpid_dirs = {p.split("/")[-5] for p, _ in results}
+        assert dpid_dirs == {"mkscnr", "othrdp"}
 
 
 class TestInventoryFiles:
@@ -415,6 +429,45 @@ class TestCrawl:
 
         # And post_delivery should not have been called
         assert not mock_post.called
+
+    @patch("pipeline.crawler.main.post_delivery")
+    def test_excluded_dpid_folder_blocks_all_deliveries_inside(
+        self, mock_post, tmp_path, make_crawler_config
+    ):
+        """Excluded dpid folder must block ALL deliveries inside, even if
+        version directory encodes a different dp_id than the folder name."""
+        scan_root = tmp_path / "requests" / "qa"
+        scan_root.mkdir(parents=True)
+
+        # dpid folder is "nsdp" (excluded), but version dir encodes dp_id "mkscnr"
+        sneaky_path = (
+            scan_root / "nsdp" / "packages" / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        )
+        sneaky_path.mkdir(parents=True)
+        (sneaky_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
+
+        # Also create a normal non-excluded delivery
+        normal_path = (
+            scan_root / "othrdp" / "packages" / "soc_qar_wp002"
+            / "soc_qar_wp002_othrdp_v01" / "msoc"
+        )
+        normal_path.mkdir(parents=True)
+        (normal_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
+
+        config = make_crawler_config(
+            scan_roots=[{"path": str(scan_root), "label": "qa"}],
+            dp_id_exclusions=["nsdp"],
+        )
+
+        logger = MagicMock()
+        count = crawl(config, logger)
+
+        # Only the non-excluded delivery should be processed
+        assert count == 1
+        assert mock_post.call_count == 1
+        posted_payload = mock_post.call_args[0][1]
+        assert posted_payload["dp_id"] == "othrdp"
 
     @patch("pipeline.crawler.main.post_delivery")
     def test_ac7_1_idempotent_crawl_produces_identical_manifests(

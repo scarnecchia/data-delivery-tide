@@ -204,6 +204,57 @@ class TestListDeliveries:
         assert len(data["items"]) == 1
         assert data["items"][0]["dp_id"] == "dp-alpha"
 
+    def test_list_with_pagination_limit_offset(self, client, auth_headers):
+        """AC7.1: GET /deliveries?limit=N&offset=M uses offset pagination."""
+        # Create 4 deliveries to paginate through
+        for i in range(1, 5):
+            payload = make_delivery_payload(source_path=f"/data/page-test-{i}")
+            client.post("/deliveries", json=payload, headers=auth_headers)
+
+        # Get first page
+        response1 = client.get("/deliveries?limit=2&offset=0", headers=auth_headers)
+        data1 = response1.json()
+        assert len(data1["items"]) == 2
+        assert data1["total"] == 4
+        assert data1["limit"] == 2
+        assert data1["offset"] == 0
+
+        # Get second page
+        response2 = client.get("/deliveries?limit=2&offset=2", headers=auth_headers)
+        data2 = response2.json()
+        assert len(data2["items"]) == 2
+        assert data2["total"] == 4
+
+        # Pages should not overlap
+        ids1 = {d["delivery_id"] for d in data1["items"]}
+        ids2 = {d["delivery_id"] for d in data2["items"]}
+        assert ids1.isdisjoint(ids2)
+
+    def test_list_with_converted_and_pagination(self, client, auth_headers):
+        """AC7.1: Pagination works with converted=false filter."""
+        # Create mixed converted/unconverted deliveries
+        for i in range(1, 5):
+            payload = make_delivery_payload(
+                source_path=f"/data/converted-test-{i}",
+                status="passed",
+            )
+            resp = client.post("/deliveries", json=payload, headers=auth_headers)
+            if i % 2 == 0:
+                # Mark every other as converted
+                did = resp.json()["delivery_id"]
+                client.patch(
+                    f"/deliveries/{did}",
+                    json={"parquet_converted_at": "2026-01-01T00:00:00Z"},
+                    headers=auth_headers,
+                )
+
+        # Get unconverted with pagination
+        response = client.get("/deliveries?converted=false&limit=1", headers=auth_headers)
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["parquet_converted_at"] is None
+        assert data["total"] == 2
+
 
 class TestActionableDeliveries:
     """Test GET /deliveries/actionable endpoint."""
@@ -345,6 +396,125 @@ class TestUpdateDelivery:
         assert response.status_code == 200
         data = response.json()
         assert data["parquet_converted_at"] == "2026-04-09T15:30:00+00:00"
+
+    def test_ac7_2_metadata_merge_preserves_existing_keys(self, client, auth_headers):
+        """AC7.2: PATCH metadata deep-merges, preserving existing keys."""
+        # Create with initial metadata
+        payload = make_delivery_payload(
+            source_path="/data/metadata-merge-test",
+            metadata={"qa_passed_at": "2026-04-15T00:00:00Z", "other": "keep"},
+        )
+        post_response = client.post("/deliveries", json=payload, headers=auth_headers)
+        delivery_id = post_response.json()["delivery_id"]
+        assert post_response.json()["metadata"]["qa_passed_at"] == "2026-04-15T00:00:00Z"
+        assert post_response.json()["metadata"]["other"] == "keep"
+
+        # PATCH to add conversion_error
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={
+                "metadata": {
+                    "conversion_error": {
+                        "class": "parse_error",
+                        "message": "bad",
+                        "at": "2026-04-16T00:00:00Z",
+                        "converter_version": "0.1.0",
+                    }
+                }
+            },
+            headers=auth_headers,
+        )
+
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        # All three keys should be present
+        assert data["metadata"]["qa_passed_at"] == "2026-04-15T00:00:00Z"
+        assert data["metadata"]["other"] == "keep"
+        assert data["metadata"]["conversion_error"]["class"] == "parse_error"
+        assert data["metadata"]["conversion_error"]["message"] == "bad"
+
+    def test_ac7_3_metadata_clear_error_by_null(self, client, auth_headers):
+        """AC7.3: PATCH with conversion_error: null clears the error, preserves other keys."""
+        # First, create and add error
+        payload = make_delivery_payload(
+            source_path="/data/metadata-clear-test",
+            metadata={"qa_passed_at": "2026-04-15T00:00:00Z", "other": "keep"},
+        )
+        post_response = client.post("/deliveries", json=payload, headers=auth_headers)
+        delivery_id = post_response.json()["delivery_id"]
+
+        # Add error
+        client.patch(
+            f"/deliveries/{delivery_id}",
+            json={
+                "metadata": {
+                    "conversion_error": {
+                        "class": "parse_error",
+                        "message": "bad",
+                    }
+                }
+            },
+            headers=auth_headers,
+        )
+
+        # Now clear the error by setting to null
+        clear_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={"metadata": {"conversion_error": None}},
+            headers=auth_headers,
+        )
+
+        assert clear_response.status_code == 200
+        data = clear_response.json()
+        # Existing keys preserved
+        assert data["metadata"]["qa_passed_at"] == "2026-04-15T00:00:00Z"
+        assert data["metadata"]["other"] == "keep"
+        # Error is None
+        assert data["metadata"]["conversion_error"] is None
+
+    def test_status_and_metadata_combined(self, client, auth_headers):
+        """
+        PATCH with both status transition AND user-supplied metadata merges all three sources:
+        1. Existing metadata from the delivery
+        2. User-supplied metadata from the PATCH body
+        3. Lexicon-derived set_on fields applied to the new status
+        """
+        # Create with initial metadata and pending status
+        payload = make_delivery_payload(
+            source_path="/data/status-metadata-combined",
+            status="pending",
+            metadata={"existing_key": "existing_value", "preserved": "yes"},
+        )
+        post_response = client.post("/deliveries", json=payload, headers=auth_headers)
+        delivery_id = post_response.json()["delivery_id"]
+        assert post_response.json()["metadata"]["existing_key"] == "existing_value"
+
+        # PATCH with both status (pending -> passed) and new metadata
+        # The soc.qar lexicon has a set_on field that fires on "passed" status
+        patch_response = client.patch(
+            f"/deliveries/{delivery_id}",
+            json={
+                "status": "passed",
+                "metadata": {"user_supplied": "new_value"},
+            },
+            headers=auth_headers,
+        )
+
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        assert data["status"] == "passed"
+
+        # Verify the union of all three metadata sources:
+        # 1. Existing metadata preserved
+        assert data["metadata"]["existing_key"] == "existing_value"
+        assert data["metadata"]["preserved"] == "yes"
+        # 2. User-supplied metadata merged in
+        assert data["metadata"]["user_supplied"] == "new_value"
+        # 3. Lexicon-derived set_on field applied (soc.qar lexicon sets
+        # "passed_at" as datetime when transitioning to "passed")
+        assert "passed_at" in data["metadata"]
+        # Verify it's an ISO datetime string
+        assert "T" in data["metadata"]["passed_at"]
 
 
 
@@ -1069,6 +1239,133 @@ class TestCatchUpEndpoint:
         assert event["event_type"] == "delivery.created"
         assert event["delivery_id"] == "test-id"
         assert event["payload"] == {"key": "value"}
+
+
+class TestEmitEvent:
+    """Test POST /events endpoint for converter-emitted lifecycle events (AC6.4)."""
+
+    def test_emit_conversion_completed_happy_path(self, client, test_db, auth_headers):
+        """AC6.4: POST /events with conversion.completed event succeeds and broadcasts."""
+        # First create a delivery
+        payload = make_delivery_payload(source_path="/data/emit-test-1")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # POST conversion.completed event
+        event_payload = {
+            "event_type": "conversion.completed",
+            "delivery_id": delivery_id,
+            "payload": {
+                "delivery_id": delivery_id,
+                "output_path": "/output/converted.parquet",
+                "row_count": 42,
+                "bytes_written": 1024,
+                "wrote_at": "2026-04-16T00:00:00Z",
+            },
+        }
+
+        response = client.post("/events", json=event_payload, headers=auth_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["event_type"] == "conversion.completed"
+        assert data["delivery_id"] == delivery_id
+        assert data["payload"]["row_count"] == 42
+
+        # Verify event was persisted
+        events = get_events(test_db)
+        conversion_events = [
+            e for e in events
+            if e["event_type"] == "conversion.completed"
+        ]
+        assert len(conversion_events) == 1
+        assert conversion_events[0]["delivery_id"] == delivery_id
+
+    def test_emit_conversion_failed_happy_path(self, client, test_db, auth_headers):
+        """AC6.4: POST /events with conversion.failed event succeeds."""
+        # Create delivery
+        payload = make_delivery_payload(source_path="/data/emit-test-2")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # POST conversion.failed event
+        event_payload = {
+            "event_type": "conversion.failed",
+            "delivery_id": delivery_id,
+            "payload": {
+                "delivery_id": delivery_id,
+                "error_class": "ParseError",
+                "error_message": "invalid SAS format",
+                "at": "2026-04-16T00:00:00Z",
+                "converter_version": "0.1.0",
+            },
+        }
+
+        response = client.post("/events", json=event_payload, headers=auth_headers)
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["event_type"] == "conversion.failed"
+        assert data["delivery_id"] == delivery_id
+        assert data["payload"]["error_class"] == "ParseError"
+
+    def test_emit_event_with_nonexistent_delivery_returns_404(self, client, auth_headers):
+        """AC6.4: POST /events with unknown delivery_id returns 404."""
+        event_payload = {
+            "event_type": "conversion.completed",
+            "delivery_id": "nonexistent-delivery-id-99999",
+            "payload": {"row_count": 0},
+        }
+
+        response = client.post("/events", json=event_payload, headers=auth_headers)
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Delivery not found"
+
+    def test_emit_event_rejects_registry_internal_event_types(self, client, auth_headers):
+        """AC6.4: POST /events rejects delivery.created and delivery.status_changed."""
+        # Create delivery first
+        payload = make_delivery_payload(source_path="/data/emit-test-3")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Try to emit delivery.created (should be rejected by model validation)
+        event_payload = {
+            "event_type": "delivery.created",
+            "delivery_id": delivery_id,
+            "payload": {},
+        }
+
+        response = client.post("/events", json=event_payload, headers=auth_headers)
+
+        assert response.status_code == 422
+
+    def test_emit_event_rejects_invalid_event_type(self, client, auth_headers):
+        """AC6.4: POST /events rejects invalid event_type."""
+        # Create delivery first
+        payload = make_delivery_payload(source_path="/data/emit-test-4")
+        response = client.post("/deliveries", json=payload, headers=auth_headers)
+        assert response.status_code == 200
+        delivery_id = response.json()["delivery_id"]
+
+        # Try to emit invalid event
+        event_payload = {
+            "event_type": "nonsense.event",
+            "delivery_id": delivery_id,
+            "payload": {},
+        }
+
+        response = client.post("/events", json=event_payload, headers=auth_headers)
+
+        assert response.status_code == 422
+
+    # WebSocket broadcast for POST /events is tested in test_events.py
+    # (TestWebSocketEndpoint.test_emit_event_broadcasts_conversion_events)
+    # because the WS tests require proper connection lifecycle management
+    # that's already handled by that test class's autouse fixture.
 
 
 class TestSubDeliveryIntegration:

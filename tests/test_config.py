@@ -295,3 +295,165 @@ class TestLoadConfig:
             load_config(str(config_file))
 
         assert "lexicons_dir" in str(exc_info.value)
+
+    def test_loads_converter_version_with_default(self, tmp_path):
+        """Test that converter_version defaults to 0.1.0 when absent."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.converter_version == "0.1.0"
+
+    def test_loads_converter_chunk_size_with_default(self, tmp_path):
+        """Test that converter_chunk_size defaults to 100_000 when absent."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.converter_chunk_size == 100_000
+
+    def test_loads_converter_compression_with_default(self, tmp_path):
+        """Test that converter_compression defaults to zstd when absent."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.converter_compression == "zstd"
+
+    def test_loads_converter_state_path_with_default(self, tmp_path):
+        """Test that converter_state_path defaults to pipeline/.converter_state.json when absent."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.converter_state_path == "pipeline/.converter_state.json"
+
+    def test_loads_converter_cli_batch_size_with_default(self, tmp_path):
+        """Test that converter_cli_batch_size defaults to 200 when absent."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.converter_cli_batch_size == 200
+
+    def test_loads_converter_cli_sleep_empty_secs_with_default(self, tmp_path):
+        """Test that converter_cli_sleep_empty_secs defaults to 0 when absent."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.converter_cli_sleep_empty_secs == 0
+
+    def test_explicit_converter_version_overrides_default(self, tmp_path):
+        """Test that explicit converter_version in config overrides the default."""
+        _make_lexicons(tmp_path, "soc.qar")
+
+        config_data = {
+            "lexicons_dir": "lexicons",
+            "scan_roots": [
+                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar"},
+            ],
+            "registry_api_url": "http://test:8000",
+            "output_root": "/test/output",
+            "schema_path": "/test/schema.json",
+            "overrides_path": "/test/overrides.json",
+            "log_dir": "/test/logs",
+            "db_path": "test/registry.db",
+            "converter_version": "1.2.3",
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_config(str(config_file))
+
+        assert config.converter_version == "1.2.3"

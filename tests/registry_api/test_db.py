@@ -136,6 +136,128 @@ class TestInitDb:
         assert journal_mode in ("memory", "memory mode")
 
 
+class TestMigrateEventsCheckConstraint:
+    """Tests for the events table CHECK constraint migration."""
+
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database for testing."""
+        conn = sqlite3.connect(":memory:")
+        yield conn
+        conn.close()
+
+    def test_fresh_db_supports_conversion_events(self, memory_db):
+        """AC6.1: Fresh DB created via init_db accepts conversion event types."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("conversion.completed", "delivery-1", '{}', "2026-01-01T00:00:00Z"),
+        )
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("conversion.failed", "delivery-2", '{}', "2026-01-01T00:00:00Z"),
+        )
+
+        cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.completed'")
+        assert cursor.fetchone()[0] == 1
+        cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.failed'")
+        assert cursor.fetchone()[0] == 1
+
+    def test_old_schema_db_migrates_and_preserves_data(self, memory_db):
+        """AC6.1 edge: Old 2-value CHECK constraint migrates, preserving existing rows."""
+        cursor = memory_db.cursor()
+
+        # Create the OLD events table with only 2 event types
+        old_events_sql = """
+        CREATE TABLE events (
+            seq         INTEGER PRIMARY KEY,
+            event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed')),
+            delivery_id TEXT NOT NULL,
+            payload     TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        )
+        """
+        cursor.execute(old_events_sql)
+
+        # Insert an old-style event
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("delivery.created", "delivery-old", '{}', "2026-01-01T00:00:00Z"),
+        )
+        memory_db.commit()
+
+        # Now run init_db which should detect and migrate
+        init_db(memory_db)
+
+        # Verify old row survived
+        cursor.execute("SELECT event_type FROM events WHERE delivery_id = 'delivery-old'")
+        old_row = cursor.fetchone()
+        assert old_row is not None
+        assert old_row[0] == "delivery.created"
+
+        # Verify new event types now work
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("conversion.completed", "delivery-new", '{}', "2026-01-01T00:00:00Z"),
+        )
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("conversion.failed", "delivery-failed", '{}', "2026-01-01T00:00:00Z"),
+        )
+
+        cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.completed'")
+        assert cursor.fetchone()[0] == 1
+        cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.failed'")
+        assert cursor.fetchone()[0] == 1
+
+    def test_migration_idempotency(self, memory_db):
+        """AC6.1 idempotency: Running init_db twice preserves data and state."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("delivery.created", "delivery-1", '{}', "2026-01-01T00:00:00Z"),
+        )
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("conversion.completed", "delivery-2", '{}', "2026-01-01T00:00:00Z"),
+        )
+
+        memory_db.commit()
+        first_count = cursor.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+
+        # Run init_db again
+        init_db(memory_db)
+
+        # Verify data survived
+        cursor.execute("SELECT COUNT(*) FROM events")
+        second_count = cursor.fetchone()[0]
+        assert second_count == first_count == 2
+
+        # Verify new events still work
+        cursor.execute(
+            "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+            ("conversion.failed", "delivery-3", '{}', "2026-01-01T00:00:00Z"),
+        )
+
+        cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.failed'")
+        assert cursor.fetchone()[0] == 1
+
+    def test_check_constraint_rejects_invalid_types(self, memory_db):
+        """AC6.1 rejection: Invalid event_type raises IntegrityError."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
+                ("nonsense", "delivery-1", '{}', "2026-01-01T00:00:00Z"),
+            )
+
+
 class TestGetConnection:
     def test_get_connection_creates_connection(self, tmp_path):
         """Test that get_connection creates a valid connection."""
@@ -695,6 +817,44 @@ class TestListDeliveries:
         assert len(results) == 1
         assert results[0]["project"] == "proj-a"
         assert results[0]["status"] == "passed"
+
+    def test_list_deliveries_limit(self, memory_db, sample_deliveries):
+        """AC7.1 limit: list_deliveries with limit= returns at most N rows."""
+        results, total = list_deliveries(memory_db, {"limit": 2})
+
+        assert len(results) == 2
+        assert total == 4
+
+    def test_list_deliveries_offset(self, memory_db, sample_deliveries):
+        """AC7.1 offset: list_deliveries with offset= skips rows."""
+        results, total = list_deliveries(memory_db, {"limit": 2, "offset": 2})
+
+        assert len(results) == 2
+        assert total == 4
+
+    def test_list_deliveries_limit_capped_at_1000(
+        self, memory_db, sample_deliveries
+    ):
+        """AC7.1 cap: limit larger than 1000 is capped, returns all available rows without error."""
+        results, total = list_deliveries(memory_db, {"limit": 5000})
+
+        assert len(results) == 4, "Should return all 4 available rows"
+        assert total == 4
+
+    def test_list_deliveries_offset_with_converted_filter(
+        self, memory_db, sample_deliveries
+    ):
+        """AC7.1 offset with filters: pagination works with other filters like converted=."""
+        results_all, total = list_deliveries(memory_db, {"converted": False})
+        assert total == 3
+
+        results_page, total2 = list_deliveries(
+            memory_db, {"converted": False, "limit": 2, "offset": 0}
+        )
+
+        assert len(results_page) == 2
+        assert total2 == 3
+        assert all(r["parquet_converted_at"] is None for r in results_page)
 
 
 class TestGetActionable:

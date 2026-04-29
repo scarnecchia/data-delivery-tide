@@ -34,5 +34,11 @@
   "db_path": "pipeline/registry.db",
   "dp_id_exclusions": ["nsdp"],
   "crawl_manifest_dir": "pipeline/crawl_manifests",
-  "crawler_version": "1.0.0"
+  "crawler_version": "1.0.0",
+  "converter_version": "0.1.0",
+  "converter_chunk_size": 100000,
+  "converter_compression": "zstd",
+  "converter_state_path": "pipeline/.converter_state.json",
+  "converter_cli_batch_size": 200,
+  "converter_cli_sleep_empty_secs": 0
 }

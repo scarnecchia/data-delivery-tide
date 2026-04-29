@@ -179,16 +179,16 @@ class TestWebSocketEndpoint:
         yield
         manager.active_connections.clear()
 
-    def test_websocket_connect_accepted(self, client):
+    def test_websocket_connect_accepted(self, client, auth_headers):
         """Test that WebSocket connection is accepted."""
-        with client.websocket_connect("/ws/events") as ws:
+        with client.websocket_connect("/ws/events?token=test-integration-token") as ws:
             # If we get here, connection was accepted
             assert ws is not None
 
-    def test_websocket_disconnect_removes_connection(self, client):
+    def test_websocket_disconnect_removes_connection(self, client, auth_headers):
         """Test event-stream.AC3.2: Disconnect removes connection from active set."""
         # Connect a client
-        with client.websocket_connect("/ws/events"):
+        with client.websocket_connect("/ws/events?token=test-integration-token"):
             initial_count = len(manager.active_connections)
             assert initial_count >= 1
 
@@ -197,9 +197,9 @@ class TestWebSocketEndpoint:
         final_count = len(manager.active_connections)
         assert final_count == initial_count - 1
 
-    def test_broadcast_to_single_client(self, client):
+    def test_broadcast_to_single_client(self, client, auth_headers):
         """Test that a single connected client receives a broadcast."""
-        with client.websocket_connect("/ws/events") as ws:
+        with client.websocket_connect("/ws/events?token=test-integration-token") as ws:
             # Verify connection is open
             assert ws is not None
 
@@ -217,11 +217,11 @@ class TestWebSocketEndpoint:
 
             assert data == {"type": "test", "data": "hello"}
 
-    def test_dead_connection_cleanup_ac33(self, client):
+    def test_dead_connection_cleanup_ac33(self, client, auth_headers):
         """Test event-stream.AC3.3: Dead connection is cleaned up without crashing."""
         def connect_and_close():
             """Connect a client, then close the connection."""
-            ws = client.websocket_connect("/ws/events")
+            ws = client.websocket_connect("/ws/events?token=test-integration-token")
             ws.__enter__()
             ws.__exit__(None, None, None)
             # Connection is now closed/dead

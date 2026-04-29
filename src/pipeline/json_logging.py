@@ -17,9 +17,9 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
         # Merge any extra contextual fields set via `extra=` kwarg
-        for key in ("scan_root", "source_path", "delivery_id"):
-            value = getattr(record, key, None)
-            if value is not None:
+        standard_attrs = logging.LogRecord("", 0, "", 0, None, None, None).__dict__.keys()
+        for key, value in record.__dict__.items():
+            if key not in standard_attrs and value is not None:
                 entry[key] = value
         return json.dumps(entry)
 

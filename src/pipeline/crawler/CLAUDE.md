@@ -1,6 +1,6 @@
 # Crawler
 
-Last verified: 2026-04-14
+Last verified: 2026-04-24
 
 ## Purpose
 
@@ -30,7 +30,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 
 ## Invariants
 
-- `walk_roots` enforces canonical 5-level structure: `<scan_root>/<dpid>/<target>/<request_id>/<version_dir>/{dir_map_keys}`. Only directories at this exact depth are discovered. Sibling directories (e.g., `compare/`) or wrong depth are not traversed.
+- `walk_roots` enforces canonical 5-level structure: `<scan_root>/<dpid>/<target>/<request_id>/<version_dir>/{dir_map_keys}`. Only directories at this exact depth are discovered. Sibling directories (e.g., `compare/`) or wrong depth are not traversed. Excluded dpid directories (from `dp_id_exclusions`) are skipped at level 1 before any descent.
 - `walk_roots` logs a warning when a dpid directory is missing its configured `target` subdirectory (e.g., dpid has no `packages/` when `target="packages"`).
 - Directory names at the leaf level are matched against lexicon.dir_map keys (not hardcoded "msoc"/"msoc_new").
 - After matching a terminal directory, the crawler checks the lexicon's `sub_dirs` for known subdirectories and discovers sub-deliveries inside them.
@@ -47,7 +47,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 
 - `walk_roots` uses `os.scandir()` with immediate `list()` consumption for resource safety; each level is independently constrained by directory existence (no deep nesting needed).
 - `walk_roots` requires `target` to be set in each `ScanRoot` object; missing targets are logged as warnings but do not raise exceptions.
-- dp_id_exclusions filtering happens in parse_path, returning None -- callers must handle the None case
+- dp_id_exclusions filtering is enforced at two layers: `walk_roots` skips excluded dpid directories at the folder level, and `parse_path` checks the dp_id extracted from the version directory name (returning None for excluded dp_ids -- callers must handle the None case)
 - All manifests in a single crawl run share the same crawled_at timestamp (marks the run, not individual processing)
 - The http client uses stdlib urllib, not requests/httpx -- intentional to avoid runtime dependencies
 - `main()` catches `RegistryClientError` for 401/403 and logs actionable messages (set REGISTRY_TOKEN, check role). Other 4xx errors log the full error. All exit with code 1.

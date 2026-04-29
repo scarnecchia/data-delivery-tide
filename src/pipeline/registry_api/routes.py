@@ -23,6 +23,7 @@ from pipeline.registry_api.models import (
     DeliveryUpdate,
     DeliveryResponse,
     DeliveryFilters,
+    EventCreate,
     EventRecord,
     PaginatedDeliveryResponse,
 )
@@ -219,6 +220,10 @@ async def update_single_delivery(
         metadata_val = old.get("metadata", {})
         existing_metadata = metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
 
+        # Merge user-supplied metadata first, then apply set_on overrides
+        if "metadata" in updates and isinstance(updates["metadata"], dict):
+            existing_metadata = {**existing_metadata, **updates["metadata"]}
+
         for field_name, field_def in lexicon.metadata_fields.items():
             if field_def.set_on == new_status:
                 if field_def.type == "datetime":
@@ -230,7 +235,13 @@ async def update_single_delivery(
         updates["metadata"] = json.dumps(existing_metadata)
 
     elif "metadata" in updates:
-        updates["metadata"] = json.dumps(updates["metadata"])
+        # Deep-merge metadata: preserve existing keys, merge in new keys
+        metadata_val = old.get("metadata", {})
+        existing_metadata = (
+            metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
+        )
+        merged = {**existing_metadata, **updates["metadata"]}
+        updates["metadata"] = json.dumps(merged)
 
     result = update_delivery(db, delivery_id, updates)
     if result is None:
@@ -257,3 +268,21 @@ async def get_events(db: DbDep, after: int, limit: int = 100):
     Returns empty array if no events match.
     """
     return get_events_after(db, after, limit)
+
+
+@protected_router.post("/events", response_model=EventRecord, status_code=201)
+async def emit_event(data: EventCreate, db: DbDep, token: TokenInfo = require_role("write")):
+    """
+    Emit a converter lifecycle event.
+
+    Verifies the delivery exists, persists the event via insert_event,
+    and broadcasts to connected WebSocket clients.
+
+    Returns 404 if the delivery does not exist.
+    """
+    if get_delivery(db, data.delivery_id) is None:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+
+    event = insert_event(db, data.event_type, data.delivery_id, data.payload, username=token.username)
+    await manager.broadcast(event)
+    return event
