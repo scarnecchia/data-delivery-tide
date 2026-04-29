@@ -5,6 +5,7 @@ These are the typed shapes the database layer hands back to routes.py
 and auth.py. They mirror the SQLite column shapes one-for-one, with
 metadata pre-deserialised from JSON to dict.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

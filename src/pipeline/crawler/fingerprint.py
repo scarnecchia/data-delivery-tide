@@ -22,7 +22,5 @@ def compute_fingerprint(files: list[FileEntry]) -> str:
         return "sha256:" + hashlib.sha256(b"").hexdigest()
 
     sorted_files = sorted(files, key=lambda f: f.filename)
-    content = "\n".join(
-        f"{f.filename}:{f.size_bytes}:{f.modified_at}" for f in sorted_files
-    )
+    content = "\n".join(f"{f.filename}:{f.size_bytes}:{f.modified_at}" for f in sorted_files)
     return "sha256:" + hashlib.sha256(content.encode()).hexdigest()

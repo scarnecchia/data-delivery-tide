@@ -115,10 +115,12 @@ class TestConnectionManager:
         manager = ConnectionManager()
         fake_good = FakeWebSocket()
         fake_dead1 = FakeWebSocket(
-            fail_on_send=True, send_exception=Exception("Connection lost"),
+            fail_on_send=True,
+            send_exception=Exception("Connection lost"),
         )
         fake_dead2 = FakeWebSocket(
-            fail_on_send=True, send_exception=Exception("Connection lost"),
+            fail_on_send=True,
+            send_exception=Exception("Connection lost"),
         )
 
         manager.active_connections.add(fake_good)

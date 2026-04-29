@@ -211,9 +211,7 @@ def convert_one(
         patch_body: dict[str, Any] = {
             "metadata": {
                 "conversion_error": error_dict,
-                "conversion_errors": {
-                    name: _failure_to_wire(f) for name, f in failures.items()
-                },
+                "conversion_errors": {name: _failure_to_wire(f) for name, f in failures.items()},
             },
         }
         try:

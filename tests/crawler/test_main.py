@@ -401,9 +401,7 @@ class TestInventoryFiles:
 class TestCrawl:
     """AC2.3, AC2.7, AC3.4, AC4.4, AC7.1, AC7.2 — Full crawl orchestration."""
 
-    def test_crawl_posts_valid_delivery_payload(
-        self, delivery_tree, make_crawler_config
-    ):
+    def test_crawl_posts_valid_delivery_payload(self, delivery_tree, make_crawler_config):
         """AC2.3: Crawler POSTs valid DeliveryCreate payload to registry API."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -859,7 +857,9 @@ class TestSubDeliveryDiscovery:
         # Fingerprints should differ
         assert parent_payload["fingerprint"] != sub_payload["fingerprint"]
 
-    def test_crawl_missing_sub_dir_silently_skipped(self, tmp_path, make_crawler_config, lexicons_dir):
+    def test_crawl_missing_sub_dir_silently_skipped(
+        self, tmp_path, make_crawler_config, lexicons_dir
+    ):
         """AC4.7: Missing sub-directory is silently skipped (no error, no sub-delivery)."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
