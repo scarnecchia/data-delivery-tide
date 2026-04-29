@@ -59,6 +59,7 @@ class TestFileMetadataBytes:
         assert set(meta.keys()) == {b"sas_labels", b"sas_value_labels", b"sas_encoding", b"converter_version"}
 
 
+@pytest.mark.integration
 class TestConvertSasToParquetHappyPath:
     def test_roundtrip_row_count_matches(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
         # AC1.1
@@ -155,6 +156,7 @@ class TestConvertSasToParquetHappyPath:
         assert meta.num_row_groups == 3
 
 
+@pytest.mark.integration
 class TestConvertAtomicWrite:
     def test_final_path_only_exists_on_success(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
         # AC2.1: tmp file is used; on success no tmp files remain.
@@ -202,6 +204,7 @@ class TestConvertAtomicWrite:
         assert not out.exists()
 
 
+@pytest.mark.integration
 class TestConvertSchemaStability:
     def test_multiple_chunks_same_schema_succeeds(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
         # AC3.1: chunks 2 through N match chunk 1 -> all write.

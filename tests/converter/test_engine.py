@@ -748,6 +748,7 @@ class TestConvertOneLogging:
         assert summary.total_rows == 15
 
 
+@pytest.mark.integration
 class TestConvertOneIntegration:
     def test_multiple_real_sas_files_to_parquet(self, tmp_path, sas_fixture_factory, sav_chunk_iter_factory):
         """AC2.1, AC7.1: Multiple SAS files convert, output_path is directory."""

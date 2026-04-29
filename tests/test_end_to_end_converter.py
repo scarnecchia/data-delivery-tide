@@ -186,6 +186,7 @@ class _TestClientHttpAdapter:
         return data["items"]
 
 
+@pytest.mark.integration
 class TestEndToEndConverter:
     def test_crawler_to_converter_full_chain(self, end_to_end_env, monkeypatch):
         # AC10.1
