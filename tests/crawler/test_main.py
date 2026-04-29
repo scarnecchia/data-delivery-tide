@@ -38,7 +38,7 @@ class FakePostDelivery:
 class TestWalkRoots:
     """AC2.1, AC2.4, AC2.5 — Discover msoc/msoc_new directories."""
 
-    def test_ac2_1_discovers_msoc_and_msoc_new_directories(self, delivery_tree):
+    def test_walk_roots_discovers_msoc_and_msoc_new_directories(self, delivery_tree):
         """AC2.1: Crawler discovers both msoc and msoc_new directories."""
         passed_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -61,7 +61,7 @@ class TestWalkRoots:
         assert passed_path in paths
         assert pending_path in paths
 
-    def test_ac2_4_processes_multiple_scan_roots(self, tmp_path):
+    def test_walk_roots_processes_multiple_scan_roots(self, tmp_path):
         """AC2.4: Crawler processes deliveries from multiple scan roots."""
         # Root 1
         scan_root1 = tmp_path / "requests" / "qa"
@@ -97,7 +97,7 @@ class TestWalkRoots:
         assert WalkResult(source_path=str(v1_path), scan_root=str(scan_root1)) in results
         assert WalkResult(source_path=str(v2_path), scan_root=str(scan_root2)) in results
 
-    def test_ac2_5_non_existent_scan_root_skipped(self, tmp_path):
+    def test_walk_roots_non_existent_scan_root_skipped(self, tmp_path):
         """AC2.5: Non-existent scan_root is skipped (does not cause error)."""
         existing_root = tmp_path / "requests" / "qa"
         existing_root.mkdir(parents=True)
@@ -123,7 +123,7 @@ class TestWalkRoots:
         assert len(results) == 1
         assert str(v1_path) in results[0].source_path
 
-    def test_ac2_3_msoc_in_sibling_not_discovered(self, tmp_path):
+    def test_walk_roots_msoc_in_sibling_not_discovered(self, tmp_path):
         """AC2.3: msoc inside a sibling of target (e.g. compare/) is not discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -142,7 +142,7 @@ class TestWalkRoots:
         # Result should be empty — the msoc under 'compare' should not be discovered
         assert len(results) == 0
 
-    def test_ac2_4_msoc_at_wrong_depth_not_discovered(self, tmp_path):
+    def test_walk_roots_msoc_at_wrong_depth_not_discovered(self, tmp_path):
         """AC2.4: msoc directly under dpid (no target/request/version levels) is not discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -159,7 +159,7 @@ class TestWalkRoots:
         # Result should be empty
         assert len(results) == 0
 
-    def test_ac2_5_msoc_nested_too_deep_not_discovered(self, tmp_path):
+    def test_walk_roots_msoc_nested_too_deep_not_discovered(self, tmp_path):
         """AC2.5: msoc nested too deep (extra level between version_dir and msoc) is not discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -184,7 +184,7 @@ class TestWalkRoots:
         # Result should be empty
         assert len(results) == 0
 
-    def test_ac2_6_multiple_dpids_discovered(self, tmp_path):
+    def test_walk_roots_multiple_dpids_discovered(self, tmp_path):
         """AC2.6: Multiple dpids under the same scan root are all traversed."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -216,7 +216,7 @@ class TestWalkRoots:
         assert str(dpid1_msoc) in paths
         assert str(dpid2_msoc) in paths
 
-    def test_ac2_7_multiple_version_dirs_discovered(self, tmp_path):
+    def test_walk_roots_multiple_version_dirs_discovered(self, tmp_path):
         """AC2.7: Multiple version directories under the same request_id are all discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -253,7 +253,7 @@ class TestWalkRoots:
         assert str(v1_msoc) in paths
         assert str(v2_msoc_new) in paths
 
-    def test_ac3_1_warning_when_target_missing(self, tmp_path):
+    def test_walk_roots_warning_when_target_missing(self, tmp_path):
         """AC3.1: Warning logged when a dpid directory is missing its target subdirectory."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -278,7 +278,7 @@ class TestWalkRoots:
         # Result should be empty
         assert len(results) == 0
 
-    def test_ac3_2_no_warning_when_target_exists(self, tmp_path):
+    def test_walk_roots_no_warning_when_target_exists(self, tmp_path):
         """AC3.2: No warning logged when target subdirectory exists."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -306,7 +306,7 @@ class TestWalkRoots:
         # Result should have one delivery
         assert len(results) == 1
 
-    def test_custom_target_directory(self, tmp_path):
+    def test_walk_roots_custom_target_directory(self, tmp_path):
         """Custom target: Create msoc under non-default target and verify discovery."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -326,7 +326,7 @@ class TestWalkRoots:
         assert len(results) == 1
         assert WalkResult(source_path=str(compare_msoc), scan_root=str(scan_root)) in results
 
-    def test_exclusions_skip_dpid_directories(self, tmp_path):
+    def test_walk_roots_exclusions_skip_dpid_directories(self, tmp_path):
         """Excluded dpid directories are not descended into at all."""
         scan_root = tmp_path / "requests" / "qa"
 
@@ -353,7 +353,7 @@ class TestWalkRoots:
 class TestInventoryFiles:
     """AC2.2, AC2.6 — File inventory with metadata."""
 
-    def test_ac2_2_inventory_sas_files_with_metadata(self, delivery_tree):
+    def test_inventory_files_includes_metadata(self, delivery_tree):
         """AC2.2: File inventory includes all .sas7bdat files with correct size_bytes and modified_at."""
         source_path, _ = delivery_tree(
             dp_id="mkscnr",
@@ -383,7 +383,7 @@ class TestInventoryFiles:
             assert f.modified_at  # not empty
             datetime.fromisoformat(f.modified_at)  # should not raise
 
-    def test_ac2_6_empty_delivery_directory_inventory_empty(self, delivery_tree):
+    def test_inventory_files_empty_directory_returns_empty(self, delivery_tree):
         """AC2.6: Empty delivery directory (no .sas7bdat files) returns empty inventory."""
         source_path, _ = delivery_tree(
             dp_id="mkscnr",
@@ -401,7 +401,7 @@ class TestInventoryFiles:
 class TestCrawl:
     """AC2.3, AC2.7, AC3.4, AC4.4, AC7.1, AC7.2 — Full crawl orchestration."""
 
-    def test_ac2_3_posts_valid_delivery_payload_to_registry(
+    def test_crawl_posts_valid_delivery_payload(
         self, delivery_tree, make_crawler_config
     ):
         """AC2.3: Crawler POSTs valid DeliveryCreate payload to registry API."""
@@ -439,7 +439,7 @@ class TestCrawl:
         assert payload["total_bytes"] == 1024
         assert payload["fingerprint"].startswith("sha256:")
 
-    def test_ac2_7_pending_superseded_by_newer_version_marked_failed(
+    def test_crawl_pending_superseded_by_newer_version_marked_failed(
         self, tmp_path, make_crawler_config
     ):
         """AC2.7: Pending delivery with newer version for same workplan+dp_id is POSTed with status=failed."""
@@ -487,7 +487,7 @@ class TestCrawl:
         assert v1_payload["status"] == "failed"
         assert v2_payload["status"] == "pending"
 
-    def test_ac3_4_re_crawling_same_delivery_overwrites_manifest_idempotent(
+    def test_crawl_re_crawl_overwrites_manifest_idempotent(
         self, delivery_tree, make_crawler_config
     ):
         """AC3.4: Re-crawling same unchanged delivery overwrites manifest with identical content (idempotent)."""
@@ -526,7 +526,7 @@ class TestCrawl:
         assert manifest_1["file_count"] == manifest_2["file_count"]
         assert manifest_1["files"] == manifest_2["files"]
 
-    def test_ac4_4_excluded_dp_ids_no_error_manifest(self, tmp_path, make_crawler_config):
+    def test_crawl_excluded_dp_ids_no_error_manifest(self, tmp_path, make_crawler_config):
         """AC4.4: Excluded dp_ids do NOT produce error manifests (they are expected, not errors)."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -554,7 +554,7 @@ class TestCrawl:
         # And post_delivery should not have been called
         assert not fake_post.called
 
-    def test_excluded_dpid_folder_blocks_all_deliveries_inside(self, tmp_path, make_crawler_config):
+    def test_crawl_excluded_dpid_folder_blocks_all_deliveries(self, tmp_path, make_crawler_config):
         """Excluded dpid folder must block ALL deliveries inside, even if
         version directory encodes a different dp_id than the folder name."""
         scan_root = tmp_path / "requests" / "qa"
@@ -594,7 +594,7 @@ class TestCrawl:
         posted_payload = fake_post.calls[0]["payload"]
         assert posted_payload["dp_id"] == "othrdp"
 
-    def test_ac7_1_idempotent_crawl_produces_identical_manifests(
+    def test_crawl_idempotent_produces_identical_manifests(
         self, delivery_tree, make_crawler_config
     ):
         """AC7.1: Running crawler twice on same directory tree produces identical manifests."""
@@ -634,7 +634,7 @@ class TestCrawl:
             assert m1["file_count"] == m2["file_count"]
             assert m1["files"] == m2["files"]
 
-    def test_ac7_2_unchanged_fingerprint_on_re_crawl(self, delivery_tree, make_crawler_config):
+    def test_crawl_unchanged_fingerprint_on_re_crawl(self, delivery_tree, make_crawler_config):
         """AC7.2: Unchanged fingerprint means registry POST payload fingerprint unchanged on re-crawl."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -668,7 +668,7 @@ class TestCrawl:
 class TestLexiconSystemAC5Integration:
     """lexicon-system.AC5.6 — Crawler POST payload includes lexicon_id and status."""
 
-    def test_ac5_6_crawler_post_payload_includes_lexicon_id_and_status(
+    def test_crawl_post_payload_includes_lexicon_id_and_status(
         self, delivery_tree, make_crawler_config
     ):
         """AC5.6: Crawler POST payload includes lexicon_id and status (not qa_status)."""
@@ -704,7 +704,7 @@ class TestLexiconSystemAC5Integration:
 class TestCrawlAuth:
     """Token forwarding from crawl() to post_delivery()."""
 
-    def test_token_forwarded_to_post_delivery(self, delivery_tree, make_crawler_config):
+    def test_crawl_token_forwarded_to_registry(self, delivery_tree, make_crawler_config):
         """crawl() forwards token kwarg to post_delivery()."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -724,7 +724,7 @@ class TestCrawlAuth:
         assert fake_post.called
         assert fake_post.calls[0]["token"] == "my-secret-token"
 
-    def test_no_token_forwards_none(self, delivery_tree, make_crawler_config):
+    def test_crawl_no_token_forwards_none(self, delivery_tree, make_crawler_config):
         """crawl() without token passes token=None to post_delivery()."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -748,7 +748,7 @@ class TestCrawlAuth:
 class TestSubDeliveryDiscovery:
     """sub-deliveries.AC4.1-AC4.8 — Crawler sub-directory discovery."""
 
-    def test_sub_delivery_created_when_sub_dir_exists(self, sub_delivery_setup):
+    def test_crawl_sub_delivery_created_when_sub_dir_exists(self, sub_delivery_setup):
         """AC4.1, AC4.2: Sub-delivery created when sub-dir exists, with correct source_path."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -767,7 +767,7 @@ class TestSubDeliveryDiscovery:
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
         assert sub_payload["source_path"].endswith("scdm_snapshot")
 
-    def test_sub_delivery_inherits_parent_identity(self, sub_delivery_setup):
+    def test_crawl_sub_delivery_inherits_parent_identity(self, sub_delivery_setup):
         """AC4.3: Sub-delivery inherits request_id, project, workplan_id, dp_id, version from parent."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -789,7 +789,7 @@ class TestSubDeliveryDiscovery:
         assert sub_payload["dp_id"] == parent_payload["dp_id"] == "mkscnr"
         assert sub_payload["version"] == parent_payload["version"] == "v01"
 
-    def test_sub_delivery_inherits_parent_status(self, sub_delivery_setup):
+    def test_crawl_sub_delivery_inherits_parent_status(self, sub_delivery_setup):
         """AC4.4: Sub-delivery inherits status from parent's dir_map resolution."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -807,7 +807,7 @@ class TestSubDeliveryDiscovery:
         # Sub-delivery should inherit parent's status ("passed")
         assert sub_payload["status"] == "passed"
 
-    def test_sub_delivery_has_own_delivery_id(self, sub_delivery_setup):
+    def test_crawl_sub_delivery_has_own_delivery_id(self, sub_delivery_setup):
         """AC4.5: Sub-delivery has its own delivery_id (SHA-256 of its source_path)."""
         import hashlib
 
@@ -836,7 +836,7 @@ class TestSubDeliveryDiscovery:
         manifest_content = json.loads(manifest_path.read_text())
         assert manifest_content["delivery_id"] == expected_sub_delivery_id
 
-    def test_sub_delivery_has_own_file_inventory(self, sub_delivery_setup):
+    def test_crawl_sub_delivery_has_own_file_inventory(self, sub_delivery_setup):
         """AC4.6: Sub-delivery has its own file inventory and fingerprint."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent1.sas7bdat", 100), ("parent2.sas7bdat", 200)],
@@ -859,7 +859,7 @@ class TestSubDeliveryDiscovery:
         # Fingerprints should differ
         assert parent_payload["fingerprint"] != sub_payload["fingerprint"]
 
-    def test_missing_sub_dir_silently_skipped(self, tmp_path, make_crawler_config, lexicons_dir):
+    def test_crawl_missing_sub_dir_silently_skipped(self, tmp_path, make_crawler_config, lexicons_dir):
         """AC4.7: Missing sub-directory is silently skipped (no error, no sub-delivery)."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -894,7 +894,7 @@ class TestSubDeliveryDiscovery:
         payload = fake_post.calls[0]["payload"]
         assert "scdm_snapshot" not in payload["source_path"]
 
-    def test_sub_deliveries_grouped_by_own_lexicon_for_derivation(
+    def test_crawl_sub_deliveries_grouped_by_own_lexicon(
         self, tmp_path, make_crawler_config, lexicons_dir
     ):
         """AC4.8: Sub-deliveries are grouped by their own lexicon for derivation."""
@@ -981,7 +981,7 @@ class TestSubDeliveryDiscovery:
 class TestMain:
     """AC5.4 — Exit code on RegistryUnreachableError."""
 
-    def test_ac5_4_registry_unreachable_exits_nonzero(self, monkeypatch):
+    def test_main_registry_unreachable_exits_nonzero(self, monkeypatch):
         """AC5.4: Crawler exits non-zero when RegistryUnreachableError is raised."""
         import pipeline.crawler.main as crawler_main
 

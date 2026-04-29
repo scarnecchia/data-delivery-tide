@@ -135,7 +135,7 @@ class TestHelpers:
 
 
 class TestConvertOneHappyPath:
-    def test_multiple_files_all_succeed(self, tmp_path):
+    def test_convert_one_multiple_files_all_succeed(self, tmp_path):
         """AC2.1, AC3.1, AC3.3, AC3.4, AC7.1: Multiple files all succeed."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -191,7 +191,7 @@ class TestConvertOneHappyPath:
         assert payload["total_bytes"] == 300  # 100 + 200
         assert payload["failed_count"] == 0
 
-    def test_single_file_backward_compat(self, tmp_path):
+    def test_convert_one_single_file_backward_compat(self, tmp_path):
         """Backward compatibility: single file works, output_path is now directory."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -228,7 +228,7 @@ class TestConvertOneHappyPath:
         assert patch["output_path"] == str(source_dir / "parquet")
         assert patch["metadata"]["converted_files"] == ["data.parquet"]
 
-    def test_mixed_case_extension_discovered_and_converted(self, tmp_path):
+    def test_convert_one_mixed_case_extension_discovered(self, tmp_path):
         """AC1.1: Mixed-case .SAS7BDAT files are discovered and converted."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -269,7 +269,7 @@ class TestConvertOneHappyPath:
         assert "file1.parquet" in converted
         assert "file2.parquet" in converted
 
-    def test_uppercase_sas_extension_found(self, tmp_path):
+    def test_convert_one_uppercase_sas_extension_found(self, tmp_path):
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.SAS7BDAT").write_bytes(b"unused by stub")
@@ -303,7 +303,7 @@ class TestConvertOneHappyPath:
 
 
 class TestConvertOneSkipGuards:
-    def test_skip_when_already_converted_flag_set(self, tmp_path):
+    def test_convert_one_skip_when_already_converted(self, tmp_path):
         """AC6.1: parquet_converted_at set (flag-only, no file check) -> skip."""
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
@@ -331,7 +331,7 @@ class TestConvertOneSkipGuards:
         assert http.patches == []
         assert http.events == []
 
-    def test_skip_when_conversion_error_set(self, tmp_path):
+    def test_convert_one_skip_when_conversion_error_set(self, tmp_path):
         # AC5.3
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
@@ -361,7 +361,7 @@ class TestConvertOneSkipGuards:
         assert http.patches == []
         assert http.events == []
 
-    def test_skip_when_dp_id_excluded(self, tmp_path):
+    def test_convert_one_skip_when_dp_id_excluded(self, tmp_path):
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
@@ -386,7 +386,7 @@ class TestConvertOneSkipGuards:
         assert http.patches == []
         assert http.events == []
 
-    def test_no_skip_when_dp_id_not_excluded(self, tmp_path):
+    def test_convert_one_no_skip_when_dp_id_not_excluded(self, tmp_path):
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
@@ -419,7 +419,7 @@ class TestConvertOneSkipGuards:
         )
         assert result.outcome == "success"
 
-    def test_null_conversion_error_does_not_skip(self, tmp_path):
+    def test_convert_one_null_conversion_error_does_not_skip(self, tmp_path):
         # AC7.3 interaction: {"conversion_error": null} means processable.
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
@@ -462,7 +462,7 @@ class TestConvertOneSkipGuards:
 class TestConvertOnePartialSuccess:
     """AC3.1, AC3.2, AC3.3, AC3.4: At least one succeeds, rest fail."""
 
-    def test_partial_success_patches_with_converted_files_and_errors(self, tmp_path):
+    def test_convert_one_partial_success_with_errors(self, tmp_path):
         """3 files, 1 fails. Verify success PATCH with converted_files and conversion_errors."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -523,7 +523,7 @@ class TestConvertOnePartialSuccess:
 class TestConvertOneTotalFailure:
     """AC4.1, AC4.2, AC4.3, AC4.4: All files fail."""
 
-    def test_all_files_fail(self, tmp_path):
+    def test_convert_one_all_files_fail(self, tmp_path):
         """All files fail. Verify multi_file_failure + conversion_errors."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -563,7 +563,7 @@ class TestConvertOneTotalFailure:
         event_type, _, _ = http.events[0]
         assert event_type == "conversion.failed"
 
-    def test_skip_guard_blocks_errored_delivery(self, tmp_path):
+    def test_convert_one_skip_guard_blocks_errored_delivery(self, tmp_path):
         """AC4.4: Skip guard blocks re-processing errored deliveries."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -600,7 +600,7 @@ class TestConvertOneTotalFailure:
 class TestConvertOneEmptyDir:
     """AC5.1, AC5.2, AC9.1: Empty directory handling."""
 
-    def test_no_sas_files_skips_with_no_side_effects(self, tmp_path):
+    def test_convert_one_no_sas_files_skips(self, tmp_path):
         """AC5.1, AC5.2: No SAS files -> skip, no PATCH, no event, no dir_contents diagnostic."""
         source_dir = tmp_path / "empty"
         source_dir.mkdir()
@@ -622,7 +622,7 @@ class TestConvertOneEmptyDir:
         assert http.patches == []
         assert http.events == []
 
-    def test_no_diagnostic_dir_contents_logged(self, tmp_path, caplog):
+    def test_convert_one_no_diagnostic_dir_contents_logged(self, tmp_path, caplog):
         """AC9.1: No dir_contents diagnostic in logs."""
         import logging
 
@@ -651,7 +651,7 @@ class TestConvertOneEmptyDir:
 class TestConvertOneInterrupt:
     """AC2.3: KeyboardInterrupt and SystemExit propagate immediately."""
 
-    def test_keyboard_interrupt_propagates_no_patch_or_event(self, tmp_path):
+    def test_convert_one_keyboard_interrupt_propagates(self, tmp_path):
         """AC2.3: KeyboardInterrupt during file conversion propagates."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -676,7 +676,7 @@ class TestConvertOneInterrupt:
         assert http.patches == []
         assert http.events == []
 
-    def test_system_exit_propagates_no_patch_or_event(self, tmp_path):
+    def test_convert_one_system_exit_propagates(self, tmp_path):
         """AC2.3: SystemExit during file conversion propagates."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -714,7 +714,7 @@ class TestConvertOneFailure:
 
         return http, raises
 
-    def test_parse_error_in_single_file_total_failure(self, tmp_path):
+    def test_convert_one_parse_error_total_failure(self, tmp_path):
         """Single file fails -> total_failure path (multi_file_failure)."""
         from pyreadstat import ReadstatError
 
@@ -743,7 +743,7 @@ class TestConvertOneFailure:
         event_type, _, payload = http.events[0]
         assert event_type == "conversion.failed"
 
-    def test_no_retry_after_failure(self, tmp_path):
+    def test_convert_one_no_retry_after_failure(self, tmp_path):
         """No retry: single failure -> total_failure."""
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
@@ -767,7 +767,7 @@ class TestConvertOneFailure:
         )
         assert call_count["n"] == 1
 
-    def test_error_message_truncated_to_500_chars(self, tmp_path):
+    def test_convert_one_error_message_truncated(self, tmp_path):
         """Error message in per-file error dict capped at 500 chars."""
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
@@ -799,7 +799,7 @@ class TestConvertOneFailure:
 class TestConvertOneLogging:
     """AC8.1, AC8.2: Per-file and summary logging."""
 
-    def test_per_file_success_logging(self, tmp_path, caplog):
+    def test_convert_one_per_file_success_logging(self, tmp_path, caplog):
         """AC8.1: Per-file success logged with sas_filename."""
         import logging
 
@@ -840,7 +840,7 @@ class TestConvertOneLogging:
         ]
         assert len(file_logs) >= 1, "per-file log with sas_filename not found"
 
-    def test_summary_delivery_logging(self, tmp_path, caplog):
+    def test_convert_one_summary_delivery_logging(self, tmp_path, caplog):
         """AC8.2: Delivery-level summary with aggregate counts."""
         import logging
 
@@ -887,7 +887,7 @@ class TestConvertOneLogging:
 
 @pytest.mark.integration
 class TestConvertOneIntegration:
-    def test_multiple_real_sas_files_to_parquet(
+    def test_convert_one_multiple_real_sas_files(
         self, tmp_path, sas_fixture_factory, sav_chunk_iter_factory
     ):
         """AC2.1, AC7.1: Multiple SAS files convert, output_path is directory."""

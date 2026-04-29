@@ -25,18 +25,18 @@ class TestClassifyException:
             (RuntimeError("x"), "unknown"),
         ],
     )
-    def test_known_exception_classes(self, exc, expected):
+    def test_classify_exception_known_classes(self, exc, expected):
         assert classify_exception(exc) == expected
 
-    def test_subclasses_match_parent_class(self):
+    def test_classify_exception_subclass_matches_parent(self):
         class MyOSError(OSError):
             pass
 
         assert classify_exception(MyOSError()) == "source_io"
 
-    def test_filenotfound_preferred_over_oserror(self):
+    def test_classify_exception_filenotfound_preferred_over_oserror(self):
         # FileNotFoundError is a subclass of OSError; must match the narrower class.
         assert classify_exception(FileNotFoundError()) == "source_missing"
 
-    def test_permission_preferred_over_oserror(self):
+    def test_classify_exception_permission_preferred_over_oserror(self):
         assert classify_exception(PermissionError()) == "source_permission"
