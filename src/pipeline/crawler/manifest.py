@@ -1,6 +1,6 @@
 # pattern: Functional Core
 import hashlib
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from pipeline.crawler.fingerprint import FileEntry
 from pipeline.crawler.parser import ParsedDelivery, ParseError
@@ -25,7 +25,7 @@ class CrawlManifest(TypedDict):
     lexicon_id: str
     status: str
     fingerprint: str
-    files: list[dict]
+    files: list[dict[str, Any]]
     file_count: int
     total_bytes: int
 
@@ -89,7 +89,7 @@ def build_error_manifest(
     Returns (filename, manifest_dict) where filename is sha256 hex of raw_path.
     """
     filename = hashlib.sha256(error.raw_path.encode()).hexdigest()
-    manifest = {
+    manifest: ErrorManifest = {
         "error_at": error_at,
         "crawler_version": crawler_version,
         "raw_path": error.raw_path,

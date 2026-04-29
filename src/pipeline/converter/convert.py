@@ -8,10 +8,11 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import pandas as pd  # type: ignore[import-untyped]
+import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import pyreadstat
 
 from pipeline.converter.classify import SchemaDriftError
@@ -24,7 +25,7 @@ class ConversionMetadata:
     row_count: int
     column_count: int
     column_labels: dict[str, str]
-    value_labels: dict[str, dict]
+    value_labels: dict[str, dict[Any, Any]]
     sas_encoding: str
     bytes_written: int
     wrote_at: datetime
@@ -48,7 +49,7 @@ def _build_column_labels(
 
 def _file_metadata_bytes(
     column_labels: dict[str, str],
-    value_labels: dict[str, dict],
+    value_labels: dict[str, dict[Any, Any]],
     sas_encoding: str,
     converter_version: str,
 ) -> dict[bytes, bytes]:
@@ -193,6 +194,7 @@ def convert_sas_to_parquet(
         raise
 
     # Build return value from the captured metadata (or empty defaults).
+    assert locked_schema is not None  # set in either branch above
     column_labels_out = _build_column_labels(
         list(locked_schema.names),
         getattr(file_metadata_obj, "column_labels", None) if file_metadata_obj else None,

@@ -1,14 +1,14 @@
 # pattern: Functional Core
 
 import json
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
 METADATA_MAX_BYTES = 65_536  # 64KB
 
 
-def _validate_metadata_size(v: dict | None) -> dict | None:
+def _validate_metadata_size(v: dict[str, Any] | None) -> dict[str, Any] | None:
     """Reject metadata dicts that exceed METADATA_MAX_BYTES when serialized."""
     if v is not None:
         serialized = json.dumps(v)
@@ -33,14 +33,14 @@ class DeliveryCreate(BaseModel):
     lexicon_id: str
     status: str
     source_path: str
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
     file_count: int | None = None
     total_bytes: int | None = None
     fingerprint: str | None = None
 
     @field_validator("metadata")
     @classmethod
-    def check_metadata_size(cls, v: dict | None) -> dict | None:
+    def check_metadata_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
         return _validate_metadata_size(v)
 
 
@@ -50,11 +50,11 @@ class DeliveryUpdate(BaseModel):
     parquet_converted_at: str | None = None
     output_path: str | None = None
     status: str | None = None
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
 
     @field_validator("metadata")
     @classmethod
-    def check_metadata_size(cls, v: dict | None) -> dict | None:
+    def check_metadata_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
         return _validate_metadata_size(v)
 
 
@@ -71,7 +71,7 @@ class DeliveryResponse(BaseModel):
     scan_root: str
     lexicon_id: str
     status: str
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
     first_seen_at: str
     parquet_converted_at: str | None = None
     file_count: int | None = None
@@ -127,7 +127,7 @@ class EventCreate(BaseModel):
 
     event_type: Literal["conversion.completed", "conversion.failed"]
     delivery_id: str
-    payload: dict
+    payload: dict[str, Any]
 
 
 class EventRecord(BaseModel):
@@ -141,6 +141,6 @@ class EventRecord(BaseModel):
         "conversion.failed",
     ]
     delivery_id: str
-    payload: dict
+    payload: dict[str, Any]
     username: str | None = None
     created_at: str

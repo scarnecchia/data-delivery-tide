@@ -3,6 +3,7 @@ import json
 import time
 import urllib.error
 import urllib.request
+from typing import Any, cast
 
 
 class RegistryUnreachableError(Exception):
@@ -21,7 +22,7 @@ class RegistryClientError(Exception):
 _BACKOFF_SECONDS = (2, 4, 8)
 
 
-def _request_with_retry(request: urllib.request.Request) -> dict:
+def _request_with_retry(request: urllib.request.Request) -> Any:
     """Execute a urllib Request with exponential backoff on 5xx/network errors."""
     last_error: Exception | None = None
 
@@ -45,7 +46,7 @@ def _request_with_retry(request: urllib.request.Request) -> dict:
     )
 
 
-def get_delivery(api_url: str, delivery_id: str) -> dict:
+def get_delivery(api_url: str, delivery_id: str) -> dict[str, Any]:
     """
     GET /deliveries/{delivery_id} — returns the DeliveryResponse dict.
 
@@ -53,10 +54,10 @@ def get_delivery(api_url: str, delivery_id: str) -> dict:
     """
     url = f"{api_url.rstrip('/')}/deliveries/{delivery_id}"
     request = urllib.request.Request(url, method="GET")
-    return _request_with_retry(request)
+    return cast("dict[str, Any]", _request_with_retry(request))
 
 
-def patch_delivery(api_url: str, delivery_id: str, updates: dict) -> dict:
+def patch_delivery(api_url: str, delivery_id: str, updates: dict[str, Any]) -> dict[str, Any]:
     """
     PATCH /deliveries/{delivery_id} with the given partial update dict.
 
@@ -70,14 +71,14 @@ def patch_delivery(api_url: str, delivery_id: str, updates: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="PATCH",
     )
-    return _request_with_retry(request)
+    return cast("dict[str, Any]", _request_with_retry(request))
 
 
 def list_unconverted(
     api_url: str,
     after: str = "",
     limit: int = 200,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
     GET /deliveries?converted=false&after=&limit= — returns a page of delivery dicts.
 
@@ -88,10 +89,12 @@ def list_unconverted(
     params = f"converted=false&after={after}&limit={limit}"
     url = f"{api_url.rstrip('/')}/deliveries?{params}"
     request = urllib.request.Request(url, method="GET")
-    return _request_with_retry(request)
+    return cast("list[dict[str, Any]]", _request_with_retry(request))
 
 
-def emit_event(api_url: str, event_type: str, delivery_id: str, payload: dict) -> dict:
+def emit_event(
+    api_url: str, event_type: str, delivery_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
     """
     POST /events with the given EventCreate body — returns the inserted EventRecord.
 
@@ -112,4 +115,4 @@ def emit_event(api_url: str, event_type: str, delivery_id: str, payload: dict) -
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    return _request_with_retry(request)
+    return cast("dict[str, Any]", _request_with_retry(request))

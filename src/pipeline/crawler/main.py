@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pipeline.config import PipelineConfig, ScanRoot, settings
 from pipeline.crawler.fingerprint import FileEntry, compute_fingerprint
 from pipeline.crawler.http import RegistryClientError, RegistryUnreachableError, post_delivery
-from pipeline.crawler.manifest import build_error_manifest, build_manifest
+from pipeline.crawler.manifest import CrawlManifest, build_error_manifest, build_manifest
 from pipeline.crawler.parser import ParsedDelivery, ParseError, derive_statuses, parse_path
 from pipeline.json_logging import get_logger
 from pipeline.lexicons import load_all_lexicons
@@ -150,7 +150,7 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
     # Load lexicons and build mapping
     lexicons = load_all_lexicons(config.lexicons_dir)
     root_lexicon_map = {}
-    valid_terminals = set()
+    valid_terminals: set[str] = set()
     for root in config.scan_roots:
         lex = lexicons[root.lexicon]
         root_lexicon_map[root.path] = (root.lexicon, lex)
@@ -179,7 +179,7 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
     # Collect successful deliveries with their file data for pass 2
     parsed_deliveries: list[ParsedDelivery] = []
     delivery_data: dict[
-        str, tuple[list[FileEntry], str, dict]
+        str, tuple[list[FileEntry], str, CrawlManifest]
     ] = {}  # source_path -> (files, fingerprint, manifest)
     delivery_lexicons: dict[str, tuple[str, object]] = {}  # source_path -> (lexicon_id, lexicon)
 

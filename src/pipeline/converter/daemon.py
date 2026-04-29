@@ -8,6 +8,7 @@ import os
 import signal
 import uuid
 from pathlib import Path
+from typing import Any
 
 from pipeline.config import settings
 from pipeline.converter.engine import convert_one
@@ -87,8 +88,8 @@ class DaemonRunner:
         compression: str,
         dp_id_exclusions: set[str] | None = None,
         log_dir: str | None,
-        consumer_factory: ConsumerFactoryProtocol = EventConsumer,  # type: ignore[assignment]
-        convert_one_fn: ConvertOneFnProtocol = convert_one,  # type: ignore[assignment]
+        consumer_factory: ConsumerFactoryProtocol = EventConsumer,
+        convert_one_fn: ConvertOneFnProtocol = convert_one,
     ) -> None:
         self.api_url = api_url
         self.state_path = Path(state_path)
@@ -165,7 +166,7 @@ class DaemonRunner:
         )
         return 0
 
-    async def _on_event(self, event: dict) -> None:
+    async def _on_event(self, event: dict[str, Any]) -> None:
         """
         Per-event callback: dispatch delivery.created to the engine off the
         event loop; skip other event types.

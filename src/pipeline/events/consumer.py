@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 from websockets.asyncio.client import ClientConnection, connect
@@ -28,12 +29,12 @@ class EventConsumer:
     def __init__(
         self,
         api_url: str,
-        on_event: Callable[[dict], Awaitable[None]],
+        on_event: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.on_event = on_event
         self._last_seq: int = 0
-        self._ws_buffer: list[dict] = []
+        self._ws_buffer: list[dict[str, Any]] = []
 
     async def run(self) -> None:
         """

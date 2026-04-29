@@ -5,7 +5,7 @@ import json
 import sqlite3
 from collections.abc import Generator
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends
 
@@ -203,7 +203,7 @@ def _get_iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _deserialize_metadata(row_dict: dict) -> dict:
+def _deserialize_metadata(row_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Deserialize metadata JSON field in a delivery row.
 
@@ -218,7 +218,7 @@ def _deserialize_metadata(row_dict: dict) -> dict:
     return row_dict
 
 
-def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
+def upsert_delivery(conn: sqlite3.Connection, data: dict[str, Any]) -> dict[str, Any]:
     """
     Insert or update a delivery record.
 
@@ -228,7 +228,7 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
 
     Args:
         conn: sqlite3.Connection
-        data: dict with delivery data. Must contain 'source_path'.
+        data: dict[str, Any] with delivery data. Must contain 'source_path'.
 
     Returns:
         dict: The full row as a dict (with sqlite3.Row converted to dict).
@@ -328,7 +328,7 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     return None  # type: ignore[return-value]
 
 
-def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
+def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict[str, Any] | None:
     """
     Retrieve a delivery by ID.
 
@@ -348,7 +348,9 @@ def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
     return None
 
 
-def list_deliveries(conn: sqlite3.Connection, filters: dict) -> tuple[list[dict], int]:
+def list_deliveries(
+    conn: sqlite3.Connection, filters: dict[str, Any]
+) -> tuple[list[dict[str, Any]], int]:
     """
     List deliveries with optional filtering and pagination.
 
@@ -363,7 +365,7 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> tuple[list[dict]
 
     Args:
         conn: sqlite3.Connection
-        filters: dict of filter keys and values
+        filters: dict[str, Any] of filter keys and values
 
     Returns:
         tuple: (list of delivery dicts, total count matching filters)
@@ -428,7 +430,7 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> tuple[list[dict]
 
 def get_actionable(
     conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
     Get actionable deliveries matching per-lexicon actionable statuses.
 
@@ -438,7 +440,7 @@ def get_actionable(
 
     Args:
         conn: sqlite3.Connection
-        lexicon_actionable: dict mapping lexicon_id to list of actionable status values
+        lexicon_actionable: dict[str, Any] mapping lexicon_id to list of actionable status values
 
     Returns:
         list: List of actionable delivery dicts
@@ -466,7 +468,9 @@ def get_actionable(
     return [_deserialize_metadata(dict(row)) for row in rows]
 
 
-def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -> dict | None:
+def update_delivery(
+    conn: sqlite3.Connection, delivery_id: str, updates: dict[str, Any]
+) -> dict[str, Any] | None:
     """
     Update a delivery by ID.
 
@@ -477,7 +481,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     Args:
         conn: sqlite3.Connection
         delivery_id: The delivery ID to update
-        updates: dict of fields to update
+        updates: dict[str, Any] of fields to update
 
     Returns:
         dict: The updated delivery row as a dict, or None if not found
@@ -531,7 +535,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     return None
 
 
-def get_token_by_hash(conn: sqlite3.Connection, token_hash: str) -> dict | None:
+def get_token_by_hash(conn: sqlite3.Connection, token_hash: str) -> dict[str, Any] | None:
     """
     Look up a token by its SHA-256 hash.
 
@@ -548,9 +552,9 @@ def insert_event(
     conn: sqlite3.Connection,
     event_type: str,
     delivery_id: str,
-    payload: dict,
+    payload: dict[str, Any],
     username: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Insert an event record and return it with the assigned sequence number.
 
@@ -594,7 +598,7 @@ def get_events_after(
     conn: sqlite3.Connection,
     after_seq: int,
     limit: int = 100,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
     Retrieve events with seq greater than after_seq, ordered by seq ascending.
 

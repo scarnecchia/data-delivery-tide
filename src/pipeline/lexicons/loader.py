@@ -36,7 +36,7 @@ def _discover_lexicon_files(lexicons_dir: Path) -> dict[str, Path]:
 
 
 def _resolve_inheritance_order(
-    raw_lexicons: dict[str, dict],
+    raw_lexicons: dict[str, dict[str, Any]],
 ) -> list[str]:
     """Return lexicon IDs in topological order (bases before children).
 
@@ -65,7 +65,7 @@ def _resolve_inheritance_order(
 
 
 def _check_inheritance_depth(
-    raw_lexicons: dict[str, dict],
+    raw_lexicons: dict[str, dict[str, Any]],
 ) -> list[str]:
     """Check that no inheritance chain exceeds MAX_INHERITANCE_DEPTH."""
     errors: list[str] = []
@@ -81,7 +81,7 @@ def _check_inheritance_depth(
     return errors
 
 
-def _deep_merge(base: dict, child: dict) -> dict:
+def _deep_merge(base: dict[str, Any], child: dict[str, Any]) -> dict[str, Any]:
     """Merge child into base. Child keys win. Nested dicts merged recursively."""
     result = dict(base)
     for key, value in child.items():
@@ -94,9 +94,9 @@ def _deep_merge(base: dict, child: dict) -> dict:
 
 def _resolve_single(
     lid: str,
-    raw_lexicons: dict[str, dict],
-    resolved: dict[str, dict],
-) -> dict:
+    raw_lexicons: dict[str, dict[str, Any]],
+    resolved: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     """Resolve a single lexicon, merging with its base if extends is set."""
     data = raw_lexicons[lid]
     extends = data.get("extends")
@@ -123,7 +123,8 @@ def _import_hook(hook_path: str) -> Callable[..., Any]:
     """
     module_path, _, attr_name = hook_path.rpartition(":")
     module = importlib.import_module(module_path)
-    return getattr(module, attr_name)
+    hook: Callable[..., Any] = getattr(module, attr_name)
+    return hook
 
 
 def _validate_sub_dirs(lexicons: dict[str, Lexicon]) -> list[str]:
@@ -144,7 +145,7 @@ def _validate_sub_dirs(lexicons: dict[str, Lexicon]) -> list[str]:
     return errors
 
 
-def _validate_lexicon(lid: str, data: dict) -> list[str]:
+def _validate_lexicon(lid: str, data: dict[str, Any]) -> list[str]:
     """Validate a single resolved lexicon dict. Return list of error strings."""
     errors: list[str] = []
     statuses = set(data.get("statuses", []))
@@ -180,7 +181,7 @@ def _validate_lexicon(lid: str, data: dict) -> list[str]:
     return errors
 
 
-def _build_lexicon(data: dict, hook: Callable[..., Any] | None) -> Lexicon:
+def _build_lexicon(data: dict[str, Any], hook: Callable[..., Any] | None) -> Lexicon:
     """Convert a validated dict to a frozen Lexicon dataclass."""
     metadata_fields = {}
     for name, field_def in data.get("metadata_fields", {}).items():
@@ -217,7 +218,7 @@ def load_all_lexicons(lexicons_dir: str | Path) -> dict[str, Lexicon]:
     if not file_map:
         raise LexiconLoadError([f"no lexicon files found in {lexicons_dir}"])
 
-    raw: dict[str, dict] = {}
+    raw: dict[str, dict[str, Any]] = {}
     parse_errors: list[str] = []
     for lid, path in file_map.items():
         try:
@@ -239,14 +240,14 @@ def load_all_lexicons(lexicons_dir: str | Path) -> dict[str, Lexicon]:
 
     all_errors.extend(_check_inheritance_depth(raw))
 
-    resolved: dict[str, dict] = {}
+    resolved: dict[str, dict[str, Any]] = {}
     for lid in order:
         resolved[lid] = _resolve_single(lid, raw, resolved)
 
     for lid, data in resolved.items():
         all_errors.extend(_validate_lexicon(lid, data))
 
-    hook_map: dict[str, object | None] = {}
+    hook_map: dict[str, Callable[..., Any] | None] = {}
     for lid, data in resolved.items():
         hook_path = data.get("derive_hook")
         if hook_path:

@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-import pyarrow as pa
+import pyarrow as pa  # type: ignore[import-untyped]
 from pyreadstat import PyreadstatError, ReadstatError
 
 ErrorClass = Literal[

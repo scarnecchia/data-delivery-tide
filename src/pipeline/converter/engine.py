@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pipeline.converter import http as converter_http
 from pipeline.converter.classify import classify_exception
@@ -43,8 +43,8 @@ def convert_one(
     compression: str,
     dp_id_exclusions: set[str] | None = None,
     log_dir: str | None = None,
-    http_module: HttpModuleProtocol = converter_http,  # type: ignore[assignment]
-    convert_fn: ConvertSasToParquetFnProtocol = convert_sas_to_parquet,  # type: ignore[assignment]
+    http_module: HttpModuleProtocol = converter_http,
+    convert_fn: ConvertSasToParquetFnProtocol = convert_sas_to_parquet,
 ) -> ConversionResult:
     logger = get_logger("converter", log_dir=log_dir)
 
@@ -113,7 +113,7 @@ def convert_one(
     # Convert each SAS file.
     parquet_dir = _build_parquet_dir(source_path_str)
     successes: list[tuple[str, int, int]] = []  # (parquet_filename, row_count, bytes_written)
-    failures: dict[str, dict] = {}  # sas_filename -> error dict
+    failures: dict[str, dict[str, Any]] = {}  # sas_filename -> error dict
     wrote_at: str | None = None
 
     for sas_file in sas_files:
@@ -172,7 +172,7 @@ def convert_one(
             "at": now,
             "converter_version": converter_version,
         }
-        patch_body: dict = {
+        patch_body: dict[str, Any] = {
             "metadata": {
                 "conversion_error": error_dict,
                 "conversion_errors": failures,
@@ -187,7 +187,7 @@ def convert_one(
                 exc_info=True,
             )
 
-        event_payload = {
+        event_payload: dict[str, Any] = {
             "delivery_id": delivery_id,
             "error_class": "multi_file_failure",
             "error_message": error_dict["message"],
@@ -231,7 +231,7 @@ def convert_one(
 
     http_module.patch_delivery(api_url, delivery_id, patch_body)
 
-    event_payload = {
+    completion_payload: dict[str, Any] = {
         "delivery_id": delivery_id,
         "output_path": str(parquet_dir),
         "file_count": len(successes),
@@ -240,7 +240,7 @@ def convert_one(
         "failed_count": len(failures),
         "wrote_at": wrote_at,
     }
-    http_module.emit_event(api_url, "conversion.completed", delivery_id, event_payload)
+    http_module.emit_event(api_url, "conversion.completed", delivery_id, completion_payload)
 
     logger.info(
         "converted",

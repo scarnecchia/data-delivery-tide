@@ -3,6 +3,7 @@
 import argparse
 import sys
 from collections.abc import Generator
+from typing import Any
 
 from pipeline.config import settings
 from pipeline.converter import http as converter_http
@@ -75,8 +76,8 @@ def _in_shard(delivery_id: str, shard: tuple[int, int] | None) -> bool:
 def _iter_unconverted(
     api_url: str,
     page_size: int,
-    http_module: HttpModuleProtocol = converter_http,  # type: ignore[assignment]
-) -> Generator[dict, None, None]:
+    http_module: HttpModuleProtocol = converter_http,
+) -> Generator[dict[str, Any], None, None]:
     """
     Generator yielding delivery dicts one at a time, paging under the covers.
 

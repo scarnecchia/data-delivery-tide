@@ -9,9 +9,10 @@ the shape without inheriting from any concrete class.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from pathlib import Path
 
     from pipeline.converter.convert import ConversionMetadata
@@ -22,15 +23,19 @@ if TYPE_CHECKING:
 class HttpModuleProtocol(Protocol):
     """Shape of `pipeline.converter.http` as consumed by engine + cli."""
 
-    def get_delivery(self, api_url: str, delivery_id: str) -> dict: ...
+    def get_delivery(self, api_url: str, delivery_id: str) -> dict[str, Any]: ...
 
-    def patch_delivery(self, api_url: str, delivery_id: str, updates: dict) -> dict: ...
+    def patch_delivery(
+        self, api_url: str, delivery_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]: ...
 
-    def list_unconverted(self, api_url: str, after: str = "", limit: int = 200) -> list[dict]: ...
+    def list_unconverted(
+        self, api_url: str, after: str = "", limit: int = 200
+    ) -> list[dict[str, Any]]: ...
 
     def emit_event(
-        self, api_url: str, event_type: str, delivery_id: str, payload: dict
-    ) -> dict: ...
+        self, api_url: str, event_type: str, delivery_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
 
 
 class ConvertOneFnProtocol(Protocol):
@@ -69,5 +74,5 @@ class ConsumerFactoryProtocol(Protocol):
     def __call__(
         self,
         api_url: str,
-        on_event: object,
+        on_event: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> EventConsumer: ...
