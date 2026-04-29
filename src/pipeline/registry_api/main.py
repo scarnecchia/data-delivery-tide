@@ -1,5 +1,6 @@
 # pattern: Imperative Shell
 import hashlib
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -12,7 +13,7 @@ from pipeline.registry_api.routes import public_router, protected_router
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Lifespan context manager for FastAPI application.
 
@@ -31,7 +32,11 @@ app.include_router(protected_router)
 
 
 @app.websocket("/ws/events")
-async def websocket_events(websocket: WebSocket, db: DbDep, token: str = Query(default=None)):
+async def websocket_events(
+    websocket: WebSocket,
+    db: DbDep,
+    token: str | None = Query(default=None),
+) -> None:
     """
     One-way broadcast channel for delivery lifecycle events.
 
@@ -64,7 +69,7 @@ async def websocket_events(websocket: WebSocket, db: DbDep, token: str = Query(d
         manager.disconnect(websocket)
 
 
-def run():
+def run() -> None:
     """
     Entrypoint for the registry-api script.
 

@@ -100,10 +100,10 @@ def load_config(path: str | None = None) -> PipelineConfig:
     )
 
 
-_settings = None
+_settings: PipelineConfig | None = None
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> PipelineConfig:
     global _settings
     if name == "settings":
         if _settings is None:

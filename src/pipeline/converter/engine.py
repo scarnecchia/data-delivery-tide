@@ -8,6 +8,10 @@ from typing import Literal
 from pipeline.converter import http as converter_http
 from pipeline.converter.classify import classify_exception
 from pipeline.converter.convert import convert_sas_to_parquet
+from pipeline.converter.protocols import (
+    ConvertSasToParquetFnProtocol,
+    HttpModuleProtocol,
+)
 from pipeline.json_logging import get_logger
 
 
@@ -38,8 +42,8 @@ def convert_one(
     compression: str,
     dp_id_exclusions: set[str] | None = None,
     log_dir: str | None = None,
-    http_module=converter_http,
-    convert_fn=convert_sas_to_parquet,
+    http_module: HttpModuleProtocol = converter_http,  # type: ignore[assignment]
+    convert_fn: ConvertSasToParquetFnProtocol = convert_sas_to_parquet,  # type: ignore[assignment]
 ) -> ConversionResult:
     logger = get_logger("converter", log_dir=log_dir)
 

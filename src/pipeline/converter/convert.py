@@ -4,10 +4,10 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
 
 import pandas as pd
 import pyarrow as pa
@@ -90,7 +90,7 @@ def convert_sas_to_parquet(
     chunk_size: int = 100_000,
     compression: str = "zstd",
     converter_version: str = "0.1.0",
-    chunk_iter_factory=_iter_sas_chunks,
+    chunk_iter_factory: Callable[[Path, int], Iterator[tuple[pd.DataFrame, object]]] = _iter_sas_chunks,
 ) -> ConversionMetadata:
     """
     Stream a SAS7BDAT file to a Parquet file, one chunk per row group.

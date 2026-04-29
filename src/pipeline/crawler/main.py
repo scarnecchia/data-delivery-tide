@@ -1,10 +1,11 @@
 # pattern: Imperative Shell
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
 
-from pipeline.config import settings
+from pipeline.config import PipelineConfig, ScanRoot, settings
 from pipeline.json_logging import get_logger
 from pipeline.crawler.parser import parse_path, derive_statuses, ParsedDelivery, ParseError
 from pipeline.crawler.fingerprint import compute_fingerprint, FileEntry
@@ -32,10 +33,10 @@ def inventory_files(source_path: str) -> list[FileEntry]:
 
 
 def walk_roots(
-    scan_roots: list,
+    scan_roots: list[ScanRoot],
     valid_terminals: set[str],
     exclusions: set[str] | None = None,
-    logger=None,
+    logger: logging.Logger | None = None,
 ) -> list[tuple[str, str]]:
     """Find all terminal directories under configured scan roots.
 
@@ -132,7 +133,7 @@ def walk_roots(
     return results
 
 
-def crawl(config, logger, token: str | None = None) -> int:
+def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = None) -> int:
     """Run a full crawl cycle. Returns count of deliveries processed.
 
     Two-pass approach:
@@ -319,7 +320,7 @@ def crawl(config, logger, token: str | None = None) -> int:
     return processed
 
 
-def main():
+def main() -> None:
     """Entry point for `python -m pipeline.crawler.main`."""
     config = settings
     logger = get_logger("crawler", log_dir=config.log_dir)

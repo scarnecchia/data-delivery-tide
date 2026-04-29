@@ -1,7 +1,7 @@
 # pattern: Imperative Shell
 
 import hashlib
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -58,13 +58,18 @@ def require_auth(
 AuthDep = Annotated[TokenInfo, Depends(require_auth)]
 
 
-def require_role(minimum: str):
+def require_role(minimum: str) -> Any:
     """
     Dependency factory that enforces minimum role level.
 
     Usage: Depends(require_role("write"))
 
     Role hierarchy: admin > write > read
+
+    Note: returns FastAPI's opaque ``Depends(...)`` value. Annotated as ``Any``
+    (per design #19 AC1.5) because exposing FastAPI's private ``Depends`` type
+    would leak internal coupling. Callers use the returned value as a default
+    parameter value in route signatures.
     """
 
     def _check_role(token: AuthDep) -> TokenInfo:

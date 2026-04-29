@@ -60,6 +60,7 @@ def persist_last_seq(state_path: Path, seq: int) -> None:
 
 from pipeline.config import settings
 from pipeline.converter.engine import convert_one
+from pipeline.converter.protocols import ConsumerFactoryProtocol, ConvertOneFnProtocol
 from pipeline.events.consumer import EventConsumer
 from pipeline.json_logging import get_logger
 
@@ -86,8 +87,8 @@ class DaemonRunner:
         compression: str,
         dp_id_exclusions: set[str] | None = None,
         log_dir: str | None,
-        consumer_factory=EventConsumer,
-        convert_one_fn=convert_one,
+        consumer_factory: ConsumerFactoryProtocol = EventConsumer,  # type: ignore[assignment]
+        convert_one_fn: ConvertOneFnProtocol = convert_one,  # type: ignore[assignment]
     ) -> None:
         self.api_url = api_url
         self.state_path = Path(state_path)

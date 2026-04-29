@@ -6,7 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 import httpx
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class EventConsumer:
                 logger.warning("Disconnected from %s, reconnecting...", ws_url)
                 continue
 
-    async def _session(self, websocket) -> None:
+    async def _session(self, websocket: ClientConnection) -> None:
         """
         Handle a single WebSocket session: catch up, then listen.
 
@@ -98,7 +98,7 @@ class EventConsumer:
                 except Exception:
                     logger.debug("buffer task raised unexpected exception", exc_info=True)
 
-    async def _buffer_ws(self, websocket) -> None:
+    async def _buffer_ws(self, websocket: ClientConnection) -> None:
         """Buffer incoming WS events while catch-up is in progress."""
         try:
             async for raw in websocket:

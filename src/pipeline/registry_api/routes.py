@@ -62,7 +62,7 @@ def _validate_source_path(source_path: str, scan_roots: list) -> None:
 
 
 @public_router.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
 
@@ -72,8 +72,8 @@ async def create_delivery(
     data: DeliveryCreate,
     db: DbDep,
     request: Request,
-    token: TokenInfo = require_role("write"),
-):
+    token: TokenInfo = require_role("write"),  # type: ignore[assignment]
+) -> dict:
     """
     Create or upsert a delivery.
 
@@ -117,7 +117,9 @@ async def create_delivery(
 
 
 @protected_router.get("/deliveries", response_model=PaginatedDeliveryResponse)
-async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
+async def list_all_deliveries(
+    db: DbDep, filters: DeliveryFilters = Depends()
+) -> PaginatedDeliveryResponse:
     """
     List deliveries with optional filtering and pagination.
 
@@ -141,7 +143,7 @@ async def list_all_deliveries(db: DbDep, filters: DeliveryFilters = Depends()):
 
 
 @protected_router.get("/deliveries/actionable", response_model=list[DeliveryResponse])
-async def get_actionable_deliveries(db: DbDep, request: Request):
+async def get_actionable_deliveries(db: DbDep, request: Request) -> list[dict]:
     """
     Get actionable deliveries (not yet converted to Parquet) based on lexicon definitions.
 
@@ -158,7 +160,7 @@ async def get_actionable_deliveries(db: DbDep, request: Request):
 
 
 @protected_router.get("/deliveries/{delivery_id}", response_model=DeliveryResponse)
-async def get_single_delivery(delivery_id: str, db: DbDep):
+async def get_single_delivery(delivery_id: str, db: DbDep) -> dict:
     """
     Retrieve a delivery by ID.
 
@@ -176,8 +178,8 @@ async def update_single_delivery(
     data: DeliveryUpdate,
     db: DbDep,
     request: Request,
-    token: TokenInfo = require_role("write"),
-):
+    token: TokenInfo = require_role("write"),  # type: ignore[assignment]
+) -> dict:
     """
     Partially update a delivery.
 
@@ -257,7 +259,7 @@ async def update_single_delivery(
 
 
 @protected_router.get("/events", response_model=list[EventRecord])
-async def get_events(db: DbDep, after: int, limit: int = 100):
+async def get_events(db: DbDep, after: int, limit: int = 100) -> list[dict]:
     """
     Retrieve events after a given sequence number for consumer catch-up.
 
@@ -271,7 +273,11 @@ async def get_events(db: DbDep, after: int, limit: int = 100):
 
 
 @protected_router.post("/events", response_model=EventRecord, status_code=201)
-async def emit_event(data: EventCreate, db: DbDep, token: TokenInfo = require_role("write")):
+async def emit_event(
+    data: EventCreate,
+    db: DbDep,
+    token: TokenInfo = require_role("write"),  # type: ignore[assignment]
+) -> dict:
     """
     Emit a converter lifecycle event.
 
