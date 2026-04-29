@@ -1,3 +1,4 @@
+# pattern: test file
 """Test that hardcoded QA status references don't exist in the codebase.
 
 This test acts as a static analysis gate to prevent hardcoded qa_status and

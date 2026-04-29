@@ -1,3 +1,4 @@
+# pattern: test file
 import hashlib
 import sqlite3
 import pytest

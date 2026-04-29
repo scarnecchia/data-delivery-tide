@@ -1,3 +1,4 @@
+# pattern: test file
 """Tests for EventConsumer.
 
 Tests exercise actual consumer methods (_catch_up, _session)

@@ -1,3 +1,4 @@
+# pattern: test file
 import argparse
 import hashlib
 import sqlite3
