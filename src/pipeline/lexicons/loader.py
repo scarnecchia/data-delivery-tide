@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import importlib
 import json
+from collections.abc import Callable
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
+from typing import Any
 
 from pipeline.lexicons.models import Lexicon, MetadataField
 
@@ -110,8 +112,15 @@ def _resolve_single(
     return data
 
 
-def _import_hook(hook_path: str) -> object:
-    """Import a hook from a dotted path like 'pipeline.lexicons.soc.qa:derive'."""
+def _import_hook(hook_path: str) -> Callable[..., Any]:
+    """Import a hook from a dotted path like 'pipeline.lexicons.soc.qa:derive'.
+
+    Returns a callable matching the ``derive_hook`` shape:
+    ``(list[ParsedDelivery], Lexicon) -> list[ParsedDelivery]``. Typed as
+    ``Callable[..., Any]`` (per design #19 AC4.2) because importing
+    ``ParsedDelivery`` here would violate the lexicons -> crawler boundary.
+    The actual hook signature is enforced by ``Lexicon.derive_hook``.
+    """
     module_path, _, attr_name = hook_path.rpartition(":")
     module = importlib.import_module(module_path)
     return getattr(module, attr_name)
@@ -178,7 +187,7 @@ def _validate_lexicon(lid: str, data: dict) -> list[str]:
     return errors
 
 
-def _build_lexicon(data: dict, hook: object | None) -> Lexicon:
+def _build_lexicon(data: dict, hook: Callable[..., Any] | None) -> Lexicon:
     """Convert a validated dict to a frozen Lexicon dataclass."""
     metadata_fields = {}
     for name, field_def in data.get("metadata_fields", {}).items():
