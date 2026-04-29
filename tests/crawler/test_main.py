@@ -41,12 +41,26 @@ class TestWalkRoots:
         """AC2.4: Crawler processes deliveries from multiple scan roots."""
         # Root 1
         scan_root1 = tmp_path / "requests" / "qa"
-        v1_path = scan_root1 / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        v1_path = (
+            scan_root1
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         v1_path.mkdir(parents=True)
 
         # Root 2
         scan_root2 = tmp_path / "requests" / "qm"
-        v2_path = scan_root2 / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc_new"
+        v2_path = (
+            scan_root2
+            / "nsdp"
+            / "packages"
+            / "soc_qar_wp002"
+            / "soc_qar_wp002_nsdp_v01"
+            / "msoc_new"
+        )
         v2_path.mkdir(parents=True)
 
         scan_roots = [
@@ -63,7 +77,14 @@ class TestWalkRoots:
         """AC2.5: Non-existent scan_root is skipped (does not cause error)."""
         existing_root = tmp_path / "requests" / "qa"
         existing_root.mkdir(parents=True)
-        v1_path = existing_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        v1_path = (
+            existing_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         v1_path.mkdir(parents=True)
 
         missing_root = tmp_path / "nonexistent"
@@ -84,10 +105,14 @@ class TestWalkRoots:
         scan_root.mkdir(parents=True)
 
         # Create msoc under 'compare' directory, not under 'packages' (target)
-        compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        compare_msoc = (
+            scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        )
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty — the msoc under 'compare' should not be discovered
@@ -102,7 +127,9 @@ class TestWalkRoots:
         msoc_wrong_depth = scan_root / "mkscnr" / "msoc"
         msoc_wrong_depth.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
@@ -114,10 +141,20 @@ class TestWalkRoots:
         scan_root.mkdir(parents=True)
 
         # Create msoc with an extra nesting level
-        msoc_nested = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "subdir" / "msoc"
+        msoc_nested = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "subdir"
+            / "msoc"
+        )
         msoc_nested.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
@@ -129,13 +166,24 @@ class TestWalkRoots:
         scan_root.mkdir(parents=True)
 
         # Create two dpids with valid msoc at canonical depth
-        dpid1_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        dpid1_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         dpid1_msoc.mkdir(parents=True)
 
-        dpid2_msoc = scan_root / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc"
+        dpid2_msoc = (
+            scan_root / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc"
+        )
         dpid2_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
@@ -150,13 +198,29 @@ class TestWalkRoots:
         scan_root.mkdir(parents=True)
 
         # Create one dpid with one request_id containing two version directories
-        v1_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        v1_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         v1_msoc.mkdir(parents=True)
 
-        v2_msoc_new = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc_new"
+        v2_msoc_new = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc_new"
+        )
         v2_msoc_new.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
@@ -175,7 +239,9 @@ class TestWalkRoots:
         dpid_dir.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         # Assert warning was logged
@@ -194,11 +260,20 @@ class TestWalkRoots:
         scan_root.mkdir(parents=True)
 
         # Create valid delivery with target directory
-        msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         msoc.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         # Assert warning was NOT logged
@@ -213,10 +288,14 @@ class TestWalkRoots:
         scan_root.mkdir(parents=True)
 
         # Create msoc under 'compare' directory (custom target)
-        compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        compare_msoc = (
+            scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        )
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="compare")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="compare")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Should discover msoc under custom target
@@ -228,10 +307,19 @@ class TestWalkRoots:
         scan_root = tmp_path / "requests" / "qa"
 
         for dpid in ("mkscnr", "nsdp", "othrdp"):
-            d = scan_root / dpid / "packages" / f"soc_qar_wp001" / f"soc_qar_wp001_{dpid}_v01" / "msoc"
+            d = (
+                scan_root
+                / dpid
+                / "packages"
+                / f"soc_qar_wp001"
+                / f"soc_qar_wp001_{dpid}_v01"
+                / "msoc"
+            )
             d.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, exclusions={"nsdp"})
 
         dpid_dirs = {p.split("/")[-5] for p, _ in results}
@@ -337,12 +425,26 @@ class TestCrawl:
         scan_root.mkdir(parents=True)
 
         # v01 pending
-        v1_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc_new"
+        v1_path = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc_new"
+        )
         v1_path.mkdir(parents=True)
         (v1_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
 
         # v02 pending
-        v2_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc_new"
+        v2_path = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc_new"
+        )
         v2_path.mkdir(parents=True)
         (v2_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -412,7 +514,9 @@ class TestCrawl:
         scan_root.mkdir(parents=True)
 
         # Create a delivery with excluded dp_id
-        excluded_path = scan_root / "nsdp" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_nsdp_v01" / "msoc"
+        excluded_path = (
+            scan_root / "nsdp" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_nsdp_v01" / "msoc"
+        )
         excluded_path.mkdir(parents=True)
 
         config = make_crawler_config(
@@ -442,16 +546,19 @@ class TestCrawl:
 
         # dpid folder is "nsdp" (excluded), but version dir encodes dp_id "mkscnr"
         sneaky_path = (
-            scan_root / "nsdp" / "packages" / "soc_qar_wp001"
-            / "soc_qar_wp001_mkscnr_v01" / "msoc"
+            scan_root / "nsdp" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
         )
         sneaky_path.mkdir(parents=True)
         (sneaky_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
 
         # Also create a normal non-excluded delivery
         normal_path = (
-            scan_root / "othrdp" / "packages" / "soc_qar_wp002"
-            / "soc_qar_wp002_othrdp_v01" / "msoc"
+            scan_root
+            / "othrdp"
+            / "packages"
+            / "soc_qar_wp002"
+            / "soc_qar_wp002_othrdp_v01"
+            / "msoc"
         )
         normal_path.mkdir(parents=True)
         (normal_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
@@ -584,9 +691,7 @@ class TestCrawlAuth:
     """Token forwarding from crawl() to post_delivery()."""
 
     @patch("pipeline.crawler.main.post_delivery")
-    def test_token_forwarded_to_post_delivery(
-        self, mock_post, delivery_tree, make_crawler_config
-    ):
+    def test_token_forwarded_to_post_delivery(self, mock_post, delivery_tree, make_crawler_config):
         """crawl() forwards token kwarg to post_delivery()."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -607,9 +712,7 @@ class TestCrawlAuth:
         assert kwargs["token"] == "my-secret-token"
 
     @patch("pipeline.crawler.main.post_delivery")
-    def test_no_token_forwards_none(
-        self, mock_post, delivery_tree, make_crawler_config
-    ):
+    def test_no_token_forwards_none(self, mock_post, delivery_tree, make_crawler_config):
         """crawl() without token passes token=None to post_delivery()."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -630,14 +733,11 @@ class TestCrawlAuth:
         assert kwargs["token"] is None
 
 
-
 class TestSubDeliveryDiscovery:
     """sub-deliveries.AC4.1-AC4.8 — Crawler sub-directory discovery."""
 
     @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_created_when_sub_dir_exists(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_sub_delivery_created_when_sub_dir_exists(self, mock_post, sub_delivery_setup):
         """AC4.1, AC4.2: Sub-delivery created when sub-dir exists, with correct source_path."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -656,9 +756,7 @@ class TestSubDeliveryDiscovery:
         assert sub_payload["source_path"].endswith("scdm_snapshot")
 
     @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_inherits_parent_identity(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_sub_delivery_inherits_parent_identity(self, mock_post, sub_delivery_setup):
         """AC4.3: Sub-delivery inherits request_id, project, workplan_id, dp_id, version from parent."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -680,9 +778,7 @@ class TestSubDeliveryDiscovery:
         assert sub_payload["version"] == parent_payload["version"] == "v01"
 
     @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_inherits_parent_status(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_sub_delivery_inherits_parent_status(self, mock_post, sub_delivery_setup):
         """AC4.4: Sub-delivery inherits status from parent's dir_map resolution."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -700,9 +796,7 @@ class TestSubDeliveryDiscovery:
         assert sub_payload["status"] == "passed"
 
     @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_has_own_delivery_id(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_sub_delivery_has_own_delivery_id(self, mock_post, sub_delivery_setup):
         """AC4.5: Sub-delivery has its own delivery_id (SHA-256 of its source_path)."""
         import hashlib
 
@@ -731,9 +825,7 @@ class TestSubDeliveryDiscovery:
         assert manifest_content["delivery_id"] == expected_sub_delivery_id
 
     @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_has_own_file_inventory(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_sub_delivery_has_own_file_inventory(self, mock_post, sub_delivery_setup):
         """AC4.6: Sub-delivery has its own file inventory and fingerprint."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent1.sas7bdat", 100), ("parent2.sas7bdat", 200)],
@@ -763,7 +855,14 @@ class TestSubDeliveryDiscovery:
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         parent_path.mkdir(parents=True)
         (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -794,7 +893,14 @@ class TestSubDeliveryDiscovery:
         scan_root.mkdir(parents=True)
 
         # Create v01 (pending from msoc_new)
-        parent_v1 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc_new"
+        parent_v1 = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc_new"
+        )
         parent_v1.mkdir(parents=True)
         (parent_v1 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -803,7 +909,14 @@ class TestSubDeliveryDiscovery:
         (sub_v1 / "sub.sas7bdat").write_bytes(b"\x00" * 50)
 
         # Create v02 (passed from msoc)
-        parent_v2 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc"
+        parent_v2 = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc"
+        )
         parent_v2.mkdir(parents=True)
         (parent_v2 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -828,19 +941,29 @@ class TestSubDeliveryDiscovery:
         payloads = [call[0][1] for call in mock_post.call_args_list]
 
         # v01 parent is pending (from msoc_new)
-        v1_parent = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" not in p["source_path"])
+        v1_parent = next(
+            p for p in payloads if p["version"] == "v01" and "scdm_snapshot" not in p["source_path"]
+        )
         # v01 sub inherits parent status (pending)
-        v1_sub = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" in p["source_path"])
+        v1_sub = next(
+            p for p in payloads if p["version"] == "v01" and "scdm_snapshot" in p["source_path"]
+        )
         # v02 parent is passed (from msoc)
-        v2_parent = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" not in p["source_path"])
+        v2_parent = next(
+            p for p in payloads if p["version"] == "v02" and "scdm_snapshot" not in p["source_path"]
+        )
         # v02 sub inherits parent status (passed)
-        v2_sub = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" in p["source_path"])
+        v2_sub = next(
+            p for p in payloads if p["version"] == "v02" and "scdm_snapshot" in p["source_path"]
+        )
 
         # After derivation, v01_parent should be failed (superseded by v02)
         # v01_sub inherited parent's initial status (pending) and keeps it
         # (soc.scdm has no derive_hook, so derivation doesn't affect it)
         assert v1_parent["status"] == "failed"
-        assert v1_sub["status"] == "pending"  # Inherited parent's initial status, not affected by parent's derivation
+        assert (
+            v1_sub["status"] == "pending"
+        )  # Inherited parent's initial status, not affected by parent's derivation
         assert v2_parent["status"] == "passed"
         assert v2_sub["status"] == "passed"  # Inherited parent's initial status
 
@@ -851,9 +974,7 @@ class TestMain:
     @patch("pipeline.crawler.main.settings")
     @patch("pipeline.crawler.main.get_logger")
     @patch("pipeline.crawler.main.crawl")
-    def test_ac5_4_registry_unreachable_exits_nonzero(
-        self, mock_crawl, mock_logger, mock_settings
-    ):
+    def test_ac5_4_registry_unreachable_exits_nonzero(self, mock_crawl, mock_logger, mock_settings):
         """AC5.4: Crawler exits non-zero when RegistryUnreachableError is raised."""
         mock_crawl.side_effect = RegistryUnreachableError("connection refused")
         mock_settings.log_dir = "/tmp"
@@ -890,7 +1011,14 @@ class TestWalkRootsOSErrorLogging:
         bad_root = tmp_path / "bad"
         bad_root.mkdir()
         good_root = tmp_path / "good"
-        good_msoc = good_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        good_msoc = (
+            good_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         good_msoc.mkdir(parents=True)
 
         self._patch_scandir_to_fail_on(monkeypatch, str(bad_root))
@@ -905,8 +1033,11 @@ class TestWalkRootsOSErrorLogging:
         # Sibling scan_root produced its terminal — continue semantics preserved.
         assert (str(good_msoc), str(good_root)) in results
 
-        warn_calls = [c for c in logger.warning.call_args_list
-                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
         assert len(warn_calls) == 1
         assert warn_calls[0][1]["extra"]["path"] == str(bad_root)
         assert warn_calls[0][1]["exc_info"] is True
@@ -915,19 +1046,26 @@ class TestWalkRootsOSErrorLogging:
         scan_root = tmp_path / "qa"
         bad_target = scan_root / "bad" / "packages"
         bad_target.mkdir(parents=True)
-        good_msoc = scan_root / "good" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_good_v01" / "msoc"
+        good_msoc = (
+            scan_root / "good" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_good_v01" / "msoc"
+        )
         good_msoc.mkdir(parents=True)
 
         self._patch_scandir_to_fail_on(monkeypatch, str(bad_target))
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         assert (str(good_msoc), str(scan_root)) in results
 
-        warn_calls = [c for c in logger.warning.call_args_list
-                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
         assert len(warn_calls) == 1
         assert warn_calls[0][1]["extra"]["path"] == str(bad_target)
         assert warn_calls[0][1]["exc_info"] is True
@@ -938,19 +1076,31 @@ class TestWalkRootsOSErrorLogging:
         bad_request = scan_root / "mkscnr" / "packages" / "bad_request"
         bad_request.mkdir(parents=True)
         # sibling good request that yields a terminal
-        good_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        good_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         good_msoc.mkdir(parents=True)
 
         self._patch_scandir_to_fail_on(monkeypatch, str(bad_request))
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         assert (str(good_msoc), str(scan_root)) in results
 
-        warn_calls = [c for c in logger.warning.call_args_list
-                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
         assert len(warn_calls) == 1
         assert warn_calls[0][1]["extra"]["path"] == str(bad_request)
         assert warn_calls[0][1]["exc_info"] is True
@@ -961,19 +1111,31 @@ class TestWalkRootsOSErrorLogging:
         bad_version = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "bad_version"
         bad_version.mkdir(parents=True)
         # sibling good version dir with a terminal
-        good_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc"
+        good_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc"
+        )
         good_msoc.mkdir(parents=True)
 
         self._patch_scandir_to_fail_on(monkeypatch, str(bad_version))
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         assert (str(good_msoc), str(scan_root)) in results
 
-        warn_calls = [c for c in logger.warning.call_args_list
-                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
         assert len(warn_calls) == 1
         assert warn_calls[0][1]["extra"]["path"] == str(bad_version)
         assert warn_calls[0][1]["exc_info"] is True
@@ -985,6 +1147,8 @@ class TestWalkRootsOSErrorLogging:
 
         self._patch_scandir_to_fail_on(monkeypatch, str(bad_root))
 
-        scan_roots = [ScanRoot(path=str(bad_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(bad_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
         assert results == []

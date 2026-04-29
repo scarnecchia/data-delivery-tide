@@ -36,10 +36,7 @@ def get_events(db):
     cursor = db.cursor()
     cursor.execute("SELECT * FROM events ORDER BY seq ASC")
     rows = cursor.fetchall()
-    return [
-        {**dict(row), "payload": json.loads(dict(row)["payload"])}
-        for row in rows
-    ]
+    return [{**dict(row), "payload": json.loads(dict(row)["payload"])} for row in rows]
 
 
 class TestHealth:
@@ -331,7 +328,9 @@ class TestUpdateDelivery:
 
         # PATCH only output_path
         update_payload = {"output_path": "/new/output/path"}
-        response = client.patch(f"/deliveries/{delivery_id}", json=update_payload, headers=auth_headers)
+        response = client.patch(
+            f"/deliveries/{delivery_id}", json=update_payload, headers=auth_headers
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -516,7 +515,6 @@ class TestUpdateDelivery:
         assert "passed_at" in data["metadata"]
         # Verify it's an ISO datetime string
         assert "T" in data["metadata"]["passed_at"]
-
 
 
 class TestLexiconValidation:
@@ -857,7 +855,11 @@ class TestDeliveryStatusChangedEvents:
 
         events_after = get_events(test_db)
         # Should have exactly one more event (the status_changed)
-        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        new_events = (
+            [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)]
+            if events_before
+            else events_after
+        )
         assert len(new_events) == 1
         event = new_events[0]
         assert event["event_type"] == "delivery.status_changed"
@@ -885,7 +887,11 @@ class TestDeliveryStatusChangedEvents:
         assert patch_response.status_code == 200
 
         events_after = get_events(test_db)
-        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        new_events = (
+            [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)]
+            if events_before
+            else events_after
+        )
         assert len(new_events) == 1
         event = new_events[0]
         assert event["event_type"] == "delivery.status_changed"
@@ -913,7 +919,11 @@ class TestDeliveryStatusChangedEvents:
         assert patch_response.status_code == 200
 
         events_after = get_events(test_db)
-        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        new_events = (
+            [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)]
+            if events_before
+            else events_after
+        )
         assert len(new_events) == 1
         event = new_events[0]
         # Payload should reflect new status
@@ -939,7 +949,11 @@ class TestDeliveryStatusChangedEvents:
 
         events_after = get_events(test_db)
         # Filter for events after the POST event
-        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        new_events = (
+            [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)]
+            if events_before
+            else events_after
+        )
         assert len(new_events) == 0  # No event should be created for non-status changes
 
     def test_no_event_on_same_status_patch(self, client, test_db, auth_headers):
@@ -963,14 +977,20 @@ class TestDeliveryStatusChangedEvents:
         assert patch_response.status_code == 200
 
         events_after = get_events(test_db)
-        new_events = [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)] if events_before else events_after
+        new_events = (
+            [e for e in events_after if e["seq"] > max(ev["seq"] for ev in events_before)]
+            if events_before
+            else events_after
+        )
         assert len(new_events) == 0  # No event should be created
 
 
 class TestEventPayloadShape:
     """Test event payload shape contains new lexicon system fields (AC6.1-AC6.3)."""
 
-    def test_ac6_1_delivery_created_contains_lexicon_id_status_metadata(self, client, test_db, auth_headers):
+    def test_ac6_1_delivery_created_contains_lexicon_id_status_metadata(
+        self, client, test_db, auth_headers
+    ):
         """AC6.1: delivery.created event payload contains lexicon_id, status, metadata."""
         payload = make_delivery_payload(
             source_path="/data/ac6-1-test",
@@ -1008,7 +1028,9 @@ class TestEventPayloadShape:
         assert isinstance(payload_dict["metadata"], dict)
         assert payload_dict["metadata"].get("custom_field") == "custom_value"
 
-    def test_ac6_2_delivery_status_changed_contains_status_and_metadata(self, client, test_db, auth_headers):
+    def test_ac6_2_delivery_status_changed_contains_status_and_metadata(
+        self, client, test_db, auth_headers
+    ):
         """AC6.2: delivery.status_changed event payload contains updated status and metadata."""
         # Create with pending status
         payload = make_delivery_payload(
@@ -1056,7 +1078,9 @@ class TestEventPayloadShape:
         # Verify it's a valid ISO timestamp
         datetime.fromisoformat(payload_dict["metadata"]["passed_at"])
 
-    def test_ac6_3_delivery_created_does_not_contain_old_field_names(self, client, test_db, auth_headers):
+    def test_ac6_3_delivery_created_does_not_contain_old_field_names(
+        self, client, test_db, auth_headers
+    ):
         """AC6.3: delivery.created event payload does not contain qa_status or qa_passed_at."""
         payload = make_delivery_payload(
             source_path="/data/ac6-3-created-test",
@@ -1084,7 +1108,9 @@ class TestEventPayloadShape:
         assert "qa_status" not in payload_dict
         assert "qa_passed_at" not in payload_dict
 
-    def test_ac6_3_delivery_status_changed_does_not_contain_old_field_names(self, client, test_db, auth_headers):
+    def test_ac6_3_delivery_status_changed_does_not_contain_old_field_names(
+        self, client, test_db, auth_headers
+    ):
         """AC6.3: delivery.status_changed event payload does not contain qa_status or qa_passed_at."""
         # Create with pending status
         payload = make_delivery_payload(
@@ -1276,10 +1302,7 @@ class TestEmitEvent:
 
         # Verify event was persisted
         events = get_events(test_db)
-        conversion_events = [
-            e for e in events
-            if e["event_type"] == "conversion.completed"
-        ]
+        conversion_events = [e for e in events if e["event_type"] == "conversion.completed"]
         assert len(conversion_events) == 1
         assert conversion_events[0]["delivery_id"] == delivery_id
 
@@ -1506,6 +1529,7 @@ class TestSubDeliveryIntegration:
         assert sub_event["event_type"] == "delivery.created"
         assert sub_event["payload"]["lexicon_id"] == "test.sub"
         assert sub_event["payload"]["source_path"] == "/data/sub-event-test"
+
 
 class TestHealthNoAuth:
     """Test that /health is accessible without authentication."""
@@ -1749,6 +1773,7 @@ class TestWebSocketAuth:
     def test_ws_connect_without_token_rejected(self, client):
         """WebSocket connection without token is rejected with 1008."""
         from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+
         with pytest.raises(StarletteWSDisconnect) as exc_info:
             with client.websocket_connect("/ws/events"):
                 pass
@@ -1757,6 +1782,7 @@ class TestWebSocketAuth:
     def test_ws_connect_with_invalid_token_rejected(self, client, auth_headers):
         """WebSocket connection with invalid token is rejected with 1008."""
         from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
+
         with pytest.raises(StarletteWSDisconnect) as exc_info:
             with client.websocket_connect("/ws/events?token=bogus-token"):
                 pass
@@ -1773,7 +1799,13 @@ class TestWebSocketAuth:
         cursor = test_db.cursor()
         cursor.execute(
             "INSERT INTO tokens (token_hash, username, role, created_at, revoked_at) VALUES (?, ?, ?, ?, ?)",
-            (token_hash, "revoked-user", "read", "2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00"),
+            (
+                token_hash,
+                "revoked-user",
+                "read",
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-02T00:00:00+00:00",
+            ),
         )
         test_db.commit()
 

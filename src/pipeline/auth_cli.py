@@ -69,7 +69,9 @@ def cmd_list_users(args: argparse.Namespace) -> int:
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT username, role, created_at, revoked_at FROM tokens ORDER BY created_at")
+        cursor.execute(
+            "SELECT username, role, created_at, revoked_at FROM tokens ORDER BY created_at"
+        )
         rows = cursor.fetchall()
 
         if not rows:

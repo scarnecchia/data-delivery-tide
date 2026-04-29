@@ -14,7 +14,9 @@ class TestParsePathSuccess:
     def test_standard_path_with_msoc_status_passed(self):
         """AC1.1: Standard path returns correct metadata with status=passed."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.request_id == "soc_qar_wp001"
@@ -30,7 +32,9 @@ class TestParsePathSuccess:
     def test_path_with_msoc_new_status_pending(self):
         """AC1.2: Path ending in msoc_new returns status=pending."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc_new"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.status == "pending"
@@ -38,7 +42,9 @@ class TestParsePathSuccess:
     def test_dp_id_at_minimum_boundary_3_chars(self):
         """AC1.3: dp_id with exactly 3 characters parses successfully."""
         path = "/requests/qa/abc/packages/soc_qar_wp001/soc_qar_wp001_abc_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.dp_id == "abc"
@@ -46,7 +52,9 @@ class TestParsePathSuccess:
     def test_dp_id_at_maximum_boundary_8_chars(self):
         """AC1.3: dp_id with exactly 8 characters parses successfully."""
         path = "/requests/qa/abcdefgh/packages/soc_qar_wp001/soc_qar_wp001_abcdefgh_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.dp_id == "abcdefgh"
@@ -54,7 +62,9 @@ class TestParsePathSuccess:
     def test_version_v01_format(self):
         """AC1.4: Version string v01 parses correctly."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.version == "v01"
@@ -62,7 +72,9 @@ class TestParsePathSuccess:
     def test_version_v1_format(self):
         """AC1.4: Version string v1 parses correctly."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v1/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.version == "v1"
@@ -70,7 +82,9 @@ class TestParsePathSuccess:
     def test_version_v10_format(self):
         """AC1.4: Version string v10 parses correctly."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v10/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.version == "v10"
@@ -78,7 +92,9 @@ class TestParsePathSuccess:
     def test_different_scan_root_one(self):
         """AC1.5: Same relative path under different scan_root returns correct scan_root."""
         path = "/requests/qm/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qm", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qm", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.scan_root == "/requests/qm"
@@ -86,15 +102,21 @@ class TestParsePathSuccess:
     def test_different_scan_root_two(self):
         """AC1.5: Same relative path under another scan_root returns correct scan_root."""
         path = "/requests/qad/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qad", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qad", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.scan_root == "/requests/qad"
 
     def test_request_id_with_more_than_3_segments(self):
         """AC1.10: Request ID with >3 segments parses with remaining parts in workplan_id."""
-        path = "/requests/qa/mkscnr/packages/soc_qar_wp001_extra/soc_qar_wp001_extra_mkscnr_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        path = (
+            "/requests/qa/mkscnr/packages/soc_qar_wp001_extra/soc_qar_wp001_extra_mkscnr_v01/msoc"
+        )
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.request_id == "soc_qar_wp001_extra"
@@ -109,7 +131,9 @@ class TestParsePathFailure:
     def test_dp_id_too_short_2_chars(self):
         """AC1.6: dp_id with 2 characters returns ParseError."""
         path = "/requests/qa/ab/packages/soc_qar_wp001/soc_qar_wp001_ab_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParseError)
         assert result.raw_path == path
@@ -118,7 +142,9 @@ class TestParsePathFailure:
     def test_dp_id_too_long_9_chars(self):
         """AC1.6: dp_id with 9 characters returns ParseError."""
         path = "/requests/qa/abcdefghi/packages/soc_qar_wp001/soc_qar_wp001_abcdefghi_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParseError)
         assert result.raw_path == path
@@ -127,7 +153,9 @@ class TestParsePathFailure:
     def test_missing_version_segment(self):
         """AC1.7: Directory name missing _v<digits> suffix returns ParseError with 'version' in reason."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParseError)
         assert "version" in result.reason.lower()
@@ -136,7 +164,9 @@ class TestParsePathFailure:
     def test_path_ending_in_neither_msoc_nor_msoc_new(self):
         """AC1.8: Path not ending in msoc or msoc_new returns ParseError with 'dir_map' in reason."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/data"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParseError)
         assert "dir_map" in result.reason.lower()
@@ -145,7 +175,9 @@ class TestParsePathFailure:
     def test_path_too_short_missing_version_dir(self):
         """Edge case: Path too short to contain version directory."""
         path = "/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions=set(), dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParseError)
         assert result.raw_path == path
@@ -157,21 +189,30 @@ class TestParsePathEdgeCases:
     def test_excluded_dp_id_returns_none(self):
         """AC1.9: dp_id in exclusion set returns None (expected, not error)."""
         path = "/requests/qa/nsdp/packages/soc_qar_wp001/soc_qar_wp001_nsdp_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions={"nsdp"}, dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions={"nsdp"}, dir_map=STANDARD_DIR_MAP
+        )
 
         assert result is None
 
     def test_excluded_dp_id_among_multiple_exclusions(self):
         """AC1.9: Excluded dp_id returns None even with multiple exclusions."""
         path = "/requests/qa/nsdp/packages/soc_qar_wp001/soc_qar_wp001_nsdp_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions={"nsdp", "other", "excluded"}, dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path,
+            scan_root="/requests/qa",
+            exclusions={"nsdp", "other", "excluded"},
+            dir_map=STANDARD_DIR_MAP,
+        )
 
         assert result is None
 
     def test_non_excluded_dp_id_with_exclusions_set(self):
         """AC1.9: Non-excluded dp_id parses successfully even with exclusions set."""
         path = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc"
-        result = parse_path(path, scan_root="/requests/qa", exclusions={"nsdp", "other"}, dir_map=STANDARD_DIR_MAP)
+        result = parse_path(
+            path, scan_root="/requests/qa", exclusions={"nsdp", "other"}, dir_map=STANDARD_DIR_MAP
+        )
 
         assert isinstance(result, ParsedDelivery)
         assert result.dp_id == "mkscnr"
@@ -358,7 +399,9 @@ class TestLexiconSystemAC5:
         assert isinstance(result_passed, ParsedDelivery)
         assert result_passed.status == "passed"
 
-        path_pending = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc_new"
+        path_pending = (
+            "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/msoc_new"
+        )
         result_pending = parse_path(
             path_pending,
             scan_root="/requests/qa",
@@ -370,7 +413,9 @@ class TestLexiconSystemAC5:
 
         # Test with custom dir_map
         custom_dir_map = {"approved": "passed", "staging": "pending", "rejected": "failed"}
-        path_custom_approved = "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/approved"
+        path_custom_approved = (
+            "/requests/qa/mkscnr/packages/soc_qar_wp001/soc_qar_wp001_mkscnr_v01/approved"
+        )
         result_custom = parse_path(
             path_custom_approved,
             scan_root="/requests/qa",

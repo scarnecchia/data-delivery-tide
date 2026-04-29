@@ -530,6 +530,7 @@ class TestMetadataSizeValidation:
     def test_create_accepts_exactly_at_limit(self):
         """Metadata at exactly 64KB is accepted."""
         import json
+
         # Build a payload that serializes to exactly 65536 bytes
         # {"d": "aaa..."} — overhead is len('{"d": ""}') = 9 bytes
         filler = "a" * (65_536 - 9)

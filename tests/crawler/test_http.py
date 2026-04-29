@@ -56,7 +56,10 @@ class TestPostDeliverySuccess:
                         {},
                         None,
                     ),
-                    MagicMock(__enter__=MagicMock(return_value=mock_response), __exit__=MagicMock(return_value=False)),
+                    MagicMock(
+                        __enter__=MagicMock(return_value=mock_response),
+                        __exit__=MagicMock(return_value=False),
+                    ),
                 ]
 
                 result = post_delivery("http://localhost:8000", payload)
@@ -79,7 +82,10 @@ class TestPostDeliverySuccess:
 
                 mock_urlopen.side_effect = [
                     urllib.error.URLError("Connection refused"),
-                    MagicMock(__enter__=MagicMock(return_value=mock_response), __exit__=MagicMock(return_value=False)),
+                    MagicMock(
+                        __enter__=MagicMock(return_value=mock_response),
+                        __exit__=MagicMock(return_value=False),
+                    ),
                 ]
 
                 result = post_delivery("http://localhost:8000", payload)

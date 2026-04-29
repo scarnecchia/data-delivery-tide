@@ -54,17 +54,10 @@ def lexicons_dir(tmp_path):
     soc_base = {
         "id": "soc._base",
         "statuses": ["pending", "passed", "failed"],
-        "transitions": {
-            "pending": ["passed", "failed"],
-            "passed": [],
-            "failed": []
-        },
-        "dir_map": {
-            "msoc": "passed",
-            "msoc_new": "pending"
-        },
+        "transitions": {"pending": ["passed", "failed"], "passed": [], "failed": []},
+        "dir_map": {"msoc": "passed", "msoc_new": "pending"},
         "actionable_statuses": ["passed", "failed"],
-        "metadata_fields": {}
+        "metadata_fields": {},
     }
 
     soc_base_path = lexicons_dir / "soc" / "_base.json"
@@ -76,12 +69,7 @@ def lexicons_dir(tmp_path):
     soc_qar = {
         "extends": "soc._base",
         "derive_hook": "pipeline.lexicons.soc.qa:derive",
-        "metadata_fields": {
-            "passed_at": {
-                "type": "datetime",
-                "set_on": "passed"
-            }
-        }
+        "metadata_fields": {"passed_at": {"type": "datetime", "set_on": "passed"}},
     }
 
     soc_qar_path = lexicons_dir / "soc" / "qar.json"
@@ -92,17 +80,10 @@ def lexicons_dir(tmp_path):
     soc_scdm = {
         "id": "soc.scdm",
         "statuses": ["pending", "passed", "failed"],
-        "transitions": {
-            "pending": ["passed", "failed"],
-            "passed": [],
-            "failed": []
-        },
-        "dir_map": {
-            "scdm": "passed",
-            "scdm_new": "pending"
-        },
+        "transitions": {"pending": ["passed", "failed"], "passed": [], "failed": []},
+        "dir_map": {"scdm": "passed", "scdm_new": "pending"},
         "actionable_statuses": ["passed", "failed"],
-        "metadata_fields": {}
+        "metadata_fields": {},
     }
 
     soc_scdm_path = lexicons_dir / "soc" / "scdm.json"
@@ -115,6 +96,7 @@ def lexicons_dir(tmp_path):
 @pytest.fixture
 def make_crawler_config(tmp_path, lexicons_dir):
     """Factory for creating config objects for crawler tests."""
+
     def _make(scan_roots=None, manifest_dir=None, **overrides):
         if scan_roots is None:
             scan_roots = []
@@ -160,7 +142,9 @@ def make_crawler_config(tmp_path, lexicons_dir):
             converter_version=config_dict.get("converter_version", "0.1.0"),
             converter_chunk_size=config_dict.get("converter_chunk_size", 100_000),
             converter_compression=config_dict.get("converter_compression", "zstd"),
-            converter_state_path=config_dict.get("converter_state_path", "pipeline/.converter_state.json"),
+            converter_state_path=config_dict.get(
+                "converter_state_path", "pipeline/.converter_state.json"
+            ),
             converter_cli_batch_size=config_dict.get("converter_cli_batch_size", 200),
             converter_cli_sleep_empty_secs=config_dict.get("converter_cli_sleep_empty_secs", 0),
         )
@@ -178,6 +162,7 @@ def sub_delivery_setup(tmp_path, make_crawler_config, lexicons_dir):
     3. Patches soc.qar lexicon with sub_dirs configuration
     4. Returns (scan_root_path, config, parent_path, sub_path) tuple
     """
+
     def _make(
         parent_files=None,
         sub_files=None,
@@ -201,7 +186,14 @@ def sub_delivery_setup(tmp_path, make_crawler_config, lexicons_dir):
         scan_root.mkdir(parents=True)
 
         terminal = "msoc" if parent_status == "passed" else "msoc_new"
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / terminal
+        parent_path = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / terminal
+        )
         parent_path.mkdir(parents=True)
 
         # Create parent files

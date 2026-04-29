@@ -8,8 +8,16 @@ class TestComputeFingerprint:
     def test_determinism_same_file_list_produces_same_fingerprint(self):
         """AC8.2: Repeated calls with same files produce identical fingerprint."""
         files: list[FileEntry] = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
-            {"filename": "file2.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T11:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
+            {
+                "filename": "file2.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
         ]
 
         fp1 = compute_fingerprint(files)
@@ -20,12 +28,28 @@ class TestComputeFingerprint:
     def test_ordering_invariance_different_order_same_fingerprint(self):
         """AC8.2: Files in different order produce identical fingerprint."""
         files_ordered = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
-            {"filename": "file2.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T11:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
+            {
+                "filename": "file2.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
         ]
         files_reversed = [
-            {"filename": "file2.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T11:00:00Z"},
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file2.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
 
         fp_ordered = compute_fingerprint(files_ordered)
@@ -36,10 +60,18 @@ class TestComputeFingerprint:
     def test_change_detection_different_filename(self):
         """AC8.2: Different filename produces different fingerprint."""
         files_original = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
         files_changed = [
-            {"filename": "file1_modified.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file1_modified.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
 
         fp_original = compute_fingerprint(files_original)
@@ -50,10 +82,18 @@ class TestComputeFingerprint:
     def test_change_detection_different_size(self):
         """AC8.2: Different size_bytes produces different fingerprint."""
         files_original = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
         files_changed = [
-            {"filename": "file1.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
 
         fp_original = compute_fingerprint(files_original)
@@ -64,10 +104,18 @@ class TestComputeFingerprint:
     def test_change_detection_different_modified_at(self):
         """AC8.2: Different modified_at produces different fingerprint."""
         files_original = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
         files_changed = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T11:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
         ]
 
         fp_original = compute_fingerprint(files_original)
@@ -88,7 +136,11 @@ class TestComputeFingerprint:
     def test_single_file(self):
         """Additional: Single file works correctly."""
         files: list[FileEntry] = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
 
         fp = compute_fingerprint(files)
@@ -99,7 +151,11 @@ class TestComputeFingerprint:
     def test_fingerprint_format(self):
         """Additional: Fingerprint has correct format sha256:<hex>."""
         files: list[FileEntry] = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
         ]
 
         fp = compute_fingerprint(files)

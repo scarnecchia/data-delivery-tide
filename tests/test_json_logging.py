@@ -68,6 +68,7 @@ class TestJsonFormatter:
         # ISO format like "2026-04-09T10:30:45.123456+00:00"
         # Can parse as ISO without error
         from datetime import datetime
+
         ts = datetime.fromisoformat(parsed["timestamp"])
         assert ts is not None
 

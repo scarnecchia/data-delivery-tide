@@ -24,9 +24,7 @@ def inventory_files(source_path: str) -> list[FileEntry]:
                 FileEntry(
                     filename=entry.name,
                     size_bytes=stat.st_size,
-                    modified_at=datetime.fromtimestamp(
-                        stat.st_mtime, tz=timezone.utc
-                    ).isoformat(),
+                    modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
                 )
             )
     return files
@@ -127,7 +125,10 @@ def walk_roots(
                             )
                         continue
                     for terminal_entry in terminal_entries:
-                        if terminal_entry.is_dir(follow_symlinks=False) and terminal_entry.name in valid_terminals:
+                        if (
+                            terminal_entry.is_dir(follow_symlinks=False)
+                            and terminal_entry.name in valid_terminals
+                        ):
                             results.append((terminal_entry.path, root_path))
 
     return results
@@ -177,7 +178,9 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
     # --- Pass 1: Parse, inventory, fingerprint, write manifests ---
     # Collect successful deliveries with their file data for pass 2
     parsed_deliveries: list[ParsedDelivery] = []
-    delivery_data: dict[str, tuple[list[FileEntry], str, dict]] = {}  # source_path -> (files, fingerprint, manifest)
+    delivery_data: dict[
+        str, tuple[list[FileEntry], str, dict]
+    ] = {}  # source_path -> (files, fingerprint, manifest)
     delivery_lexicons: dict[str, tuple[str, object]] = {}  # source_path -> (lexicon_id, lexicon)
 
     for source_path, scan_root in candidates:
@@ -190,7 +193,9 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
 
         if isinstance(result, ParseError):
             filename, error_manifest = build_error_manifest(
-                result, config.crawler_version, now,
+                result,
+                config.crawler_version,
+                now,
             )
             error_path = os.path.join(error_dir, f"{filename}.json")
             with open(error_path, "w") as f:
@@ -205,7 +210,12 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
         files = inventory_files(source_path)
         fingerprint = compute_fingerprint(files)
         manifest = build_manifest(
-            result, files, fingerprint, config.crawler_version, now, lexicon_id,
+            result,
+            files,
+            fingerprint,
+            config.crawler_version,
+            now,
+            lexicon_id,
         )
 
         # Write crawl manifest
@@ -230,7 +240,11 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
                 # Log and skip defensively.
                 logger.warning(
                     "sub_dirs references unknown lexicon, skipping",
-                    extra={"source_path": source_path, "sub_dir": sub_dir_name, "lexicon_id": sub_lexicon_id},
+                    extra={
+                        "source_path": source_path,
+                        "sub_dir": sub_dir_name,
+                        "lexicon_id": sub_lexicon_id,
+                    },
                 )
                 continue
 
@@ -249,8 +263,12 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
             sub_files = inventory_files(sub_path)
             sub_fingerprint = compute_fingerprint(sub_files)
             sub_manifest = build_manifest(
-                sub_delivery, sub_files, sub_fingerprint,
-                config.crawler_version, now, sub_lexicon_id,
+                sub_delivery,
+                sub_files,
+                sub_fingerprint,
+                config.crawler_version,
+                now,
+                sub_lexicon_id,
             )
 
             sub_delivery_id = sub_manifest["delivery_id"]
@@ -331,13 +349,9 @@ def main() -> None:
         crawl(config, logger, token=token)
     except RegistryClientError as exc:
         if exc.status_code == 401:
-            logger.error(
-                "registry authentication failed — set REGISTRY_TOKEN environment variable"
-            )
+            logger.error("registry authentication failed — set REGISTRY_TOKEN environment variable")
         elif exc.status_code == 403:
-            logger.error(
-                "registry authorization failed — token lacks required role (needs write)"
-            )
+            logger.error("registry authorization failed — token lacks required role (needs write)")
         else:
             logger.error(
                 "registry client error",

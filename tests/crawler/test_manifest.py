@@ -57,14 +57,24 @@ class TestBuildManifest:
         """AC3.1: Manifest contains all required fields."""
         parsed = make_parsed_delivery()
         files: list[FileEntry] = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
-            {"filename": "file2.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T11:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
+            {
+                "filename": "file2.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
         ]
         fingerprint = "sha256:abc123"
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest = build_manifest(
+            parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         assert "crawled_at" in manifest
         assert "crawler_version" in manifest
@@ -87,7 +97,9 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest = build_manifest(
+            parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         expected_delivery_id = hashlib.sha256(parsed.source_path.encode()).hexdigest()
         assert manifest["delivery_id"] == expected_delivery_id
@@ -96,14 +108,24 @@ class TestBuildManifest:
         """AC3.3: files array contains all entries with filename, size_bytes, modified_at."""
         parsed = make_parsed_delivery()
         files: list[FileEntry] = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
-            {"filename": "file2.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T11:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
+            {
+                "filename": "file2.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
         ]
         fingerprint = "sha256:abc"
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest = build_manifest(
+            parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         assert len(manifest["files"]) == 2
         assert manifest["files"][0]["filename"] == "file1.sas7bdat"
@@ -121,7 +143,9 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = "2026-04-09T15:30:00Z"
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest = build_manifest(
+            parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         assert manifest["crawler_version"] == "0.1.0"
         assert manifest["crawled_at"] == "2026-04-09T15:30:00Z"
@@ -130,14 +154,24 @@ class TestBuildManifest:
         """Manifest file_count matches number of files."""
         parsed = make_parsed_delivery()
         files: list[FileEntry] = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
-            {"filename": "file2.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T11:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
+            {
+                "filename": "file2.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
         ]
         fingerprint = "sha256:abc"
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest = build_manifest(
+            parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         assert manifest["file_count"] == 2
 
@@ -145,14 +179,24 @@ class TestBuildManifest:
         """Manifest total_bytes is sum of all file sizes."""
         parsed = make_parsed_delivery()
         files: list[FileEntry] = [
-            {"filename": "file1.sas7bdat", "size_bytes": 1024, "modified_at": "2026-04-01T10:00:00Z"},
-            {"filename": "file2.sas7bdat", "size_bytes": 2048, "modified_at": "2026-04-01T11:00:00Z"},
+            {
+                "filename": "file1.sas7bdat",
+                "size_bytes": 1024,
+                "modified_at": "2026-04-01T10:00:00Z",
+            },
+            {
+                "filename": "file2.sas7bdat",
+                "size_bytes": 2048,
+                "modified_at": "2026-04-01T11:00:00Z",
+            },
         ]
         fingerprint = "sha256:abc"
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest = build_manifest(
+            parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         assert manifest["total_bytes"] == 3072
 
@@ -171,7 +215,9 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest = build_manifest(parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest = build_manifest(
+            parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         assert manifest["parsed"]["request_id"] == "proj_type_wpid"
         assert manifest["parsed"]["project"] == "proj"
@@ -189,8 +235,12 @@ class TestBuildManifest:
         crawler_version = "0.1.0"
         crawled_at = datetime.now(timezone.utc).isoformat()
 
-        manifest_passed = build_manifest(parsed_passed, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
-        manifest_pending = build_manifest(parsed_pending, files, fingerprint, crawler_version, crawled_at, "test.lexicon")
+        manifest_passed = build_manifest(
+            parsed_passed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
+        manifest_pending = build_manifest(
+            parsed_pending, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
+        )
 
         assert manifest_passed["status"] == "passed"
         assert manifest_pending["status"] == "pending"

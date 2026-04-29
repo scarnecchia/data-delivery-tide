@@ -103,7 +103,9 @@ class TestAddUser:
 
     def test_add_user_token_is_urlsafe(self, cli_db, capsys):
         """registry-auth.AC5.2: Token is generated with secrets.token_urlsafe(32)."""
-        with patch("pipeline.auth_cli.secrets.token_urlsafe", return_value="mocked-token-value") as mock_urlsafe:
+        with patch(
+            "pipeline.auth_cli.secrets.token_urlsafe", return_value="mocked-token-value"
+        ) as mock_urlsafe:
             args = argparse.Namespace(username="urlsafe_user", role="read")
             cmd_add_user(args)
             mock_urlsafe.assert_called_once_with(32)

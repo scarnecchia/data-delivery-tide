@@ -33,9 +33,7 @@ def _migrate_events_check_constraint(conn: sqlite3.Connection) -> None:
     cursor = conn.cursor()
 
     # Check if events table exists
-    cursor.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='events'"
-    )
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='events'")
     row = cursor.fetchone()
     if row is None:
         # Fresh DB with no events table yet, migration not needed
@@ -139,15 +137,9 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_actionable ON deliveries (lexicon_id, status, parquet_converted_at)"
         )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_dp_wp ON deliveries (dp_id, workplan_id)"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_request_id ON deliveries (request_id)"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_lexicon ON deliveries (lexicon_id)"
-        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_dp_wp ON deliveries (dp_id, workplan_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_request_id ON deliveries (request_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lexicon ON deliveries (lexicon_id)")
 
         # Create the tokens table
         cursor.execute(
@@ -382,7 +374,16 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> tuple[list[dict]
     where_clauses = []
     params = []
 
-    exact_match_fields = ["dp_id", "project", "request_type", "workplan_id", "request_id", "status", "lexicon_id", "scan_root"]
+    exact_match_fields = [
+        "dp_id",
+        "project",
+        "request_type",
+        "workplan_id",
+        "request_id",
+        "status",
+        "lexicon_id",
+        "scan_root",
+    ]
 
     for field in exact_match_fields:
         if field in filters:
@@ -425,7 +426,9 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> tuple[list[dict]
     return [_deserialize_metadata(dict(row)) for row in rows], total
 
 
-def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]) -> list[dict]:
+def get_actionable(
+    conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]
+) -> list[dict]:
     """
     Get actionable deliveries matching per-lexicon actionable statuses.
 

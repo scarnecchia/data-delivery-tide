@@ -99,7 +99,9 @@ class TestRequireAuth:
     def test_revoked_token_returns_401(self, auth_db, auth_client):
         """registry-auth.AC1.4: Request with revoked token returns 401."""
         raw_token = "test-token-revoked"
-        _seed_token(auth_db, "revokeduser", "read", raw_token, revoked_at="2026-01-02T00:00:00+00:00")
+        _seed_token(
+            auth_db, "revokeduser", "read", raw_token, revoked_at="2026-01-02T00:00:00+00:00"
+        )
 
         response = auth_client.get(
             "/protected",

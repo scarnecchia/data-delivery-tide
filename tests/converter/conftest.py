@@ -65,6 +65,7 @@ def sas_fixture_factory(tmp_path):
         )
         # path is now a .sav file that can be read with sav_chunk_iter_factory
     """
+
     def _make(
         *,
         df: pd.DataFrame,

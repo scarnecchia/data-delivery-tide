@@ -59,16 +59,14 @@ def _file_metadata_bytes(
     JSON for the dict-shaped fields; plain UTF-8 bytes for scalars.
     """
     return {
-        b"sas_labels":        json.dumps(column_labels).encode("utf-8"),
-        b"sas_value_labels":  json.dumps(value_labels, default=str).encode("utf-8"),
-        b"sas_encoding":      (sas_encoding or "").encode("utf-8"),
+        b"sas_labels": json.dumps(column_labels).encode("utf-8"),
+        b"sas_value_labels": json.dumps(value_labels, default=str).encode("utf-8"),
+        b"sas_encoding": (sas_encoding or "").encode("utf-8"),
         b"converter_version": converter_version.encode("utf-8"),
     }
 
 
-def _iter_sas_chunks(
-    source_path: Path, chunk_size: int
-) -> Iterator[tuple[pd.DataFrame, object]]:
+def _iter_sas_chunks(source_path: Path, chunk_size: int) -> Iterator[tuple[pd.DataFrame, object]]:
     """
     Thin wrapper around pyreadstat.read_file_in_chunks so tests can pass a
     fake iterator (Dependency Inversion light — see convert_sas_to_parquet).
@@ -90,7 +88,9 @@ def convert_sas_to_parquet(
     chunk_size: int = 100_000,
     compression: str = "zstd",
     converter_version: str = "0.1.0",
-    chunk_iter_factory: Callable[[Path, int], Iterator[tuple[pd.DataFrame, object]]] = _iter_sas_chunks,
+    chunk_iter_factory: Callable[
+        [Path, int], Iterator[tuple[pd.DataFrame, object]]
+    ] = _iter_sas_chunks,
 ) -> ConversionMetadata:
     """
     Stream a SAS7BDAT file to a Parquet file, one chunk per row group.
@@ -129,7 +129,9 @@ def convert_sas_to_parquet(
     try:
         chunks = chunk_iter_factory(source_path, chunk_size)
         for df, meta in chunks:
-            file_metadata_obj = meta  # identical per pyreadstat API; capture once, harmless to rebind
+            file_metadata_obj = (
+                meta  # identical per pyreadstat API; capture once, harmless to rebind
+            )
 
             if writer is None:
                 # First chunk — derive schema, attach file metadata, open writer.
@@ -141,7 +143,9 @@ def convert_sas_to_parquet(
 
                 first_table = pa.Table.from_pandas(df, preserve_index=False)
                 schema_with_meta = first_table.schema.with_metadata(
-                    _file_metadata_bytes(column_labels, value_labels, sas_encoding, converter_version)
+                    _file_metadata_bytes(
+                        column_labels, value_labels, sas_encoding, converter_version
+                    )
                 )
                 locked_schema = schema_with_meta
                 writer = pq.ParquetWriter(tmp_path, schema_with_meta, compression=compression)
@@ -156,9 +160,7 @@ def convert_sas_to_parquet(
             try:
                 table = pa.Table.from_pandas(df, preserve_index=False, schema=locked_schema)
             except (pa.lib.ArrowTypeError, pa.lib.ArrowInvalid, KeyError) as exc:
-                raise SchemaDriftError(
-                    f"chunk schema differs from locked schema: {exc}"
-                ) from exc
+                raise SchemaDriftError(f"chunk schema differs from locked schema: {exc}") from exc
 
             writer.write_table(table)
             row_count += table.num_rows
@@ -196,12 +198,10 @@ def convert_sas_to_parquet(
         getattr(file_metadata_obj, "column_labels", None) if file_metadata_obj else None,
     )
     value_labels_out = (
-        getattr(file_metadata_obj, "variable_value_labels", {}) or {}
-        if file_metadata_obj else {}
+        getattr(file_metadata_obj, "variable_value_labels", {}) or {} if file_metadata_obj else {}
     )
     sas_encoding_out = (
-        getattr(file_metadata_obj, "file_encoding", "") or ""
-        if file_metadata_obj else ""
+        getattr(file_metadata_obj, "file_encoding", "") or "" if file_metadata_obj else ""
     )
 
     return ConversionMetadata(

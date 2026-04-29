@@ -104,13 +104,17 @@ async def create_delivery(
     is_new = not delivery_exists(db, delivery_id)
 
     db_data = data.model_dump()
-    db_data["metadata"] = json.dumps(db_data.get("metadata") if db_data.get("metadata") is not None else {})
+    db_data["metadata"] = json.dumps(
+        db_data.get("metadata") if db_data.get("metadata") is not None else {}
+    )
 
     result = upsert_delivery(db, db_data)
 
     if is_new:
         response = DeliveryResponse(**result)
-        event = insert_event(db, "delivery.created", delivery_id, response.model_dump(), username=token.username)
+        event = insert_event(
+            db, "delivery.created", delivery_id, response.model_dump(), username=token.username
+        )
         await manager.broadcast(event)
 
     return result
@@ -220,7 +224,9 @@ async def update_single_delivery(
 
         # Metadata is returned from db.py deserialized as dict; handle both dict and string for safety
         metadata_val = old.get("metadata", {})
-        existing_metadata = metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
+        existing_metadata = (
+            metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
+        )
 
         # Merge user-supplied metadata first, then apply set_on overrides
         if "metadata" in updates and isinstance(updates["metadata"], dict):
@@ -252,7 +258,13 @@ async def update_single_delivery(
     actual_new_status = result["status"]
     if actual_new_status != old_status:
         response = DeliveryResponse(**result)
-        event = insert_event(db, "delivery.status_changed", delivery_id, response.model_dump(), username=token.username)
+        event = insert_event(
+            db,
+            "delivery.status_changed",
+            delivery_id,
+            response.model_dump(),
+            username=token.username,
+        )
         await manager.broadcast(event)
 
     return result
@@ -289,6 +301,8 @@ async def emit_event(
     if get_delivery(db, data.delivery_id) is None:
         raise HTTPException(status_code=404, detail="delivery not found")
 
-    event = insert_event(db, data.event_type, data.delivery_id, data.payload, username=token.username)
+    event = insert_event(
+        db, data.event_type, data.delivery_id, data.payload, username=token.username
+    )
     await manager.broadcast(event)
     return event

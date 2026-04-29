@@ -74,9 +74,7 @@ def _check_inheritance_depth(
             depth += 1
             current = raw_lexicons[current]["extends"]
             if depth > MAX_INHERITANCE_DEPTH:
-                errors.append(
-                    f"{lid}: inheritance depth exceeds {MAX_INHERITANCE_DEPTH}"
-                )
+                errors.append(f"{lid}: inheritance depth exceeds {MAX_INHERITANCE_DEPTH}")
                 break
     return errors
 
@@ -133,8 +131,7 @@ def _validate_sub_dirs(lexicons: dict[str, Lexicon]) -> list[str]:
         for dir_name, sub_lexicon_id in lex.sub_dirs.items():
             if sub_lexicon_id not in lexicons:
                 errors.append(
-                    f"{lid}: sub_dirs['{dir_name}'] references "
-                    f"unknown lexicon '{sub_lexicon_id}'"
+                    f"{lid}: sub_dirs['{dir_name}'] references unknown lexicon '{sub_lexicon_id}'"
                 )
             elif lexicons[sub_lexicon_id].sub_dirs:
                 errors.append(
@@ -159,22 +156,16 @@ def _validate_lexicon(lid: str, data: dict) -> list[str]:
         for target in targets:
             if target not in statuses:
                 errors.append(
-                    f"{lid}: transitions['{from_status}'] references "
-                    f"unknown status '{target}'"
+                    f"{lid}: transitions['{from_status}'] references unknown status '{target}'"
                 )
 
     for dir_name, status in data.get("dir_map", {}).items():
         if status not in statuses:
-            errors.append(
-                f"{lid}: dir_map['{dir_name}'] references unknown status '{status}'"
-            )
+            errors.append(f"{lid}: dir_map['{dir_name}'] references unknown status '{status}'")
 
     for action_status in data.get("actionable_statuses", []):
         if action_status not in statuses:
-            errors.append(
-                f"{lid}: actionable_statuses references unknown status "
-                f"'{action_status}'"
-            )
+            errors.append(f"{lid}: actionable_statuses references unknown status '{action_status}'")
 
     for field_name, field_def in data.get("metadata_fields", {}).items():
         set_on = field_def.get("set_on") if isinstance(field_def, dict) else None

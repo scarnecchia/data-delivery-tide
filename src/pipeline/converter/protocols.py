@@ -6,6 +6,7 @@ These define the shape of test seams (`http_module`, `convert_one_fn`,
 satisfies them implicitly via duck typing; tests can inject fakes that match
 the shape without inheriting from any concrete class.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
@@ -23,13 +24,9 @@ class HttpModuleProtocol(Protocol):
 
     def get_delivery(self, api_url: str, delivery_id: str) -> dict: ...
 
-    def patch_delivery(
-        self, api_url: str, delivery_id: str, updates: dict
-    ) -> dict: ...
+    def patch_delivery(self, api_url: str, delivery_id: str, updates: dict) -> dict: ...
 
-    def list_unconverted(
-        self, api_url: str, after: str = "", limit: int = 200
-    ) -> list[dict]: ...
+    def list_unconverted(self, api_url: str, after: str = "", limit: int = 200) -> list[dict]: ...
 
     def emit_event(
         self, api_url: str, event_type: str, delivery_id: str, payload: dict

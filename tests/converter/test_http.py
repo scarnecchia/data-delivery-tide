@@ -33,9 +33,7 @@ class TestGetDelivery:
 
     @patch("pipeline.converter.http.urllib.request.urlopen")
     def test_404_raises_registry_client_error(self, mock_urlopen):
-        http_err = urllib.error.HTTPError(
-            url="", code=404, msg="Not Found", hdrs=None, fp=None
-        )
+        http_err = urllib.error.HTTPError(url="", code=404, msg="Not Found", hdrs=None, fp=None)
         http_err.read = lambda: b'{"detail":"delivery not found"}'
         mock_urlopen.side_effect = http_err
 
@@ -63,9 +61,9 @@ class TestPatchDelivery:
 class TestListUnconverted:
     @patch("pipeline.converter.http.urllib.request.urlopen")
     def test_returns_list_of_delivery_dicts(self, mock_urlopen):
-        mock_urlopen.return_value = _make_urlopen_response([
-            {"delivery_id": "aaa"}, {"delivery_id": "bbb"}
-        ])
+        mock_urlopen.return_value = _make_urlopen_response(
+            [{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]
+        )
         result = list_unconverted("http://localhost:8000", after="", limit=200)
         assert result == [{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]
 

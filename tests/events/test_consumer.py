@@ -60,8 +60,20 @@ async def test_catch_up_single_page():
     consumer = EventConsumer("http://localhost:8000", on_event)
 
     events = [
-        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
-        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
+        {
+            "seq": 1,
+            "event_type": "delivery.created",
+            "delivery_id": "d1",
+            "payload": {},
+            "created_at": "t1",
+        },
+        {
+            "seq": 2,
+            "event_type": "delivery.created",
+            "delivery_id": "d2",
+            "payload": {},
+            "created_at": "t2",
+        },
     ]
 
     call_count = [0]
@@ -98,11 +110,29 @@ async def test_catch_up_pagination():
     consumer = EventConsumer("http://localhost:8000", on_event)
 
     page1 = [
-        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
-        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
+        {
+            "seq": 1,
+            "event_type": "delivery.created",
+            "delivery_id": "d1",
+            "payload": {},
+            "created_at": "t1",
+        },
+        {
+            "seq": 2,
+            "event_type": "delivery.created",
+            "delivery_id": "d2",
+            "payload": {},
+            "created_at": "t2",
+        },
     ]
     page2 = [
-        {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
+        {
+            "seq": 3,
+            "event_type": "delivery.created",
+            "delivery_id": "d3",
+            "payload": {},
+            "created_at": "t3",
+        },
     ]
     page3 = []
 
@@ -141,7 +171,15 @@ async def test_catch_up_respects_last_seq():
     consumer = EventConsumer("http://localhost:8000", on_event)
     consumer._last_seq = 10
 
-    events = [{"seq": 11, "event_type": "delivery.created", "delivery_id": "d11", "payload": {}, "created_at": "t11"}]
+    events = [
+        {
+            "seq": 11,
+            "event_type": "delivery.created",
+            "delivery_id": "d11",
+            "payload": {},
+            "created_at": "t11",
+        }
+    ]
 
     call_count = [0]
 
@@ -174,9 +212,27 @@ async def test_catch_up_calls_on_event_for_each():
     consumer = EventConsumer("http://localhost:8000", on_event)
 
     catchup_events = [
-        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
-        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
-        {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
+        {
+            "seq": 1,
+            "event_type": "delivery.created",
+            "delivery_id": "d1",
+            "payload": {},
+            "created_at": "t1",
+        },
+        {
+            "seq": 2,
+            "event_type": "delivery.created",
+            "delivery_id": "d2",
+            "payload": {},
+            "created_at": "t2",
+        },
+        {
+            "seq": 3,
+            "event_type": "delivery.created",
+            "delivery_id": "d3",
+            "payload": {},
+            "created_at": "t3",
+        },
     ]
 
     call_count = [0]
@@ -212,8 +268,20 @@ async def test_catch_up_rest_endpoint_query_uses_last_seq():
     consumer._last_seq = 5
 
     events = [
-        {"seq": 6, "event_type": "delivery.created", "delivery_id": "d6", "payload": {}, "created_at": "t6"},
-        {"seq": 7, "event_type": "delivery.created", "delivery_id": "d7", "payload": {}, "created_at": "t7"},
+        {
+            "seq": 6,
+            "event_type": "delivery.created",
+            "delivery_id": "d6",
+            "payload": {},
+            "created_at": "t6",
+        },
+        {
+            "seq": 7,
+            "event_type": "delivery.created",
+            "delivery_id": "d7",
+            "payload": {},
+            "created_at": "t7",
+        },
     ]
 
     captured_calls = []
@@ -221,7 +289,9 @@ async def test_catch_up_rest_endpoint_query_uses_last_seq():
     async def mock_get(*args, **kwargs):
         captured_calls.append((args, kwargs))
         mock_response = AsyncMock()
-        mock_response.json = lambda: events if not captured_calls or len(captured_calls) == 1 else []
+        mock_response.json = lambda: (
+            events if not captured_calls or len(captured_calls) == 1 else []
+        )
         mock_response.raise_for_status = lambda: None
         return mock_response
 
@@ -251,9 +321,33 @@ async def test_session_receives_ws_events():
 
     # Create mock WS events as JSON strings
     ws_events = [
-        json.dumps({"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"}),
-        json.dumps({"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"}),
-        json.dumps({"seq": 3, "event_type": "delivery.status_changed", "delivery_id": "d1", "payload": {}, "created_at": "t3"}),
+        json.dumps(
+            {
+                "seq": 1,
+                "event_type": "delivery.created",
+                "delivery_id": "d1",
+                "payload": {},
+                "created_at": "t1",
+            }
+        ),
+        json.dumps(
+            {
+                "seq": 2,
+                "event_type": "delivery.created",
+                "delivery_id": "d2",
+                "payload": {},
+                "created_at": "t2",
+            }
+        ),
+        json.dumps(
+            {
+                "seq": 3,
+                "event_type": "delivery.status_changed",
+                "delivery_id": "d1",
+                "payload": {},
+                "created_at": "t3",
+            }
+        ),
     ]
 
     # Create a mock WebSocket that supports async iteration
@@ -315,12 +409,28 @@ async def test_reconnection_after_disconnect():
         # Simulate catching up and listening
         if session_call_count[0] == 1:
             # First call: simulate a catch-up event
-            await consumer.on_event({"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"})
+            await consumer.on_event(
+                {
+                    "seq": 1,
+                    "event_type": "delivery.created",
+                    "delivery_id": "d1",
+                    "payload": {},
+                    "created_at": "t1",
+                }
+            )
             consumer._last_seq = 1
             raise ConnectionClosed(None, None)
         elif session_call_count[0] == 2:
             # Second call: simulate another event (reconnected)
-            await consumer.on_event({"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"})
+            await consumer.on_event(
+                {
+                    "seq": 2,
+                    "event_type": "delivery.created",
+                    "delivery_id": "d2",
+                    "payload": {},
+                    "created_at": "t2",
+                }
+            )
             consumer._last_seq = 2
             # Don't raise this time; let it succeed
 
@@ -338,6 +448,7 @@ async def test_reconnection_after_disconnect():
         with patch.object(consumer, "_session", side_effect=mock_session):
             # Run for a limited time to avoid infinite reconnection loop
             import asyncio
+
             try:
                 await asyncio.wait_for(consumer.run(), timeout=0.5)
             except asyncio.TimeoutError:
@@ -367,9 +478,27 @@ async def test_deduplication_by_seq():
 
     # Simulate catch-up delivering events 1-3
     catch_up_events = [
-        {"seq": 1, "event_type": "delivery.created", "delivery_id": "d1", "payload": {}, "created_at": "t1"},
-        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
-        {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
+        {
+            "seq": 1,
+            "event_type": "delivery.created",
+            "delivery_id": "d1",
+            "payload": {},
+            "created_at": "t1",
+        },
+        {
+            "seq": 2,
+            "event_type": "delivery.created",
+            "delivery_id": "d2",
+            "payload": {},
+            "created_at": "t2",
+        },
+        {
+            "seq": 3,
+            "event_type": "delivery.created",
+            "delivery_id": "d3",
+            "payload": {},
+            "created_at": "t3",
+        },
     ]
     for event in catch_up_events:
         await consumer.on_event(event)
@@ -377,9 +506,27 @@ async def test_deduplication_by_seq():
 
     # Simulate WS buffer containing overlapping events 2-4
     ws_buffer_events = [
-        {"seq": 2, "event_type": "delivery.created", "delivery_id": "d2", "payload": {}, "created_at": "t2"},
-        {"seq": 3, "event_type": "delivery.created", "delivery_id": "d3", "payload": {}, "created_at": "t3"},
-        {"seq": 4, "event_type": "delivery.created", "delivery_id": "d4", "payload": {}, "created_at": "t4"},
+        {
+            "seq": 2,
+            "event_type": "delivery.created",
+            "delivery_id": "d2",
+            "payload": {},
+            "created_at": "t2",
+        },
+        {
+            "seq": 3,
+            "event_type": "delivery.created",
+            "delivery_id": "d3",
+            "payload": {},
+            "created_at": "t3",
+        },
+        {
+            "seq": 4,
+            "event_type": "delivery.created",
+            "delivery_id": "d4",
+            "payload": {},
+            "created_at": "t4",
+        },
     ]
 
     received.clear()
@@ -402,11 +549,13 @@ import logging
 def _make_consumer():
     async def on_event(event):
         pass
+
     return EventConsumer("http://localhost:8000", on_event)
 
 
 class _NeverEndingWS:
     """Async iterator that hangs until cancelled, used so buffer_task ends with CancelledError."""
+
     def __aiter__(self):
         return self
 
@@ -416,6 +565,7 @@ class _NeverEndingWS:
 
 class _ExitingWS:
     """Async iterator that ends immediately so the outer `async for raw in websocket` loop exits."""
+
     def __aiter__(self):
         return self
 
@@ -437,8 +587,11 @@ async def test_session_buffer_cancelled_silent(caplog):
         # buffer_task.cancel() will land while it sleeps inside a normal iteration, raising CancelledError.
         await consumer._session(_ExitingWS())
 
-    debug_records = [r for r in caplog.records
-                     if r.name == "pipeline.events.consumer" and r.levelno == logging.DEBUG]
+    debug_records = [
+        r
+        for r in caplog.records
+        if r.name == "pipeline.events.consumer" and r.levelno == logging.DEBUG
+    ]
     assert debug_records == []
 
 
@@ -459,8 +612,11 @@ async def test_session_buffer_connection_closed_silent(caplog):
         with patch.object(consumer, "_catch_up", side_effect=noop_catch_up):
             await consumer._session(_ExitingWS())
 
-    debug_records = [r for r in caplog.records
-                     if r.name == "pipeline.events.consumer" and r.levelno == logging.DEBUG]
+    debug_records = [
+        r
+        for r in caplog.records
+        if r.name == "pipeline.events.consumer" and r.levelno == logging.DEBUG
+    ]
     assert debug_records == []
 
 
@@ -480,10 +636,13 @@ async def test_session_buffer_unexpected_exception_logged_debug(caplog):
         with patch.object(consumer, "_catch_up", side_effect=noop_catch_up):
             await consumer._session(_ExitingWS())
 
-    debug_records = [r for r in caplog.records
-                     if r.name == "pipeline.events.consumer"
-                     and r.levelno == logging.DEBUG
-                     and r.message == "buffer task raised unexpected exception"]
+    debug_records = [
+        r
+        for r in caplog.records
+        if r.name == "pipeline.events.consumer"
+        and r.levelno == logging.DEBUG
+        and r.message == "buffer task raised unexpected exception"
+    ]
     assert len(debug_records) == 1
     assert debug_records[0].exc_info is not None
     assert debug_records[0].exc_info[0] is RuntimeError
@@ -513,10 +672,13 @@ async def test_session_finally_unexpected_exception_logged_debug(caplog):
             with pytest.raises(RuntimeError, match="catch-up-boom"):
                 await consumer._session(_ExitingWS())
 
-    debug_records = [r for r in caplog.records
-                     if r.name == "pipeline.events.consumer"
-                     and r.levelno == logging.DEBUG
-                     and r.message == "buffer task raised unexpected exception"]
+    debug_records = [
+        r
+        for r in caplog.records
+        if r.name == "pipeline.events.consumer"
+        and r.levelno == logging.DEBUG
+        and r.message == "buffer task raised unexpected exception"
+    ]
     assert len(debug_records) >= 1
     assert any(r.exc_info and r.exc_info[0] is RuntimeError for r in debug_records)
 
@@ -535,8 +697,11 @@ async def test_session_finally_cancelled_silent(caplog):
         with pytest.raises(RuntimeError, match="catch-up-boom"):
             await consumer._session(_NeverEndingWS())
 
-    debug_records = [r for r in caplog.records
-                     if r.name == "pipeline.events.consumer" and r.levelno == logging.DEBUG]
+    debug_records = [
+        r
+        for r in caplog.records
+        if r.name == "pipeline.events.consumer" and r.levelno == logging.DEBUG
+    ]
     assert debug_records == []
 
 

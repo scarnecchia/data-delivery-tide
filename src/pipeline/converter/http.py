@@ -99,11 +99,13 @@ def emit_event(api_url: str, event_type: str, delivery_id: str, payload: dict) -
     the registry rejects other values with 422.
     """
     url = f"{api_url.rstrip('/')}/events"
-    body = json.dumps({
-        "event_type": event_type,
-        "delivery_id": delivery_id,
-        "payload": payload,
-    }).encode()
+    body = json.dumps(
+        {
+            "event_type": event_type,
+            "delivery_id": delivery_id,
+            "payload": payload,
+        }
+    ).encode()
     request = urllib.request.Request(
         url,
         data=body,

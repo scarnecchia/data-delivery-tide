@@ -17,18 +17,23 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Drain unconverted deliveries from the registry to Parquet.",
     )
     parser.add_argument(
-        "--limit", type=int, default=None,
+        "--limit",
+        type=int,
+        default=None,
         help="Process at most this many deliveries total. Default: no limit.",
     )
     parser.add_argument(
-        "--shard", type=str, default=None, metavar="I/N",
+        "--shard",
+        type=str,
+        default=None,
+        metavar="I/N",
         help="Only process deliveries in shard I of N (0-indexed). "
-             "Example: --shard 0/4 picks up ~1/4 of the backlog.",
+        "Example: --shard 0/4 picks up ~1/4 of the backlog.",
     )
     parser.add_argument(
-        "--include-failed", action="store_true",
-        help="Also re-attempt deliveries with conversion_error set "
-             "(clears the error first).",
+        "--include-failed",
+        action="store_true",
+        help="Also re-attempt deliveries with conversion_error set (clears the error first).",
     )
     return parser
 
@@ -100,7 +105,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     return _run(
-        args, shard,
+        args,
+        shard,
         http_module=converter_http,
         convert_one_fn=convert_one,
         dp_id_exclusions=set(settings.dp_id_exclusions),
@@ -139,7 +145,8 @@ def _run(
                 metadata = delivery.get("metadata") or {}
                 if metadata.get("conversion_error"):
                     http_module.patch_delivery(
-                        api_url, delivery_id,
+                        api_url,
+                        delivery_id,
                         {"metadata": {"conversion_error": None}},
                     )
 

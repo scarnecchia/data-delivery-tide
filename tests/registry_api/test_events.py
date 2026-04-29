@@ -220,6 +220,7 @@ class TestWebSocketEndpoint:
 
     def test_dead_connection_cleanup_ac33(self, client, auth_headers):
         """Test event-stream.AC3.3: Dead connection is cleaned up without crashing."""
+
         def connect_and_close():
             """Connect a client, then close the connection."""
             ws = client.websocket_connect("/ws/events?token=test-integration-token")
@@ -246,7 +247,6 @@ class TestWebSocketEndpoint:
         assert broadcast_succeeded, "Broadcast should not crash with dead connections"
 
 
-
 # ---- GH23 phase 4: failed send_json logged at DEBUG ----
 
 import logging
@@ -265,10 +265,13 @@ class TestBroadcastExcInfoLogging:
         caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
         await manager.broadcast({"seq": 1})
 
-        debug_records = [r for r in caplog.records
-                         if r.name == "pipeline.registry_api.events"
-                         and r.levelno == logging.DEBUG
-                         and r.message == "WebSocket send failed, marking connection dead"]
+        debug_records = [
+            r
+            for r in caplog.records
+            if r.name == "pipeline.registry_api.events"
+            and r.levelno == logging.DEBUG
+            and r.message == "WebSocket send failed, marking connection dead"
+        ]
         assert len(debug_records) == 1
         assert debug_records[0].exc_info is not None
         assert debug_records[0].exc_info[0] is RuntimeError
@@ -283,10 +286,13 @@ class TestBroadcastExcInfoLogging:
         caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
         await manager.broadcast({"seq": 1})
 
-        warn_records = [r for r in caplog.records
-                        if r.name == "pipeline.registry_api.events"
-                        and r.levelno == logging.WARNING
-                        and r.message == "Removed dead WebSocket connection during broadcast"]
+        warn_records = [
+            r
+            for r in caplog.records
+            if r.name == "pipeline.registry_api.events"
+            and r.levelno == logging.WARNING
+            and r.message == "Removed dead WebSocket connection during broadcast"
+        ]
         assert len(warn_records) == 1
         assert bad not in manager.active_connections
 

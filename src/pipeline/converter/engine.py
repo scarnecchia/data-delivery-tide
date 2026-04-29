@@ -19,7 +19,9 @@ from pipeline.json_logging import get_logger
 class ConversionResult:
     outcome: Literal["success", "failure", "skipped"]
     delivery_id: str
-    reason: str | None = None  # "already_converted", "errored", "excluded_dp_id", "no_sas_file", or None
+    reason: str | None = (
+        None  # "already_converted", "errored", "excluded_dp_id", "no_sas_file", or None
+    )
 
 
 def _build_parquet_dir(source_path: str) -> Path:
@@ -28,8 +30,7 @@ def _build_parquet_dir(source_path: str) -> Path:
 
 def _find_sas_files(source_path: Path) -> list[Path]:
     return sorted(
-        p for p in source_path.iterdir()
-        if p.is_file() and p.suffix.lower() == ".sas7bdat"
+        p for p in source_path.iterdir() if p.is_file() and p.suffix.lower() == ".sas7bdat"
     )
 
 
@@ -75,7 +76,9 @@ def convert_one(
                 "reason": "already_converted",
             },
         )
-        return ConversionResult(outcome="skipped", delivery_id=delivery_id, reason="already_converted")
+        return ConversionResult(
+            outcome="skipped", delivery_id=delivery_id, reason="already_converted"
+        )
 
     # Skip guard 2: conversion_error present.
     metadata = delivery.get("metadata") or {}

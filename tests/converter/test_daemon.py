@@ -96,7 +96,8 @@ class TestPersistLastSeq:
             persist_last_seq(state, 42)
 
         records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.name == "pipeline.converter.daemon"
             and r.message == "tmp file unlink failed during cleanup"
         ]
@@ -147,8 +148,11 @@ class TestDaemonRunnerCallback:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert,
@@ -177,8 +181,11 @@ class TestDaemonRunnerCallback:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert,
@@ -206,8 +213,11 @@ class TestDaemonRunnerCallback:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert_raises,
@@ -239,8 +249,11 @@ class TestDaemonRunnerCancellation:
             return _StubConsumer(api_url, on_event)
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=slow_convert_fn,
@@ -271,6 +284,7 @@ class TestDaemonRunnerResume:
         state_path.write_text(json.dumps({"last_seq": 5}))
 
         engine_calls = []
+
         def fake_convert(delivery_id, api_url, **kwargs):
             engine_calls.append(delivery_id)
 
@@ -287,8 +301,11 @@ class TestDaemonRunnerResume:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert,
@@ -310,5 +327,6 @@ class TestDaemonRunnerReconnect:
         # test should start to fail (through import inspection or similar).
         import pipeline.converter.daemon as daemon_mod
         import pipeline.events.consumer as consumer_mod
+
         # Sanity: the DaemonRunner default factory IS EventConsumer.
         assert daemon_mod.EventConsumer is consumer_mod.EventConsumer
