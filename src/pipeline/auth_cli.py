@@ -5,6 +5,7 @@ import hashlib
 import secrets
 import sqlite3
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from pipeline.config import settings
@@ -29,7 +30,11 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def cmd_add_user(args: argparse.Namespace) -> int:
+def cmd_add_user(
+    args: argparse.Namespace,
+    *,
+    token_generator: Callable[[int], str] = secrets.token_urlsafe,
+) -> int:
     """Create a new token for a user."""
     conn = _get_connection()
     try:
@@ -49,7 +54,7 @@ def cmd_add_user(args: argparse.Namespace) -> int:
         if existing is not None:
             cursor.execute("DELETE FROM tokens WHERE username = ?", (args.username,))
 
-        raw_token = secrets.token_urlsafe(32)
+        raw_token = token_generator(32)
         token_hash = _hash_token(raw_token)
 
         cursor.execute(
@@ -122,7 +127,11 @@ def cmd_revoke_user(args: argparse.Namespace) -> int:
         conn.close()
 
 
-def cmd_rotate_token(args: argparse.Namespace) -> int:
+def cmd_rotate_token(
+    args: argparse.Namespace,
+    *,
+    token_generator: Callable[[int], str] = secrets.token_urlsafe,
+) -> int:
     """Revoke old token and create a new one for a user."""
     conn = _get_connection()
     try:
@@ -139,7 +148,7 @@ def cmd_rotate_token(args: argparse.Namespace) -> int:
         role = row["role"]
 
         # Delete old row, insert new one (atomic within transaction)
-        raw_token = secrets.token_urlsafe(32)
+        raw_token = token_generator(32)
         token_hash = _hash_token(raw_token)
 
         cursor.execute("DELETE FROM tokens WHERE username = ?", (args.username,))

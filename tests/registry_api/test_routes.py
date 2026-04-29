@@ -2,7 +2,6 @@
 import asyncio
 import json
 from datetime import datetime
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -722,6 +721,20 @@ class TestDeliveryCreatedEvents:
         assert data["first_seen_at"]
 
 
+class FakeWebSocket:
+    """Minimal stand-in for a Starlette/FastAPI WebSocket used by ConnectionManager."""
+
+    def __init__(self) -> None:
+        self.accepted: bool = False
+        self.sent: list[dict] = []
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, data: dict) -> None:
+        self.sent.append(data)
+
+
 class TestWebSocketBroadcast:
     """Test WebSocket broadcast of events on POST /deliveries."""
 
@@ -734,24 +747,17 @@ class TestWebSocketBroadcast:
 
         async def ws_client_session():
             """Simulate a WebSocket client connecting and waiting for events."""
-            # Create a mock WebSocket
-            mock_ws = AsyncMock()
-            mock_ws.send_json = AsyncMock()
-
-            # Add it to the connection manager
-            manager.active_connections.add(mock_ws)
+            fake_ws = FakeWebSocket()
+            manager.active_connections.add(fake_ws)
 
             try:
                 # Wait a moment for the HTTP request to complete and broadcast
                 await asyncio.sleep(0.1)
 
-                # Check what was sent
-                if mock_ws.send_json.called:
-                    # Get the first call's arguments
-                    call_args = mock_ws.send_json.call_args[0][0]
-                    received_events.append(call_args)
+                if fake_ws.sent:
+                    received_events.append(fake_ws.sent[0])
             finally:
-                manager.active_connections.discard(mock_ws)
+                manager.active_connections.discard(fake_ws)
 
         # Start the WS client in a background task
         client_task = asyncio.create_task(ws_client_session())

@@ -2,7 +2,7 @@
 
 import json
 import urllib.error
-from unittest.mock import MagicMock, patch
+import urllib.request
 
 import pytest
 
@@ -16,83 +16,136 @@ from pipeline.converter.http import (
 )
 
 
-def _make_urlopen_response(body: dict, status: int = 200):
-    """Build a context-manager mock matching urllib.request.urlopen's contract."""
-    mock = MagicMock()
-    mock.__enter__.return_value.read.return_value = json.dumps(body).encode()
-    mock.__enter__.return_value.status = status
-    return mock
+class _FakeResponse:
+    def __init__(self, body, status=200):
+        self._body = json.dumps(body).encode()
+        self._status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        return self._body
+
+    @property
+    def status(self):
+        return self._status
+
+
+class FakeUrlopen:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls: list[urllib.request.Request] = []
+
+    def __call__(self, request):
+        self.calls.append(request)
+        if not self._responses:
+            raise AssertionError("FakeUrlopen called more times than configured")
+        item = self._responses.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return _FakeResponse(item)
+
+
+class FakeSleep:
+    def __init__(self):
+        self.calls: list[float] = []
+
+    def __call__(self, seconds):
+        self.calls.append(seconds)
 
 
 class TestGetDelivery:
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_200_returns_body_as_dict(self, mock_urlopen):
-        mock_urlopen.return_value = _make_urlopen_response({"delivery_id": "abc"})
-        result = get_delivery("http://localhost:8000", "abc")
+    def test_200_returns_body_as_dict(self):
+        fake = FakeUrlopen([{"delivery_id": "abc"}])
+        sleep = FakeSleep()
+        result = get_delivery("http://localhost:8000", "abc", urlopen=fake, sleep=sleep)
         assert result == {"delivery_id": "abc"}
 
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_404_raises_registry_client_error(self, mock_urlopen):
-        http_err = urllib.error.HTTPError(url="", code=404, msg="Not Found", hdrs=None, fp=None)
-        http_err.read = lambda: b'{"detail":"delivery not found"}'
-        mock_urlopen.side_effect = http_err
+    def test_404_raises_registry_client_error(self):
+        err = urllib.error.HTTPError(
+            url="",
+            code=404,
+            msg="Not Found",
+            hdrs=None,
+            fp=None,
+        )
+        err.read = lambda: b'{"detail":"delivery not found"}'
+        fake = FakeUrlopen([err])
+        sleep = FakeSleep()
 
         with pytest.raises(RegistryClientError) as exc_info:
-            get_delivery("http://localhost:8000", "missing")
+            get_delivery("http://localhost:8000", "missing", urlopen=fake, sleep=sleep)
         assert exc_info.value.status_code == 404
 
 
 class TestPatchDelivery:
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_sends_json_body_and_returns_updated_row(self, mock_urlopen):
-        mock_urlopen.return_value = _make_urlopen_response(
-            {"delivery_id": "abc", "output_path": "/p/x.parquet"}
+    def test_sends_json_body_and_returns_updated_row(self):
+        fake = FakeUrlopen([{"delivery_id": "abc", "output_path": "/p/x.parquet"}])
+        sleep = FakeSleep()
+
+        result = patch_delivery(
+            "http://localhost:8000",
+            "abc",
+            {"output_path": "/p/x.parquet"},
+            urlopen=fake,
+            sleep=sleep,
         )
-        result = patch_delivery("http://localhost:8000", "abc", {"output_path": "/p/x.parquet"})
         assert result["output_path"] == "/p/x.parquet"
 
-        # Inspect the Request object passed to urlopen.
-        request = mock_urlopen.call_args[0][0]
+        request = fake.calls[0]
         assert request.method == "PATCH"
         assert request.get_full_url().endswith("/deliveries/abc")
         assert json.loads(request.data) == {"output_path": "/p/x.parquet"}
 
 
 class TestListUnconverted:
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_returns_list_of_delivery_dicts(self, mock_urlopen):
-        mock_urlopen.return_value = _make_urlopen_response(
-            [{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]
+    def test_returns_list_of_delivery_dicts(self):
+        fake = FakeUrlopen([[{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]])
+        sleep = FakeSleep()
+        result = list_unconverted(
+            "http://localhost:8000",
+            after="",
+            limit=200,
+            urlopen=fake,
+            sleep=sleep,
         )
-        result = list_unconverted("http://localhost:8000", after="", limit=200)
         assert result == [{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]
 
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_builds_correct_query_string(self, mock_urlopen):
-        mock_urlopen.return_value = _make_urlopen_response([])
-        list_unconverted("http://localhost:8000", after="cursor123", limit=50)
-        request = mock_urlopen.call_args[0][0]
-        url = request.get_full_url()
+    def test_builds_correct_query_string(self):
+        fake = FakeUrlopen([[]])
+        sleep = FakeSleep()
+        list_unconverted(
+            "http://localhost:8000",
+            after="cursor123",
+            limit=50,
+            urlopen=fake,
+            sleep=sleep,
+        )
+        url = fake.calls[0].get_full_url()
         assert "converted=false" in url
         assert "after=cursor123" in url
         assert "limit=50" in url
 
 
 class TestEmitEvent:
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_posts_correct_shape(self, mock_urlopen):
-        mock_urlopen.return_value = _make_urlopen_response(
-            {"seq": 5, "event_type": "conversion.completed", "delivery_id": "abc"}
-        )
+    def test_posts_correct_shape(self):
+        fake = FakeUrlopen([{"seq": 5, "event_type": "conversion.completed", "delivery_id": "abc"}])
+        sleep = FakeSleep()
         result = emit_event(
             "http://localhost:8000",
             "conversion.completed",
             "abc",
             {"row_count": 10},
+            urlopen=fake,
+            sleep=sleep,
         )
         assert result["seq"] == 5
 
-        request = mock_urlopen.call_args[0][0]
+        request = fake.calls[0]
         assert request.method == "POST"
         body = json.loads(request.data)
         assert body == {
@@ -103,47 +156,49 @@ class TestEmitEvent:
 
 
 class TestRetryBehaviour:
-    @patch("pipeline.converter.http.time.sleep")
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_5xx_retried_then_succeeds(self, mock_urlopen, mock_sleep):
+    def test_5xx_retried_then_succeeds(self):
         err = urllib.error.HTTPError(url="", code=500, msg="x", hdrs=None, fp=None)
-        mock_urlopen.side_effect = [
-            err,
-            err,
-            _make_urlopen_response({"delivery_id": "abc"}),
-        ]
-        result = get_delivery("http://localhost:8000", "abc")
+        fake = FakeUrlopen([err, err, {"delivery_id": "abc"}])
+        sleep = FakeSleep()
+
+        result = get_delivery("http://localhost:8000", "abc", urlopen=fake, sleep=sleep)
+
         assert result == {"delivery_id": "abc"}
-        assert mock_urlopen.call_count == 3
-        mock_sleep.assert_any_call(2)
-        mock_sleep.assert_any_call(4)
+        assert len(fake.calls) == 3
+        assert 2 in sleep.calls
+        assert 4 in sleep.calls
 
-    @patch("pipeline.converter.http.time.sleep")
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_all_attempts_exhausted_raises_unreachable(self, mock_urlopen, mock_sleep):
+    def test_all_attempts_exhausted_raises_unreachable(self):
         err = urllib.error.HTTPError(url="", code=500, msg="x", hdrs=None, fp=None)
-        mock_urlopen.side_effect = [err, err, err, err]
+        fake = FakeUrlopen([err, err, err, err])
+        sleep = FakeSleep()
         with pytest.raises(RegistryUnreachableError):
-            get_delivery("http://localhost:8000", "abc")
-        assert mock_urlopen.call_count == 4
+            get_delivery("http://localhost:8000", "abc", urlopen=fake, sleep=sleep)
+        assert len(fake.calls) == 4
 
-    @patch("pipeline.converter.http.time.sleep")
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_4xx_not_retried(self, mock_urlopen, mock_sleep):
+    def test_4xx_not_retried(self):
         err = urllib.error.HTTPError(url="", code=422, msg="x", hdrs=None, fp=None)
         err.read = lambda: b'{"detail":"bad"}'
-        mock_urlopen.side_effect = err
+        fake = FakeUrlopen([err])
+        sleep = FakeSleep()
         with pytest.raises(RegistryClientError):
-            patch_delivery("http://localhost:8000", "abc", {"k": "v"})
-        assert mock_urlopen.call_count == 1
-        mock_sleep.assert_not_called()
+            patch_delivery(
+                "http://localhost:8000",
+                "abc",
+                {"k": "v"},
+                urlopen=fake,
+                sleep=sleep,
+            )
+        assert len(fake.calls) == 1
+        assert sleep.calls == []
 
-    @patch("pipeline.converter.http.time.sleep")
-    @patch("pipeline.converter.http.urllib.request.urlopen")
-    def test_network_error_retried(self, mock_urlopen, mock_sleep):
-        mock_urlopen.side_effect = [
-            urllib.error.URLError("connection refused"),
-            _make_urlopen_response({"delivery_id": "abc"}),
-        ]
-        result = get_delivery("http://localhost:8000", "abc")
+    def test_network_error_retried(self):
+        fake = FakeUrlopen(
+            [
+                urllib.error.URLError("connection refused"),
+                {"delivery_id": "abc"},
+            ]
+        )
+        sleep = FakeSleep()
+        result = get_delivery("http://localhost:8000", "abc", urlopen=fake, sleep=sleep)
         assert result == {"delivery_id": "abc"}

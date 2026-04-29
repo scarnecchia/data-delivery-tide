@@ -91,8 +91,7 @@ async def test_catch_up_single_page():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
-        await consumer._catch_up()
+    await consumer._catch_up(http_client_factory=lambda: mock_client)
 
     assert len(received) == 2
     assert consumer._last_seq == 2
@@ -154,8 +153,7 @@ async def test_catch_up_pagination():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
-        await consumer._catch_up()
+    await consumer._catch_up(http_client_factory=lambda: mock_client)
 
     assert len(received) == 3
     assert consumer._last_seq == 3
@@ -196,8 +194,7 @@ async def test_catch_up_respects_last_seq():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
-        await consumer._catch_up()
+    await consumer._catch_up(http_client_factory=lambda: mock_client)
 
     assert consumer._last_seq == 11
 
@@ -250,8 +247,7 @@ async def test_catch_up_calls_on_event_for_each():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
-        await consumer._catch_up()
+    await consumer._catch_up(http_client_factory=lambda: mock_client)
 
     assert len(received) == 3
     assert [e["seq"] for e in received] == [1, 2, 3]
@@ -301,8 +297,7 @@ async def test_catch_up_rest_endpoint_query_uses_last_seq():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("pipeline.events.consumer.httpx.AsyncClient", return_value=mock_client):
-        await consumer._catch_up()
+    await consumer._catch_up(http_client_factory=lambda: mock_client)
 
     assert len(received) == 2
     assert consumer._last_seq == 7

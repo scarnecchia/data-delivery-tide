@@ -3,6 +3,7 @@ import json
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from typing import Any, cast
 
 
@@ -23,7 +24,12 @@ _BACKOFF_SECONDS = (2, 4, 8)
 
 
 def post_delivery(
-    api_url: str, payload: dict[str, Any], token: str | None = None
+    api_url: str,
+    payload: dict[str, Any],
+    token: str | None = None,
+    *,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     """POST a delivery payload to the registry API.
 
@@ -55,7 +61,7 @@ def post_delivery(
 
     for attempt in range(len(_BACKOFF_SECONDS) + 1):
         try:
-            with urllib.request.urlopen(request) as response:
+            with urlopen(request) as response:
                 return cast("dict[str, Any]", json.loads(response.read().decode()))
         except urllib.error.HTTPError as exc:
             if 400 <= exc.code < 500:
@@ -68,7 +74,7 @@ def post_delivery(
             last_error = exc
 
         if attempt < len(_BACKOFF_SECONDS):
-            time.sleep(_BACKOFF_SECONDS[attempt])
+            sleep(_BACKOFF_SECONDS[attempt])
 
     raise RegistryUnreachableError(
         f"registry API unreachable after {len(_BACKOFF_SECONDS) + 1} attempts: {last_error}"

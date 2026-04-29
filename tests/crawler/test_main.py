@@ -3,13 +3,36 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from pipeline.config import ScanRoot
 from pipeline.crawler.http import RegistryUnreachableError
 from pipeline.crawler.main import crawl, inventory_files, walk_roots
+
+
+class FakePostDelivery:
+    """Recorder for crawl()'s post_fn parameter."""
+
+    def __init__(self, return_value=None):
+        self.calls: list[dict] = []
+        self._return_value = return_value if return_value is not None else {}
+
+    def __call__(self, api_url, payload, *, token=None):
+        self.calls.append({"api_url": api_url, "payload": payload, "token": token})
+        return self._return_value
+
+    @property
+    def call_count(self) -> int:
+        return len(self.calls)
+
+    @property
+    def called(self) -> bool:
+        return len(self.calls) > 0
+
+    def reset_mock(self) -> None:
+        self.calls.clear()
 
 
 class TestWalkRoots:
@@ -378,9 +401,8 @@ class TestInventoryFiles:
 class TestCrawl:
     """AC2.3, AC2.7, AC3.4, AC4.4, AC7.1, AC7.2 — Full crawl orchestration."""
 
-    @patch("pipeline.crawler.main.post_delivery")
     def test_ac2_3_posts_valid_delivery_payload_to_registry(
-        self, mock_post, delivery_tree, make_crawler_config
+        self, delivery_tree, make_crawler_config
     ):
         """AC2.3: Crawler POSTs valid DeliveryCreate payload to registry API."""
         source_path, scan_root = delivery_tree(
@@ -396,12 +418,12 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Verify post_delivery was called
-        assert mock_post.called
-        call_args = mock_post.call_args[0]
-        payload = call_args[1]
+        assert fake_post.called
+        payload = fake_post.calls[0]["payload"]
 
         # Verify payload structure
         assert payload["request_id"] == "soc_qar_wp001"
@@ -417,9 +439,8 @@ class TestCrawl:
         assert payload["total_bytes"] == 1024
         assert payload["fingerprint"].startswith("sha256:")
 
-    @patch("pipeline.crawler.main.post_delivery")
     def test_ac2_7_pending_superseded_by_newer_version_marked_failed(
-        self, mock_post, tmp_path, make_crawler_config
+        self, tmp_path, make_crawler_config
     ):
         """AC2.7: Pending delivery with newer version for same workplan+dp_id is POSTed with status=failed."""
         scan_root = tmp_path / "requests" / "qa"
@@ -454,11 +475,11 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        assert mock_post.call_count == 2
-        calls = mock_post.call_args_list
-        payloads = [call[0][1] for call in calls]
+        assert fake_post.call_count == 2
+        payloads = [c["payload"] for c in fake_post.calls]
 
         v1_payload = next(p for p in payloads if p["version"] == "v01")
         v2_payload = next(p for p in payloads if p["version"] == "v02")
@@ -466,9 +487,8 @@ class TestCrawl:
         assert v1_payload["status"] == "failed"
         assert v2_payload["status"] == "pending"
 
-    @patch("pipeline.crawler.main.post_delivery")
     def test_ac3_4_re_crawling_same_delivery_overwrites_manifest_idempotent(
-        self, mock_post, delivery_tree, make_crawler_config
+        self, delivery_tree, make_crawler_config
     ):
         """AC3.4: Re-crawling same unchanged delivery overwrites manifest with identical content (idempotent)."""
         source_path, scan_root = delivery_tree(
@@ -483,18 +503,18 @@ class TestCrawl:
             scan_roots=[{"path": scan_root, "label": "qa"}],
         )
         logger = MagicMock()
+        fake_post = FakePostDelivery()
 
         # First crawl
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_dir = config.crawl_manifest_dir
         manifest_files_1 = list(Path(manifest_dir).glob("*.json"))
         manifest_1 = json.loads(manifest_files_1[0].read_text())
 
-        # Clear mock calls
-        mock_post.reset_mock()
+        fake_post.reset_mock()
 
         # Second crawl (re-crawl same directory)
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_files_2 = list(Path(manifest_dir).glob("*.json"))
         manifest_2 = json.loads(manifest_files_2[0].read_text())
 
@@ -506,10 +526,7 @@ class TestCrawl:
         assert manifest_1["file_count"] == manifest_2["file_count"]
         assert manifest_1["files"] == manifest_2["files"]
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac4_4_excluded_dp_ids_no_error_manifest(
-        self, mock_post, tmp_path, make_crawler_config
-    ):
+    def test_ac4_4_excluded_dp_ids_no_error_manifest(self, tmp_path, make_crawler_config):
         """AC4.4: Excluded dp_ids do NOT produce error manifests (they are expected, not errors)."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -526,7 +543,8 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Check that no error manifest was written
         error_dir = Path(config.crawl_manifest_dir) / "errors"
@@ -534,12 +552,9 @@ class TestCrawl:
         assert len(error_manifests) == 0
 
         # And post_delivery should not have been called
-        assert not mock_post.called
+        assert not fake_post.called
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_excluded_dpid_folder_blocks_all_deliveries_inside(
-        self, mock_post, tmp_path, make_crawler_config
-    ):
+    def test_excluded_dpid_folder_blocks_all_deliveries_inside(self, tmp_path, make_crawler_config):
         """Excluded dpid folder must block ALL deliveries inside, even if
         version directory encodes a different dp_id than the folder name."""
         scan_root = tmp_path / "requests" / "qa"
@@ -570,17 +585,17 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        count = crawl(config, logger)
+        fake_post = FakePostDelivery()
+        count = crawl(config, logger, post_fn=fake_post)
 
         # Only the non-excluded delivery should be processed
         assert count == 1
-        assert mock_post.call_count == 1
-        posted_payload = mock_post.call_args[0][1]
+        assert fake_post.call_count == 1
+        posted_payload = fake_post.calls[0]["payload"]
         assert posted_payload["dp_id"] == "othrdp"
 
-    @patch("pipeline.crawler.main.post_delivery")
     def test_ac7_1_idempotent_crawl_produces_identical_manifests(
-        self, mock_post, delivery_tree, make_crawler_config
+        self, delivery_tree, make_crawler_config
     ):
         """AC7.1: Running crawler twice on same directory tree produces identical manifests."""
         source_path, scan_root = delivery_tree(
@@ -595,16 +610,17 @@ class TestCrawl:
             scan_roots=[{"path": scan_root, "label": "qa"}],
         )
         logger = MagicMock()
+        fake_post = FakePostDelivery()
 
         # First crawl
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_files_1 = sorted(Path(config.crawl_manifest_dir).glob("*.json"))
         manifests_1 = [json.loads(f.read_text()) for f in manifest_files_1]
 
-        mock_post.reset_mock()
+        fake_post.reset_mock()
 
         # Second crawl
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_files_2 = sorted(Path(config.crawl_manifest_dir).glob("*.json"))
         manifests_2 = [json.loads(f.read_text()) for f in manifest_files_2]
 
@@ -618,10 +634,7 @@ class TestCrawl:
             assert m1["file_count"] == m2["file_count"]
             assert m1["files"] == m2["files"]
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac7_2_unchanged_fingerprint_on_re_crawl(
-        self, mock_post, delivery_tree, make_crawler_config
-    ):
+    def test_ac7_2_unchanged_fingerprint_on_re_crawl(self, delivery_tree, make_crawler_config):
         """AC7.2: Unchanged fingerprint means registry POST payload fingerprint unchanged on re-crawl."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -635,17 +648,18 @@ class TestCrawl:
             scan_roots=[{"path": scan_root, "label": "qa"}],
         )
         logger = MagicMock()
+        fake_post = FakePostDelivery()
 
         # First crawl
-        crawl(config, logger)
-        first_payload = mock_post.call_args_list[0][0][1]
+        crawl(config, logger, post_fn=fake_post)
+        first_payload = fake_post.calls[0]["payload"]
         first_fingerprint = first_payload["fingerprint"]
 
-        mock_post.reset_mock()
+        fake_post.reset_mock()
 
         # Second crawl
-        crawl(config, logger)
-        second_payload = mock_post.call_args_list[0][0][1]
+        crawl(config, logger, post_fn=fake_post)
+        second_payload = fake_post.calls[0]["payload"]
         second_fingerprint = second_payload["fingerprint"]
 
         assert first_fingerprint == second_fingerprint
@@ -654,9 +668,8 @@ class TestCrawl:
 class TestLexiconSystemAC5Integration:
     """lexicon-system.AC5.6 — Crawler POST payload includes lexicon_id and status."""
 
-    @patch("pipeline.crawler.main.post_delivery")
     def test_ac5_6_crawler_post_payload_includes_lexicon_id_and_status(
-        self, mock_post, delivery_tree, make_crawler_config
+        self, delivery_tree, make_crawler_config
     ):
         """AC5.6: Crawler POST payload includes lexicon_id and status (not qa_status)."""
         source_path, scan_root = delivery_tree(
@@ -672,12 +685,12 @@ class TestLexiconSystemAC5Integration:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Verify post_delivery was called
-        assert mock_post.called
-        call_args = mock_post.call_args[0]
-        payload = call_args[1]
+        assert fake_post.called
+        payload = fake_post.calls[0]["payload"]
 
         # AC5.6: Payload must include lexicon_id and status, not qa_status
         assert "lexicon_id" in payload
@@ -691,8 +704,7 @@ class TestLexiconSystemAC5Integration:
 class TestCrawlAuth:
     """Token forwarding from crawl() to post_delivery()."""
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_token_forwarded_to_post_delivery(self, mock_post, delivery_tree, make_crawler_config):
+    def test_token_forwarded_to_post_delivery(self, delivery_tree, make_crawler_config):
         """crawl() forwards token kwarg to post_delivery()."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -706,14 +718,13 @@ class TestCrawlAuth:
             scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
         )
         logger = MagicMock()
-        crawl(config, logger, token="my-secret-token")
+        fake_post = FakePostDelivery()
+        crawl(config, logger, token="my-secret-token", post_fn=fake_post)
 
-        assert mock_post.called
-        _, kwargs = mock_post.call_args
-        assert kwargs["token"] == "my-secret-token"
+        assert fake_post.called
+        assert fake_post.calls[0]["token"] == "my-secret-token"
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_no_token_forwards_none(self, mock_post, delivery_tree, make_crawler_config):
+    def test_no_token_forwards_none(self, delivery_tree, make_crawler_config):
         """crawl() without token passes token=None to post_delivery()."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -727,18 +738,17 @@ class TestCrawlAuth:
             scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
         )
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        assert mock_post.called
-        _, kwargs = mock_post.call_args
-        assert kwargs["token"] is None
+        assert fake_post.called
+        assert fake_post.calls[0]["token"] is None
 
 
 class TestSubDeliveryDiscovery:
     """sub-deliveries.AC4.1-AC4.8 — Crawler sub-directory discovery."""
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_created_when_sub_dir_exists(self, mock_post, sub_delivery_setup):
+    def test_sub_delivery_created_when_sub_dir_exists(self, sub_delivery_setup):
         """AC4.1, AC4.2: Sub-delivery created when sub-dir exists, with correct source_path."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -746,18 +756,18 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Verify post_delivery was called twice (parent + sub-delivery)
-        assert mock_post.call_count == 2
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        assert fake_post.call_count == 2
+        payloads = [c["payload"] for c in fake_post.calls]
 
         # Find the sub-delivery (should have source_path ending with scdm_snapshot)
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
         assert sub_payload["source_path"].endswith("scdm_snapshot")
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_inherits_parent_identity(self, mock_post, sub_delivery_setup):
+    def test_sub_delivery_inherits_parent_identity(self, sub_delivery_setup):
         """AC4.3: Sub-delivery inherits request_id, project, workplan_id, dp_id, version from parent."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -765,9 +775,10 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
@@ -778,8 +789,7 @@ class TestSubDeliveryDiscovery:
         assert sub_payload["dp_id"] == parent_payload["dp_id"] == "mkscnr"
         assert sub_payload["version"] == parent_payload["version"] == "v01"
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_inherits_parent_status(self, mock_post, sub_delivery_setup):
+    def test_sub_delivery_inherits_parent_status(self, sub_delivery_setup):
         """AC4.4: Sub-delivery inherits status from parent's dir_map resolution."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -788,16 +798,16 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
         # Sub-delivery should inherit parent's status ("passed")
         assert sub_payload["status"] == "passed"
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_has_own_delivery_id(self, mock_post, sub_delivery_setup):
+    def test_sub_delivery_has_own_delivery_id(self, sub_delivery_setup):
         """AC4.5: Sub-delivery has its own delivery_id (SHA-256 of its source_path)."""
         import hashlib
 
@@ -807,9 +817,10 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
@@ -825,8 +836,7 @@ class TestSubDeliveryDiscovery:
         manifest_content = json.loads(manifest_path.read_text())
         assert manifest_content["delivery_id"] == expected_sub_delivery_id
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_has_own_file_inventory(self, mock_post, sub_delivery_setup):
+    def test_sub_delivery_has_own_file_inventory(self, sub_delivery_setup):
         """AC4.6: Sub-delivery has its own file inventory and fingerprint."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent1.sas7bdat", 100), ("parent2.sas7bdat", 200)],
@@ -834,9 +844,10 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
@@ -848,10 +859,7 @@ class TestSubDeliveryDiscovery:
         # Fingerprints should differ
         assert parent_payload["fingerprint"] != sub_payload["fingerprint"]
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_missing_sub_dir_silently_skipped(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
-    ):
+    def test_missing_sub_dir_silently_skipped(self, tmp_path, make_crawler_config, lexicons_dir):
         """AC4.7: Missing sub-directory is silently skipped (no error, no sub-delivery)."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -878,16 +886,16 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Only parent should be POSTed
-        assert mock_post.call_count == 1
-        payload = mock_post.call_args[0][1]
+        assert fake_post.call_count == 1
+        payload = fake_post.calls[0]["payload"]
         assert "scdm_snapshot" not in payload["source_path"]
 
-    @patch("pipeline.crawler.main.post_delivery")
     def test_sub_deliveries_grouped_by_own_lexicon_for_derivation(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+        self, tmp_path, make_crawler_config, lexicons_dir
     ):
         """AC4.8: Sub-deliveries are grouped by their own lexicon for derivation."""
         scan_root = tmp_path / "requests" / "qa"
@@ -935,11 +943,12 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Should have 4 POSTs: parent_v01, sub_v01, parent_v02, sub_v02
-        assert mock_post.call_count == 4
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        assert fake_post.call_count == 4
+        payloads = [c["payload"] for c in fake_post.calls]
 
         # v01 parent is pending (from msoc_new)
         v1_parent = next(
@@ -972,18 +981,25 @@ class TestSubDeliveryDiscovery:
 class TestMain:
     """AC5.4 — Exit code on RegistryUnreachableError."""
 
-    @patch("pipeline.crawler.main.settings")
-    @patch("pipeline.crawler.main.get_logger")
-    @patch("pipeline.crawler.main.crawl")
-    def test_ac5_4_registry_unreachable_exits_nonzero(self, mock_crawl, mock_logger, mock_settings):
+    def test_ac5_4_registry_unreachable_exits_nonzero(self, monkeypatch):
         """AC5.4: Crawler exits non-zero when RegistryUnreachableError is raised."""
-        mock_crawl.side_effect = RegistryUnreachableError("connection refused")
-        mock_settings.log_dir = "/tmp"
+        import pipeline.crawler.main as crawler_main
 
-        from pipeline.crawler.main import main
+        fake_settings = type("FakeSettings", (), {"log_dir": "/tmp"})()
+        monkeypatch.setattr(crawler_main, "settings", fake_settings)
+        monkeypatch.setattr(
+            crawler_main,
+            "get_logger",
+            lambda *a, **kw: MagicMock(spec=logging.Logger),
+        )
+
+        def fake_crawl(*args, **kwargs):
+            raise RegistryUnreachableError("connection refused")
+
+        monkeypatch.setattr(crawler_main, "crawl", fake_crawl)
 
         with pytest.raises(SystemExit) as exc_info:
-            main()
+            crawler_main.main()
 
         assert exc_info.value.code == 1
 

@@ -1,7 +1,7 @@
 # pattern: test file
 import json
 import urllib.error
-from unittest.mock import MagicMock, call, patch
+import urllib.request
 
 import pytest
 
@@ -12,6 +12,59 @@ from pipeline.crawler.http import (
 )
 
 
+class _FakeResponse:
+    def __init__(self, body, status=200):
+        self._body = json.dumps(body).encode()
+        self._status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        return self._body
+
+    @property
+    def status(self):
+        return self._status
+
+
+class FakeUrlopen:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls: list[urllib.request.Request] = []
+
+    def __call__(self, request):
+        self.calls.append(request)
+        if not self._responses:
+            raise AssertionError("FakeUrlopen called more times than configured")
+        item = self._responses.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return _FakeResponse(item)
+
+
+class FakeSleep:
+    def __init__(self):
+        self.calls: list[float] = []
+
+    def __call__(self, seconds):
+        self.calls.append(seconds)
+
+
+class _ErrBody:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def close(self):
+        pass
+
+
 class TestPostDeliverySuccess:
     """AC5.1, AC5.2 — Successful requests and retry scenarios."""
 
@@ -20,77 +73,53 @@ class TestPostDeliverySuccess:
         payload = {"source_path": "/data/test", "version": "v01"}
         response_body = {"delivery_id": "abc123", "status": "pending"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_response = MagicMock()
-            mock_response.read.return_value = json.dumps(response_body).encode()
-            mock_urlopen.return_value.__enter__.return_value = mock_response
+        fake = FakeUrlopen([response_body])
+        sleep = FakeSleep()
 
-            result = post_delivery("http://localhost:8000", payload)
+        result = post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-            assert result == response_body
-            assert mock_urlopen.call_count == 1
+        assert result == response_body
+        assert len(fake.calls) == 1
+        assert sleep.calls == []
 
     def test_retry_on_500_succeeds_third_attempt(self):
         """AC5.2: 5xx triggers retry with backoff, succeeds on later attempt."""
         payload = {"source_path": "/data/test", "version": "v01"}
         response_body = {"delivery_id": "abc123", "status": "pending"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            with patch("time.sleep") as mock_sleep:
-                # First two calls raise 500, third succeeds
-                mock_response = MagicMock()
-                mock_response.read.return_value = json.dumps(response_body).encode()
+        err = urllib.error.HTTPError(
+            "http://localhost:8000/deliveries",
+            500,
+            "Internal Server Error",
+            {},
+            None,
+        )
+        fake = FakeUrlopen([err, err, response_body])
+        sleep = FakeSleep()
 
-                mock_urlopen.side_effect = [
-                    urllib.error.HTTPError(
-                        "http://localhost:8000/deliveries",
-                        500,
-                        "Internal Server Error",
-                        {},
-                        None,
-                    ),
-                    urllib.error.HTTPError(
-                        "http://localhost:8000/deliveries",
-                        500,
-                        "Internal Server Error",
-                        {},
-                        None,
-                    ),
-                    MagicMock(
-                        __enter__=MagicMock(return_value=mock_response),
-                        __exit__=MagicMock(return_value=False),
-                    ),
-                ]
+        result = post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-                result = post_delivery("http://localhost:8000", payload)
-
-                assert result == response_body
-                # 1 initial + 2 retries = 3 calls
-                assert mock_urlopen.call_count == 3
-                # Verify backoff sleep durations
-                mock_sleep.assert_has_calls([call(2), call(4)])
+        assert result == response_body
+        assert len(fake.calls) == 3
+        assert sleep.calls == [2, 4]
 
     def test_retry_on_connection_error_succeeds(self):
         """AC5.2: Connection error triggers retry, succeeds on later attempt."""
         payload = {"source_path": "/data/test", "version": "v01"}
         response_body = {"delivery_id": "abc123", "status": "pending"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen, patch("time.sleep"):
-            mock_response = MagicMock()
-            mock_response.read.return_value = json.dumps(response_body).encode()
-
-            mock_urlopen.side_effect = [
+        fake = FakeUrlopen(
+            [
                 urllib.error.URLError("Connection refused"),
-                MagicMock(
-                    __enter__=MagicMock(return_value=mock_response),
-                    __exit__=MagicMock(return_value=False),
-                ),
+                response_body,
             ]
+        )
+        sleep = FakeSleep()
 
-            result = post_delivery("http://localhost:8000", payload)
+        result = post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-            assert result == response_body
-            assert mock_urlopen.call_count == 2
+        assert result == response_body
+        assert len(fake.calls) == 2
 
 
 class TestPostDeliveryFailure:
@@ -100,43 +129,35 @@ class TestPostDeliveryFailure:
         """AC5.3: All 3 retries exhausted raises RegistryUnreachableError."""
         payload = {"source_path": "/data/test", "version": "v01"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            with patch("time.sleep") as mock_sleep:
-                # Always raise URLError (connection refused)
-                mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
+        fake = FakeUrlopen([urllib.error.URLError("Connection refused")] * 4)
+        sleep = FakeSleep()
 
-                with pytest.raises(RegistryUnreachableError):
-                    post_delivery("http://localhost:8000", payload)
+        with pytest.raises(RegistryUnreachableError):
+            post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-                # 1 initial + 3 retries = 4 total attempts
-                assert mock_urlopen.call_count == 4
-                # 3 sleep calls for backoff between attempts
-                mock_sleep.assert_has_calls([call(2), call(4), call(8)])
+        assert len(fake.calls) == 4
+        assert sleep.calls == [2, 4, 8]
 
     def test_four_hundred_error_not_retried(self):
         """AC5.5: 4xx response is NOT retried (immediate failure)."""
         payload = {"source_path": "/data/test", "version": "v01"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            error_response = MagicMock()
-            error_response.read.return_value = b'{"error": "Unprocessable Entity"}'
+        err = urllib.error.HTTPError(
+            "http://localhost:8000/deliveries",
+            422,
+            "Unprocessable Entity",
+            {},
+            _ErrBody(b'{"error": "Unprocessable Entity"}'),
+        )
+        fake = FakeUrlopen([err])
+        sleep = FakeSleep()
 
-            exc = urllib.error.HTTPError(
-                "http://localhost:8000/deliveries",
-                422,
-                "Unprocessable Entity",
-                {},
-                error_response,
-            )
-            mock_urlopen.side_effect = exc
+        with pytest.raises(RegistryClientError) as exc_info:
+            post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-            with pytest.raises(RegistryClientError) as exc_info:
-                post_delivery("http://localhost:8000", payload)
-
-            # Verify called exactly once, no retries
-            assert mock_urlopen.call_count == 1
-            assert exc_info.value.status_code == 422
-            assert exc_info.value.body == '{"error": "Unprocessable Entity"}'
+        assert len(fake.calls) == 1
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.body == '{"error": "Unprocessable Entity"}'
 
 
 class TestPostDeliveryBackoff:
@@ -146,98 +167,69 @@ class TestPostDeliveryBackoff:
         """Verify backoff sleep durations are 2, 4, 8 seconds."""
         payload = {"source_path": "/data/test", "version": "v01"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            with patch("time.sleep") as mock_sleep:
-                mock_urlopen.side_effect = [
-                    urllib.error.URLError("fail"),
-                    urllib.error.URLError("fail"),
-                    urllib.error.URLError("fail"),
-                    urllib.error.URLError("fail"),
-                ]
+        fake = FakeUrlopen([urllib.error.URLError("fail")] * 4)
+        sleep = FakeSleep()
 
-                with pytest.raises(RegistryUnreachableError):
-                    post_delivery("http://localhost:8000", payload)
+        with pytest.raises(RegistryUnreachableError):
+            post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-                # Should have exactly 3 sleep calls with correct durations
-                mock_sleep.assert_has_calls([call(2), call(4), call(8)])
-                assert mock_sleep.call_count == 3
+        assert sleep.calls == [2, 4, 8]
 
     def test_request_url_construction(self):
         """Verify request has correct URL construction."""
         payload = {"source_path": "/data/test", "version": "v01"}
+        fake = FakeUrlopen([{"delivery_id": "test"}])
+        sleep = FakeSleep()
 
-        with patch("urllib.request.Request") as mock_request:
-            with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_response = MagicMock()
-                mock_response.read.return_value = b'{"delivery_id": "test"}'
-                mock_urlopen.return_value.__enter__.return_value = mock_response
+        post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-                post_delivery("http://localhost:8000", payload)
-
-                # Verify Request was called with correct URL
-                args, kwargs = mock_request.call_args
-                assert args[0] == "http://localhost:8000/deliveries"
+        assert fake.calls[0].get_full_url() == "http://localhost:8000/deliveries"
 
     def test_request_headers_and_body(self):
         """Verify request has correct Content-Type header and JSON body."""
         payload = {"source_path": "/data/test", "version": "v01"}
+        fake = FakeUrlopen([{"delivery_id": "test"}])
+        sleep = FakeSleep()
 
-        with patch("urllib.request.Request") as mock_request:
-            with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_response = MagicMock()
-                mock_response.read.return_value = b'{"delivery_id": "test"}'
-                mock_urlopen.return_value.__enter__.return_value = mock_response
+        post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-                post_delivery("http://localhost:8000", payload)
-
-                # Verify Request was called with correct parameters
-                args, kwargs = mock_request.call_args
-                assert kwargs["data"] == json.dumps(payload).encode()
-                assert kwargs["headers"]["Content-Type"] == "application/json"
-                assert kwargs["method"] == "POST"
+        request = fake.calls[0]
+        assert request.data == json.dumps(payload).encode()
+        assert request.get_header("Content-type") == "application/json"
+        assert request.method == "POST"
 
     def test_auth_header_included_when_token_provided(self):
         """Authorization header is set when a token is provided."""
         payload = {"source_path": "/data/test", "version": "v01"}
+        fake = FakeUrlopen([{"delivery_id": "test"}])
+        sleep = FakeSleep()
 
-        with patch("urllib.request.Request") as mock_request:
-            with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_response = MagicMock()
-                mock_response.read.return_value = b'{"delivery_id": "test"}'
-                mock_urlopen.return_value.__enter__.return_value = mock_response
+        post_delivery(
+            "http://localhost:8000",
+            payload,
+            token="secret-token",
+            urlopen=fake,
+            sleep=sleep,
+        )
 
-                post_delivery("http://localhost:8000", payload, token="secret-token")
-
-                args, kwargs = mock_request.call_args
-                assert kwargs["headers"]["Authorization"] == "Bearer secret-token"
+        assert fake.calls[0].get_header("Authorization") == "Bearer secret-token"
 
     def test_no_auth_header_when_token_is_none(self):
         """No Authorization header when token is None."""
         payload = {"source_path": "/data/test", "version": "v01"}
+        fake = FakeUrlopen([{"delivery_id": "test"}])
+        sleep = FakeSleep()
 
-        with patch("urllib.request.Request") as mock_request:
-            with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_response = MagicMock()
-                mock_response.read.return_value = b'{"delivery_id": "test"}'
-                mock_urlopen.return_value.__enter__.return_value = mock_response
+        post_delivery("http://localhost:8000", payload, urlopen=fake, sleep=sleep)
 
-                post_delivery("http://localhost:8000", payload)
-
-                args, kwargs = mock_request.call_args
-                assert "Authorization" not in kwargs["headers"]
+        assert fake.calls[0].get_header("Authorization") is None
 
     def test_url_trailing_slash_stripped(self):
         """Verify trailing slash in api_url is handled correctly."""
         payload = {"source_path": "/data/test", "version": "v01"}
+        fake = FakeUrlopen([{"delivery_id": "test"}])
+        sleep = FakeSleep()
 
-        with patch("urllib.request.Request") as mock_request:
-            with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_response = MagicMock()
-                mock_response.read.return_value = b'{"delivery_id": "test"}'
-                mock_urlopen.return_value.__enter__.return_value = mock_response
+        post_delivery("http://localhost:8000/", payload, urlopen=fake, sleep=sleep)
 
-                post_delivery("http://localhost:8000/", payload)
-
-                # Verify Request was called with correct URL (slash removed)
-                args, kwargs = mock_request.call_args
-                assert args[0] == "http://localhost:8000/deliveries"
+        assert fake.calls[0].get_full_url() == "http://localhost:8000/deliveries"

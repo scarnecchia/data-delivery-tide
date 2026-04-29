@@ -3,7 +3,9 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from pipeline.config import PipelineConfig, ScanRoot, settings
 from pipeline.crawler.fingerprint import FileEntry, compute_fingerprint
@@ -134,7 +136,13 @@ def walk_roots(
     return results
 
 
-def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = None) -> int:
+def crawl(
+    config: PipelineConfig,
+    logger: logging.Logger,
+    token: str | None = None,
+    *,
+    post_fn: Callable[..., Any] | None = None,
+) -> int:
     """Run a full crawl cycle. Returns count of deliveries processed.
 
     Two-pass approach:
@@ -142,6 +150,8 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
     2. Derive failed statuses (pending deliveries superseded by newer versions),
        then POST all deliveries to the registry API with final status values
     """
+    if post_fn is None:
+        post_fn = post_delivery
     manifest_dir = config.crawl_manifest_dir
     error_dir = os.path.join(manifest_dir, "errors")
     os.makedirs(manifest_dir, exist_ok=True)
@@ -318,7 +328,7 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
             "total_bytes": sum(f["size_bytes"] for f in files),
             "fingerprint": fingerprint,
         }
-        post_delivery(config.registry_api_url, payload, token=token)
+        post_fn(config.registry_api_url, payload, token=token)
 
         logger.info(
             "processed delivery",

@@ -109,9 +109,16 @@ class EventConsumer:
         except ConnectionClosed:
             raise
 
-    async def _catch_up(self) -> None:
-        """Fetch missed events via REST and process them."""
-        async with httpx.AsyncClient() as client:
+    async def _catch_up(
+        self, *, http_client_factory: Callable[..., Any] = httpx.AsyncClient
+    ) -> None:
+        """Fetch missed events via REST and process them.
+
+        ``http_client_factory`` is a zero-argument callable returning an async
+        context manager that yields an httpx-compatible client. Production
+        callers leave it at the default; tests inject fakes.
+        """
+        async with http_client_factory() as client:
             while True:
                 resp = await client.get(
                     f"{self.api_url}/events",
