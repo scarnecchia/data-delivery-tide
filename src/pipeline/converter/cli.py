@@ -2,10 +2,12 @@
 
 import argparse
 import sys
+from collections.abc import Generator
 
 from pipeline.config import settings
 from pipeline.converter import http as converter_http
 from pipeline.converter.engine import convert_one
+from pipeline.converter.protocols import ConvertOneFnProtocol, HttpModuleProtocol
 from pipeline.json_logging import get_logger
 
 
@@ -68,8 +70,8 @@ def _in_shard(delivery_id: str, shard: tuple[int, int] | None) -> bool:
 def _iter_unconverted(
     api_url: str,
     page_size: int,
-    http_module=converter_http,
-):
+    http_module: HttpModuleProtocol = converter_http,  # type: ignore[assignment]
+) -> Generator[dict, None, None]:
     """
     Generator yielding delivery dicts one at a time, paging under the covers.
 
@@ -106,11 +108,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run(
-    args,
+    args: argparse.Namespace,
     shard: tuple[int, int] | None,
     *,
-    http_module,
-    convert_one_fn,
+    http_module: HttpModuleProtocol,
+    convert_one_fn: ConvertOneFnProtocol,
     dp_id_exclusions: set[str] | None = None,
 ) -> int:
     """
