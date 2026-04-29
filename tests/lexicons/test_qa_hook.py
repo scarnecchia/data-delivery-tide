@@ -1,4 +1,4 @@
-# pattern: Functional Core
+# pattern: test file
 from pipeline.crawler.parser import ParsedDelivery
 from pipeline.lexicons.models import Lexicon, MetadataField
 from pipeline.lexicons.soc.qa import derive

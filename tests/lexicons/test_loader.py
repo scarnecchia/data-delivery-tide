@@ -1,4 +1,4 @@
-# pattern: Functional Core
+# pattern: test file
 from dataclasses import FrozenInstanceError
 
 import pytest

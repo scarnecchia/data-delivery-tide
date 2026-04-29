@@ -1,4 +1,4 @@
-
+# pattern: test file
 from pipeline.crawler.parser import ParsedDelivery, ParseError, parse_path, derive_statuses
 from pipeline.lexicons.models import Lexicon, MetadataField
 from pipeline.lexicons.soc.qa import derive as qa_derive

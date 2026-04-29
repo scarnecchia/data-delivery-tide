@@ -1,3 +1,4 @@
+# pattern: test file
 import asyncio
 import threading
 import time

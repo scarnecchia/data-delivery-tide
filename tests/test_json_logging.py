@@ -1,3 +1,4 @@
+# pattern: test file
 import json
 import logging
 

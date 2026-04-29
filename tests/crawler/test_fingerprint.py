@@ -1,3 +1,4 @@
+# pattern: test file
 from pipeline.crawler.fingerprint import FileEntry, compute_fingerprint
 
 

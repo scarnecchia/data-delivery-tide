@@ -1,3 +1,4 @@
+# pattern: Functional Core
 from pipeline.lexicons.models import (
     Lexicon as Lexicon,
     MetadataField as MetadataField,

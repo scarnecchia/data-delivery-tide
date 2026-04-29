@@ -1,3 +1,4 @@
+# pattern: Functional Core
 from pipeline.crawler.parser import (
     parse_path as parse_path,
     derive_statuses as derive_statuses,
