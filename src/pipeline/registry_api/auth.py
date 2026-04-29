@@ -47,10 +47,10 @@ def require_auth(
     if token_row is None:
         raise HTTPException(status_code=401, detail="invalid authentication credentials")
 
-    if token_row["revoked_at"] is not None:
+    if token_row.revoked_at is not None:
         raise HTTPException(status_code=401, detail="token has been revoked")
 
-    return TokenInfo(username=token_row["username"], role=token_row["role"])
+    return TokenInfo(username=token_row.username, role=token_row.role)
 
 
 AuthDep = Annotated[TokenInfo, Depends(require_auth)]

@@ -1,4 +1,5 @@
 # pattern: Imperative Shell
+import dataclasses
 import json
 import posixpath
 from datetime import UTC, datetime
@@ -110,15 +111,17 @@ async def create_delivery(
     )
 
     result = upsert_delivery(db, db_data)
+    assert result is not None
+    result_dict = dataclasses.asdict(result)
 
     if is_new:
-        response = DeliveryResponse(**result)
+        response = DeliveryResponse.model_validate(result_dict)
         event = insert_event(
             db, "delivery.created", delivery_id, response.model_dump(), username=token.username
         )
-        await manager.broadcast(event)
+        await manager.broadcast(dataclasses.asdict(event))
 
-    return result
+    return result_dict
 
 
 @protected_router.get("/deliveries", response_model=PaginatedDeliveryResponse)
@@ -142,7 +145,7 @@ async def list_all_deliveries(
     filter_dict = filters.model_dump(exclude_none=True)
     items, total = list_deliveries(db, filter_dict)
     return PaginatedDeliveryResponse(
-        items=[DeliveryResponse.model_validate(item) for item in items],
+        items=[DeliveryResponse.model_validate(dataclasses.asdict(item)) for item in items],
         total=total,
         limit=filters.limit,
         offset=filters.offset,
@@ -163,7 +166,7 @@ async def get_actionable_deliveries(db: DbDep, request: Request) -> list[dict[st
         for lid, lex in lexicons.items()
         if lex.actionable_statuses
     }
-    return get_actionable(db, lexicon_actionable)
+    return [dataclasses.asdict(d) for d in get_actionable(db, lexicon_actionable)]
 
 
 @protected_router.get("/deliveries/{delivery_id}", response_model=DeliveryResponse)
@@ -176,7 +179,7 @@ async def get_single_delivery(delivery_id: str, db: DbDep) -> dict[str, Any]:
     result = get_delivery(db, delivery_id)
     if result is None:
         raise HTTPException(status_code=404, detail="delivery not found")
-    return result
+    return dataclasses.asdict(result)
 
 
 @protected_router.patch("/deliveries/{delivery_id}", response_model=DeliveryResponse)
@@ -204,19 +207,19 @@ async def update_single_delivery(
         raise HTTPException(status_code=404, detail="delivery not found")
 
     lexicons = request.app.state.lexicons
-    lexicon = lexicons.get(old["lexicon_id"])
+    lexicon = lexicons.get(old.lexicon_id)
 
     updates = data.model_dump(exclude_none=True)
-    old_status = old["status"]
+    old_status = old.status
     new_status = updates.get("status")
 
     if new_status is not None and new_status != old_status:
         if lexicon is None:
-            raise HTTPException(status_code=422, detail=f"unknown lexicon_id: {old['lexicon_id']}")
+            raise HTTPException(status_code=422, detail=f"unknown lexicon_id: {old.lexicon_id}")
         if new_status not in lexicon.statuses:
             raise HTTPException(
                 status_code=422,
-                detail=f"status '{new_status}' not valid for lexicon '{old['lexicon_id']}'",
+                detail=f"status '{new_status}' not valid for lexicon '{old.lexicon_id}'",
             )
         allowed_transitions = lexicon.transitions.get(old_status, ())
         if new_status not in allowed_transitions:
@@ -224,16 +227,11 @@ async def update_single_delivery(
                 status_code=422,
                 detail=(
                     f"transition from '{old_status}' to '{new_status}' not allowed "
-                    f"for lexicon '{old['lexicon_id']}'"
+                    f"for lexicon '{old.lexicon_id}'"
                 ),
             )
 
-        # Metadata is returned from db.py deserialized as dict; handle both dict
-        # and string for safety
-        metadata_val = old.get("metadata", {})
-        existing_metadata = (
-            metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
-        )
+        existing_metadata = dict(old.metadata)
 
         # Merge user-supplied metadata first, then apply set_on overrides
         if "metadata" in updates and isinstance(updates["metadata"], dict):
@@ -251,10 +249,7 @@ async def update_single_delivery(
 
     elif "metadata" in updates:
         # Deep-merge metadata: preserve existing keys, merge in new keys
-        metadata_val = old.get("metadata", {})
-        existing_metadata = (
-            metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
-        )
+        existing_metadata = dict(old.metadata)
         merged = {**existing_metadata, **updates["metadata"]}
         updates["metadata"] = json.dumps(merged)
 
@@ -262,9 +257,10 @@ async def update_single_delivery(
     if result is None:
         raise HTTPException(status_code=404, detail="delivery not found")
 
-    actual_new_status = result["status"]
+    result_dict = dataclasses.asdict(result)
+    actual_new_status = result.status
     if actual_new_status != old_status:
-        response = DeliveryResponse(**result)
+        response = DeliveryResponse.model_validate(result_dict)
         event = insert_event(
             db,
             "delivery.status_changed",
@@ -272,9 +268,9 @@ async def update_single_delivery(
             response.model_dump(),
             username=token.username,
         )
-        await manager.broadcast(event)
+        await manager.broadcast(dataclasses.asdict(event))
 
-    return result
+    return result_dict
 
 
 @protected_router.get("/events", response_model=list[EventRecord])
@@ -288,7 +284,7 @@ async def get_events(db: DbDep, after: int, limit: int = 100) -> list[dict[str, 
 
     Returns empty array if no events match.
     """
-    return get_events_after(db, after, limit)
+    return [dataclasses.asdict(e) for e in get_events_after(db, after, limit)]
 
 
 @protected_router.post("/events", response_model=EventRecord, status_code=201)
@@ -311,5 +307,6 @@ async def emit_event(
     event = insert_event(
         db, data.event_type, data.delivery_id, data.payload, username=token.username
     )
-    await manager.broadcast(event)
-    return event
+    event_dict = dataclasses.asdict(event)
+    await manager.broadcast(event_dict)
+    return event_dict

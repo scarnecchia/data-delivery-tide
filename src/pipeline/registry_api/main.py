@@ -55,7 +55,7 @@ async def websocket_events(
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     token_row = get_token_by_hash(db, token_hash)
 
-    if token_row is None or token_row.get("revoked_at") is not None:
+    if token_row is None or token_row.revoked_at is not None:
         await websocket.close(code=1008, reason="Invalid or revoked token")
         return
 
