@@ -73,7 +73,7 @@ def cmd_list_users(args: argparse.Namespace) -> int:
         rows = cursor.fetchall()
 
         if not rows:
-            print("No users found.")
+            print("no users found")
             return 0
 
         # Print header
@@ -105,7 +105,7 @@ def cmd_revoke_user(args: argparse.Namespace) -> int:
 
         # Idempotent: if already revoked, no-op
         if row["revoked_at"] is not None:
-            print(f"User '{args.username}' is already revoked.")
+            print(f"user '{args.username}' is already revoked")
             return 0
 
         cursor.execute(
@@ -114,7 +114,7 @@ def cmd_revoke_user(args: argparse.Namespace) -> int:
         )
         conn.commit()
 
-        print(f"User '{args.username}' revoked.")
+        print(f"user '{args.username}' revoked")
         return 0
     finally:
         conn.close()

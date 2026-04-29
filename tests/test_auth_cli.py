@@ -1,3 +1,4 @@
+# pattern: test file
 import argparse
 import hashlib
 import sqlite3
@@ -146,7 +147,7 @@ class TestListUsers:
 
         assert result == 0
         captured = capsys.readouterr()
-        assert "No users found" in captured.out
+        assert "no users found" in captured.out
 
 
 class TestRevokeUser:

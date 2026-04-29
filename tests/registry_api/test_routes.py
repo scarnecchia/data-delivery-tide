@@ -1,3 +1,4 @@
+# pattern: test file
 import asyncio
 import json
 from datetime import datetime
@@ -1322,7 +1323,7 @@ class TestEmitEvent:
         response = client.post("/events", json=event_payload, headers=auth_headers)
 
         assert response.status_code == 404
-        assert response.json()["detail"] == "Delivery not found"
+        assert response.json()["detail"] == "delivery not found"
 
     def test_emit_event_rejects_registry_internal_event_types(self, client, auth_headers):
         """AC6.4: POST /events rejects delivery.created and delivery.status_changed."""
