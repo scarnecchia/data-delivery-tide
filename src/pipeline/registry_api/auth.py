@@ -27,7 +27,7 @@ class TokenInfo(BaseModel):
 
 def require_auth(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),  # noqa: B008
-    db: DbDep = ...,
+    db: DbDep = ...,  # type: ignore[assignment]
 ) -> TokenInfo:
     """
     FastAPI dependency that validates bearer tokens.

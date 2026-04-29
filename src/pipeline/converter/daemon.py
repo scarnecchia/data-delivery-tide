@@ -119,7 +119,7 @@ class DaemonRunner:
         consumer_task = asyncio.create_task(consumer.run())
         self._consumer = consumer  # for signal handler to advance last_seq
 
-        def _request_shutdown():
+        def _request_shutdown() -> None:
             if self._stopping:
                 return
             self._stopping = True
