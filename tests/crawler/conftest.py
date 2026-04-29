@@ -156,6 +156,12 @@ def make_crawler_config(tmp_path, lexicons_dir):
             crawl_manifest_dir=config_dict["crawl_manifest_dir"],
             crawler_version=config_dict["crawler_version"],
             lexicons_dir=lexicons_dir,
+            converter_version=config_dict.get("converter_version", "0.1.0"),
+            converter_chunk_size=config_dict.get("converter_chunk_size", 100_000),
+            converter_compression=config_dict.get("converter_compression", "zstd"),
+            converter_state_path=config_dict.get("converter_state_path", "pipeline/.converter_state.json"),
+            converter_cli_batch_size=config_dict.get("converter_cli_batch_size", 200),
+            converter_cli_sleep_empty_secs=config_dict.get("converter_cli_sleep_empty_secs", 0),
         )
 
     return _make

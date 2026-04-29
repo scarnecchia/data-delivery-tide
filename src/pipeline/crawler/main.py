@@ -34,6 +34,7 @@ def inventory_files(source_path: str) -> list[FileEntry]:
 def walk_roots(
     scan_roots: list,
     valid_terminals: set[str],
+    exclusions: set[str] | None = None,
     logger=None,
 ) -> list[tuple[str, str]]:
     """Find all terminal directories under configured scan roots.
@@ -42,10 +43,13 @@ def walk_roots(
     scan_root / <dpid> / <target> / <request_id> / <version_dir> / <terminal>
 
     valid_terminals: set of terminal directory names to match.
+    exclusions: dpid directory names to skip entirely.
 
     Returns list of (source_path, scan_root_path) tuples.
     Skips non-existent scan roots.
     """
+    if exclusions is None:
+        exclusions = set()
     results = []
     for root in scan_roots:
         root_path = root.path
@@ -60,6 +64,8 @@ def walk_roots(
             continue
         for dpid_entry in dpid_entries:
             if not dpid_entry.is_dir(follow_symlinks=False):
+                continue
+            if dpid_entry.name in exclusions:
                 continue
 
             # Level 2: only enter the target directory
@@ -137,7 +143,7 @@ def crawl(config, logger) -> int:
                 extra={"scan_root": root.path},
             )
 
-    candidates = walk_roots(config.scan_roots, valid_terminals, logger)
+    candidates = walk_roots(config.scan_roots, valid_terminals, exclusions, logger)
     logger.info(f"found {len(candidates)} delivery candidates")
 
     # --- Pass 1: Parse, inventory, fingerprint, write manifests ---

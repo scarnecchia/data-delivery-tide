@@ -6,6 +6,7 @@ from pipeline.registry_api.models import (
     DeliveryUpdate,
     DeliveryResponse,
     DeliveryFilters,
+    EventCreate,
     EventRecord,
 )
 
@@ -339,6 +340,34 @@ class TestDeliveryFilters:
         assert model_none.converted is None
 
 
+class TestEventCreate:
+    def test_accepts_conversion_completed(self):
+        e = EventCreate(
+            event_type="conversion.completed",
+            delivery_id="abc",
+            payload={"k": "v"},
+        )
+        assert e.event_type == "conversion.completed"
+
+    def test_accepts_conversion_failed(self):
+        e = EventCreate(event_type="conversion.failed", delivery_id="abc", payload={})
+        assert e.event_type == "conversion.failed"
+
+    def test_rejects_registry_internal_types(self):
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="delivery.created", delivery_id="abc", payload={})
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="delivery.status_changed", delivery_id="abc", payload={})
+
+    def test_rejects_arbitrary_strings(self):
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="nonsense", delivery_id="abc", payload={})
+
+    def test_payload_must_be_dict(self):
+        with pytest.raises(ValidationError):
+            EventCreate(event_type="conversion.completed", delivery_id="abc", payload="not a dict")
+
+
 class TestEventRecord:
     def test_event_record_valid_with_all_fields(self):
         """Test EventRecord accepts valid input with all required fields."""
@@ -367,6 +396,30 @@ class TestEventRecord:
         )
 
         assert model.event_type == "delivery.status_changed"
+
+    def test_event_record_accepts_conversion_completed(self):
+        """AC6.1: EventRecord accepts 'conversion.completed' event_type."""
+        model = EventRecord(
+            seq=3,
+            event_type="conversion.completed",
+            delivery_id="abc123",
+            payload={"row_count": 100, "bytes_written": 1024},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.event_type == "conversion.completed"
+
+    def test_event_record_accepts_conversion_failed(self):
+        """AC6.1: EventRecord accepts 'conversion.failed' event_type."""
+        model = EventRecord(
+            seq=4,
+            event_type="conversion.failed",
+            delivery_id="abc123",
+            payload={"error_class": "ParseError", "error_message": "invalid format"},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+
+        assert model.event_type == "conversion.failed"
 
     def test_event_record_rejects_invalid_event_type(self):
         """Test EventRecord with invalid event_type raises ValidationError."""
