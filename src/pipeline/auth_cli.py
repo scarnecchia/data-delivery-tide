@@ -153,7 +153,7 @@ def cmd_rotate_token(args: argparse.Namespace) -> int:
         conn.close()
 
 
-def main():
+def main() -> None:
     """Entry point for the registry-auth CLI."""
     parser = argparse.ArgumentParser(
         prog="registry-auth",
