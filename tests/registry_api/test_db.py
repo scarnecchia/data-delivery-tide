@@ -393,10 +393,10 @@ class TestGetTokenByHash:
         result = get_token_by_hash(memory_db, "abc123hash")
 
         assert result is not None
-        assert result["token_hash"] == "abc123hash"
-        assert result["username"] == "testuser"
-        assert result["role"] == "read"
-        assert result["revoked_at"] is None
+        assert result.token_hash == "abc123hash"
+        assert result.username == "testuser"
+        assert result.role == "read"
+        assert result.revoked_at is None
 
     def test_get_token_by_hash_returns_none_for_nonexistent(self, memory_db):
         """Test that get_token_by_hash returns None for nonexistent hash."""
@@ -422,7 +422,7 @@ class TestGetTokenByHash:
         result = get_token_by_hash(memory_db, "revokedhash")
 
         assert result is not None
-        assert result["revoked_at"] is not None
+        assert result.revoked_at is not None
 
 
 class TestUpsertDelivery:
@@ -456,22 +456,22 @@ class TestUpsertDelivery:
 
         result = upsert_delivery(memory_db, data)
 
-        assert result["delivery_id"] == make_delivery_id("/test/source")
-        assert result["request_id"] == "req-123"
-        assert result["project"] == "proj-a"
-        assert result["request_type"] == "full"
-        assert result["workplan_id"] == "wp-456"
-        assert result["dp_id"] == "dp-789"
-        assert result["version"] == "v01"
-        assert result["scan_root"] == "/scan"
-        assert result["lexicon_id"] == "qa-standard"
-        assert result["status"] == "pending"
-        assert result["file_count"] == 10
-        assert result["total_bytes"] == 1024
-        assert result["source_path"] == "/test/source"
-        assert result["fingerprint"] == "hash-abc"
-        assert result["first_seen_at"] is not None
-        assert result["last_updated_at"] is not None
+        assert result.delivery_id == make_delivery_id("/test/source")
+        assert result.request_id == "req-123"
+        assert result.project == "proj-a"
+        assert result.request_type == "full"
+        assert result.workplan_id == "wp-456"
+        assert result.dp_id == "dp-789"
+        assert result.version == "v01"
+        assert result.scan_root == "/scan"
+        assert result.lexicon_id == "qa-standard"
+        assert result.status == "pending"
+        assert result.file_count == 10
+        assert result.total_bytes == 1024
+        assert result.source_path == "/test/source"
+        assert result.fingerprint == "hash-abc"
+        assert result.first_seen_at is not None
+        assert result.last_updated_at is not None
 
     def test_upsert_delivery_preserves_first_seen_at_on_reinsert(self, memory_db, monkeypatch):
         """Test AC2.2: Upsert preserves first_seen_at when re-inserting existing delivery."""
@@ -496,7 +496,7 @@ class TestUpsertDelivery:
             "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
         )
         result1 = upsert_delivery(memory_db, data1)
-        first_seen_at_1 = result1["first_seen_at"]
+        first_seen_at_1 = result1.first_seen_at
 
         # Mock second call to return a different timestamp T2
         monkeypatch.setattr(
@@ -511,7 +511,7 @@ class TestUpsertDelivery:
         }
 
         result2 = upsert_delivery(memory_db, data2)
-        first_seen_at_2 = result2["first_seen_at"]
+        first_seen_at_2 = result2.first_seen_at
 
         assert first_seen_at_1 == first_seen_at_2, "first_seen_at should be preserved on reinsert"
 
@@ -540,7 +540,7 @@ class TestUpsertDelivery:
             "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
         )
         result1 = upsert_delivery(memory_db, data1)
-        last_updated_at_1 = result1["last_updated_at"]
+        last_updated_at_1 = result1.last_updated_at
 
         # Mock second call to return a different timestamp T2
         monkeypatch.setattr(
@@ -554,7 +554,7 @@ class TestUpsertDelivery:
         }
 
         result2 = upsert_delivery(memory_db, data2)
-        last_updated_at_2 = result2["last_updated_at"]
+        last_updated_at_2 = result2.last_updated_at
 
         assert last_updated_at_1 != last_updated_at_2, (
             "last_updated_at should be updated when fingerprint changes"
@@ -586,7 +586,7 @@ class TestUpsertDelivery:
             "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
         )
         result1 = upsert_delivery(memory_db, data1)
-        last_updated_at_1 = result1["last_updated_at"]
+        last_updated_at_1 = result1.last_updated_at
 
         # Mock second call to return a different timestamp T2
         monkeypatch.setattr(
@@ -601,7 +601,7 @@ class TestUpsertDelivery:
         }
 
         result2 = upsert_delivery(memory_db, data2)
-        last_updated_at_2 = result2["last_updated_at"]
+        last_updated_at_2 = result2.last_updated_at
 
         assert last_updated_at_1 == last_updated_at_2, (
             "last_updated_at should NOT be updated when fingerprint is unchanged"
@@ -640,8 +640,8 @@ class TestGetDelivery:
         result = get_delivery(memory_db, delivery_id)
 
         assert result is not None
-        assert result["delivery_id"] == delivery_id
-        assert result["request_id"] == "req-123"
+        assert result.delivery_id == delivery_id
+        assert result.request_id == "req-123"
 
     def test_get_delivery_returns_none_for_nonexistent(self, memory_db):
         """Test that get_delivery returns None for nonexistent delivery_id."""
@@ -733,63 +733,63 @@ class TestListDeliveries:
         results, _ = list_deliveries(memory_db, {"dp_id": "dp-1"})
 
         assert len(results) == 3
-        assert all(r["dp_id"] == "dp-1" for r in results)
+        assert all(r.dp_id == "dp-1" for r in results)
 
     def test_list_deliveries_filter_by_project(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by project."""
         results, _ = list_deliveries(memory_db, {"project": "proj-a"})
 
         assert len(results) == 3
-        assert all(r["project"] == "proj-a" for r in results)
+        assert all(r.project == "proj-a" for r in results)
 
     def test_list_deliveries_filter_by_request_type(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by request_type."""
         results, _ = list_deliveries(memory_db, {"request_type": "full"})
 
         assert len(results) == 3
-        assert all(r["request_type"] == "full" for r in results)
+        assert all(r.request_type == "full" for r in results)
 
     def test_list_deliveries_filter_by_workplan_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by workplan_id."""
         results, _ = list_deliveries(memory_db, {"workplan_id": "wp-100"})
 
         assert len(results) == 2
-        assert all(r["workplan_id"] == "wp-100" for r in results)
+        assert all(r.workplan_id == "wp-100" for r in results)
 
     def test_list_deliveries_filter_by_request_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by request_id."""
         results, _ = list_deliveries(memory_db, {"request_id": "req-1"})
 
         assert len(results) == 1
-        assert results[0]["request_id"] == "req-1"
+        assert results[0].request_id == "req-1"
 
     def test_list_deliveries_filter_by_status(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by status."""
         results, _ = list_deliveries(memory_db, {"status": "passed"})
 
         assert len(results) == 2
-        assert all(r["status"] == "passed" for r in results)
+        assert all(r.status == "passed" for r in results)
 
     def test_list_deliveries_filter_by_scan_root(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by scan_root."""
         results, _ = list_deliveries(memory_db, {"scan_root": "/scan/1"})
 
         assert len(results) == 1
-        assert results[0]["scan_root"] == "/scan/1"
+        assert results[0].scan_root == "/scan/1"
 
     def test_list_deliveries_filter_by_converted_true(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by converted=True."""
         results, _ = list_deliveries(memory_db, {"converted": True})
 
         assert len(results) == 1
-        assert results[0]["parquet_converted_at"] is not None
+        assert results[0].parquet_converted_at is not None
 
     def test_list_deliveries_filter_by_converted_false(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by converted=False."""
         results, _ = list_deliveries(memory_db, {"converted": False})
 
         assert len(results) == 3
-        assert all(r["parquet_converted_at"] is None for r in results)
+        assert all(r.parquet_converted_at is None for r in results)
 
     def test_list_deliveries_version_latest(self, memory_db, sample_deliveries):
         """Test AC2.6: version=latest returns highest version per (dp_id, workplan_id)."""
@@ -798,15 +798,15 @@ class TestListDeliveries:
         )
 
         assert len(results) == 1
-        assert results[0]["version"] == "v03"
+        assert results[0].version == "v03"
 
     def test_list_deliveries_multiple_filters_and_semantics(self, memory_db, sample_deliveries):
         """Test AC2.7: Multiple filters combine with AND semantics."""
         results, _ = list_deliveries(memory_db, {"project": "proj-a", "status": "passed"})
 
         assert len(results) == 1
-        assert results[0]["project"] == "proj-a"
-        assert results[0]["status"] == "passed"
+        assert results[0].project == "proj-a"
+        assert results[0].status == "passed"
 
     def test_list_deliveries_limit(self, memory_db, sample_deliveries):
         """AC7.1 limit: list_deliveries with limit= returns at most N rows."""
@@ -840,7 +840,7 @@ class TestListDeliveries:
 
         assert len(results_page) == 2
         assert total2 == 3
-        assert all(r["parquet_converted_at"] is None for r in results_page)
+        assert all(r.parquet_converted_at is None for r in results_page)
 
 
 class TestGetActionable:
@@ -876,8 +876,8 @@ class TestGetActionable:
         results = get_actionable(memory_db, {"qa-standard": ["passed"]})
 
         assert len(results) == 1
-        assert results[0]["status"] == "passed"
-        assert results[0]["parquet_converted_at"] is None
+        assert results[0].status == "passed"
+        assert results[0].parquet_converted_at is None
 
     def test_get_actionable_excludes_pending(self, memory_db):
         """Test get_actionable excludes deliveries with status=pending."""
@@ -957,7 +957,7 @@ class TestUpdateDelivery:
 
     def test_update_delivery_updates_specified_fields(self, memory_db, sample_delivery):
         """Test update_delivery updates only specified fields."""
-        delivery_id = sample_delivery["delivery_id"]
+        delivery_id = sample_delivery.delivery_id
 
         result = update_delivery(
             memory_db,
@@ -968,10 +968,10 @@ class TestUpdateDelivery:
             },
         )
 
-        assert result["status"] == "passed"
-        assert result["metadata"] == {"passed_at": "2026-01-01T00:00:00+00:00"}
+        assert result.status == "passed"
+        assert result.metadata == {"passed_at": "2026-01-01T00:00:00+00:00"}
         # Other fields unchanged
-        assert result["request_id"] == "req-123"
+        assert result.request_id == "req-123"
 
     def test_update_delivery_returns_none_for_nonexistent(self, memory_db):
         """Test update_delivery returns None for nonexistent delivery_id."""
@@ -981,14 +981,14 @@ class TestUpdateDelivery:
 
     def test_update_delivery_empty_dict_is_noop(self, memory_db, sample_delivery):
         """Test update_delivery with empty dict is a no-op (returns unchanged row)."""
-        delivery_id = sample_delivery["delivery_id"]
-        original_status = sample_delivery["status"]
+        delivery_id = sample_delivery.delivery_id
+        original_status = sample_delivery.status
 
         result = update_delivery(memory_db, delivery_id, {})
 
         assert result is not None
-        assert result["delivery_id"] == delivery_id
-        assert result["status"] == original_status
+        assert result.delivery_id == delivery_id
+        assert result.status == original_status
 
 
 class TestInsertEvent:
@@ -1012,12 +1012,12 @@ class TestInsertEvent:
             payload=payload,
         )
 
-        assert result["event_type"] == "delivery.created"
-        assert result["delivery_id"] == "abc123"
-        assert result["payload"] == payload
-        assert result["seq"] is not None
-        assert isinstance(result["seq"], int)
-        assert result["created_at"] is not None
+        assert result.event_type == "delivery.created"
+        assert result.delivery_id == "abc123"
+        assert result.payload == payload
+        assert result.seq is not None
+        assert isinstance(result.seq, int)
+        assert result.created_at is not None
 
     def test_insert_event_ac4_1_monotonic_sequence(self, memory_db):
         """Test event-stream.AC4.1: Each event has seq higher than all previous events."""
@@ -1037,7 +1037,7 @@ class TestInsertEvent:
             payload=payload2,
         )
 
-        assert result2["seq"] > result1["seq"]
+        assert result2.seq > result1.seq
 
     def test_insert_event_ac4_2_payload_matches_broadcast(self, memory_db):
         """Test event-stream.AC4.2: Event payload matches broadcast payload."""
@@ -1050,7 +1050,7 @@ class TestInsertEvent:
             payload=payload,
         )
 
-        assert result["payload"] == payload
+        assert result.payload == payload
 
     def test_insert_event_accepts_delivery_created(self, memory_db):
         """Test insert_event accepts 'delivery.created' event type."""
@@ -1061,7 +1061,7 @@ class TestInsertEvent:
             payload={},
         )
 
-        assert result["event_type"] == "delivery.created"
+        assert result.event_type == "delivery.created"
 
     def test_insert_event_accepts_delivery_status_changed(self, memory_db):
         """Test insert_event accepts 'delivery.status_changed' event type."""
@@ -1072,7 +1072,7 @@ class TestInsertEvent:
             payload={},
         )
 
-        assert result["event_type"] == "delivery.status_changed"
+        assert result.event_type == "delivery.status_changed"
 
     def test_insert_event_rejects_invalid_event_type(self, memory_db):
         """Test insert_event with invalid event_type raises sqlite3.IntegrityError (CHECK constraint)."""
@@ -1097,7 +1097,7 @@ class TestInsertEvent:
 
         # Verify it's actually persisted by fetching it back
         cursor = memory_db.cursor()
-        cursor.execute("SELECT * FROM events WHERE seq = ?", (result["seq"],))
+        cursor.execute("SELECT * FROM events WHERE seq = ?", (result.seq,))
         row = cursor.fetchone()
 
         assert row is not None
@@ -1133,8 +1133,8 @@ class TestGetEventsAfter:
         results = get_events_after(memory_db, after_seq=1)
 
         assert len(results) == 2
-        assert results[0]["seq"] == sample_events[1]["seq"]
-        assert results[1]["seq"] == sample_events[2]["seq"]
+        assert results[0].seq == sample_events[1].seq
+        assert results[1].seq == sample_events[2].seq
 
     def test_get_events_after_ac5_2_respects_limit(self, memory_db):
         """Test event-stream.AC5.2: Returns at most limit events."""
@@ -1150,7 +1150,7 @@ class TestGetEventsAfter:
         """Test get_events_after returns results ordered by seq ASC."""
         results = get_events_after(memory_db, after_seq=0)
 
-        seqs = [r["seq"] for r in results]
+        seqs = [r.seq for r in results]
         assert seqs == sorted(seqs)
 
     def test_get_events_after_limit_capped_at_1000(self, memory_db):
@@ -1178,8 +1178,8 @@ class TestGetEventsAfter:
         results = get_events_after(memory_db, after_seq=0)
 
         assert len(results) == 1
-        assert results[0]["payload"] == payload
-        assert isinstance(results[0]["payload"], dict)
+        assert results[0].payload == payload
+        assert isinstance(results[0].payload, dict)
 
 
 class TestDeliveryExists:
@@ -1253,9 +1253,9 @@ class TestLexiconSchema:
 
         result = upsert_delivery(memory_db, data)
 
-        assert result["lexicon_id"] == "qa-standard"
-        assert result["status"] == "pending"
-        assert result["metadata"] is not None
+        assert result.lexicon_id == "qa-standard"
+        assert result.status == "pending"
+        assert result.metadata is not None
 
     def test_ac3_2_metadata_json_roundtrip(self, memory_db):
         """AC3.2 Success: metadata JSON round-trips correctly through upsert and query."""
@@ -1278,12 +1278,12 @@ class TestLexiconSchema:
 
         # Upsert the delivery
         upsert_result = upsert_delivery(memory_db, data)
-        assert upsert_result["metadata"] == metadata_in
+        assert upsert_result.metadata == metadata_in
 
         # Query it back
         delivery_id = make_delivery_id("/test/delivery-ac3-2")
         fetched = get_delivery(memory_db, delivery_id)
-        assert fetched["metadata"] == metadata_in
+        assert fetched.metadata == metadata_in
 
     def test_ac3_3_actionable_query_returns_matching_statuses(self, memory_db):
         """AC3.3 Success: Actionable query returns deliveries matching per-lexicon actionable_statuses."""
@@ -1326,8 +1326,8 @@ class TestLexiconSchema:
         results = get_actionable(memory_db, {"qa-standard": ["passed"]})
 
         assert len(results) == 1
-        assert results[0]["status"] == "passed"
-        assert results[0]["source_path"] == "/test/ac3-3-passed"
+        assert results[0].status == "passed"
+        assert results[0].source_path == "/test/ac3-3-passed"
 
     def test_ac3_4_actionable_across_multiple_lexicons(self, memory_db):
         """AC3.4 Success: Actionable query works across multiple lexicons with different actionable statuses."""
@@ -1394,7 +1394,7 @@ class TestLexiconSchema:
 
         # Should return: 1 from qa-standard (passed) + 1 from qa-extended (review-pending)
         assert len(results) == 2
-        statuses = {r["status"] for r in results}
+        statuses = {r.status for r in results}
         assert "passed" in statuses
         assert "review-pending" in statuses
 
@@ -1458,10 +1458,10 @@ class TestLexiconSchema:
 
         # Verify filtering works
         assert len(results_standard) == 2
-        assert all(r["lexicon_id"] == "qa-standard" for r in results_standard)
+        assert all(r.lexicon_id == "qa-standard" for r in results_standard)
 
         assert len(results_extended) == 1
-        assert all(r["lexicon_id"] == "qa-extended" for r in results_extended)
+        assert all(r.lexicon_id == "qa-extended" for r in results_extended)
 
     def test_ac3_5_list_deliveries_filter_by_status(self, memory_db):
         """AC3.5 Success: List/filter deliveries by status."""
@@ -1491,10 +1491,10 @@ class TestLexiconSchema:
 
         # Verify filtering works
         assert len(pending_results) == 2
-        assert all(r["status"] == "pending" for r in pending_results)
+        assert all(r.status == "pending" for r in pending_results)
 
         assert len(passed_results) == 1
-        assert all(r["status"] == "passed" for r in passed_results)
+        assert all(r.status == "passed" for r in passed_results)
 
         assert len(failed_results) == 1
-        assert all(r["status"] == "failed" for r in failed_results)
+        assert all(r.status == "failed" for r in failed_results)
