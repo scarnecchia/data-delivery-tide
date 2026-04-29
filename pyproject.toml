@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pipeline"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [project.optional-dependencies]
 registry = [
@@ -36,6 +36,9 @@ registry-convert-daemon = "pipeline.converter.daemon:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: tests that hit the filesystem or network",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pipeline"]
