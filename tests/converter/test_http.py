@@ -36,7 +36,7 @@ class TestGetDelivery:
         http_err = urllib.error.HTTPError(
             url="", code=404, msg="Not Found", hdrs=None, fp=None
         )
-        http_err.read = lambda: b'{"detail":"Delivery not found"}'
+        http_err.read = lambda: b'{"detail":"delivery not found"}'
         mock_urlopen.side_effect = http_err
 
         with pytest.raises(RegistryClientError) as exc_info:

@@ -41,16 +41,16 @@ def require_auth(
         HTTPException 401: Missing/invalid/revoked token
     """
     if credentials is None:
-        raise HTTPException(status_code=401, detail="Missing authentication credentials")
+        raise HTTPException(status_code=401, detail="missing authentication credentials")
 
     token_hash = hashlib.sha256(credentials.credentials.encode()).hexdigest()
     token_row = get_token_by_hash(db, token_hash)
 
     if token_row is None:
-        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        raise HTTPException(status_code=401, detail="invalid authentication credentials")
 
     if token_row["revoked_at"] is not None:
-        raise HTTPException(status_code=401, detail="Token has been revoked")
+        raise HTTPException(status_code=401, detail="token has been revoked")
 
     return TokenInfo(username=token_row["username"], role=token_row["role"])
 
@@ -71,7 +71,7 @@ def require_role(minimum: str):
         if ROLE_HIERARCHY[token.role] < ROLE_HIERARCHY[minimum]:
             raise HTTPException(
                 status_code=403,
-                detail=f"Insufficient permissions: requires {minimum} role",
+                detail=f"insufficient permissions: requires {minimum} role",
             )
         return token
 

@@ -166,7 +166,7 @@ async def get_single_delivery(delivery_id: str, db: DbDep):
     """
     result = get_delivery(db, delivery_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="delivery not found")
     return result
 
 
@@ -192,7 +192,7 @@ async def update_single_delivery(
     """
     old = get_delivery(db, delivery_id)
     if old is None:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="delivery not found")
 
     lexicons = request.app.state.lexicons
     lexicon = lexicons.get(old["lexicon_id"])
@@ -245,7 +245,7 @@ async def update_single_delivery(
 
     result = update_delivery(db, delivery_id, updates)
     if result is None:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="delivery not found")
 
     actual_new_status = result["status"]
     if actual_new_status != old_status:
@@ -281,7 +281,7 @@ async def emit_event(data: EventCreate, db: DbDep, token: TokenInfo = require_ro
     Returns 404 if the delivery does not exist.
     """
     if get_delivery(db, data.delivery_id) is None:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="delivery not found")
 
     event = insert_event(db, data.event_type, data.delivery_id, data.payload, username=token.username)
     await manager.broadcast(event)
