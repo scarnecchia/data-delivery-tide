@@ -34,6 +34,10 @@ class ConnectionManager:
             try:
                 await connection.send_json(event)
             except Exception:
+                logger.debug(
+                    "WebSocket send failed, marking connection dead",
+                    exc_info=True,
+                )
                 dead.append(connection)
 
         for connection in dead:

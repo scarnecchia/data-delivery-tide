@@ -244,3 +244,60 @@ class TestWebSocketEndpoint:
 
         assert broadcast_succeeded, "Broadcast should not crash with dead connections"
 
+
+
+# ---- GH23 phase 4: failed send_json logged at DEBUG ----
+
+import logging
+
+
+class TestBroadcastExcInfoLogging:
+    """GH23.AC4: failed send_json logs DEBUG with exc_info before marking dead."""
+
+    @pytest.mark.asyncio
+    async def test_failed_send_logs_debug_with_exc_info(self, caplog):
+        manager = ConnectionManager()
+        bad = AsyncMock()
+        bad.send_json.side_effect = RuntimeError("boom")
+        manager.active_connections.add(bad)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
+        await manager.broadcast({"seq": 1})
+
+        debug_records = [r for r in caplog.records
+                         if r.name == "pipeline.registry_api.events"
+                         and r.levelno == logging.DEBUG
+                         and r.message == "WebSocket send failed, marking connection dead"]
+        assert len(debug_records) == 1
+        assert debug_records[0].exc_info is not None
+        assert debug_records[0].exc_info[0] is RuntimeError
+
+    @pytest.mark.asyncio
+    async def test_failed_send_still_warns_and_removes(self, caplog):
+        manager = ConnectionManager()
+        bad = AsyncMock()
+        bad.send_json.side_effect = RuntimeError("boom")
+        manager.active_connections.add(bad)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
+        await manager.broadcast({"seq": 1})
+
+        warn_records = [r for r in caplog.records
+                        if r.name == "pipeline.registry_api.events"
+                        and r.levelno == logging.WARNING
+                        and r.message == "Removed dead WebSocket connection during broadcast"]
+        assert len(warn_records) == 1
+        assert bad not in manager.active_connections
+
+    @pytest.mark.asyncio
+    async def test_successful_send_emits_no_records(self, caplog):
+        manager = ConnectionManager()
+        good = AsyncMock()
+        manager.active_connections.add(good)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
+        await manager.broadcast({"seq": 1})
+
+        records = [r for r in caplog.records if r.name == "pipeline.registry_api.events"]
+        assert records == []
+        assert good in manager.active_connections
