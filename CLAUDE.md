@@ -1,15 +1,15 @@
-# QA Registry Pipeline
+# Loading Dock
 
-Last verified: 2026-04-25
-Last context update: 2026-04-25
+Last verified: 2026-04-29
+Last context update: 2026-04-29
 
 ## Purpose
 
-SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Crawls directory structures that encode metadata (project, workplan, version, status), registers deliveries in SQLite, and converts SAS7BDAT files to Parquet. Status semantics (valid statuses, transitions, directory mappings, actionable states) are defined by configurable lexicons rather than hardcoded values.
+Data delivery tracking and conversion pipeline for healthcare data arriving on a network share. Crawls directory structures that encode metadata (project, workplan, version, status), registers deliveries in SQLite, and converts SAS7BDAT files to Parquet. Status semantics (valid statuses, transitions, directory mappings, actionable states) are defined by configurable lexicons rather than hardcoded values.
 
 ## Tech Stack
 
-- Python 3.10+ (target environment: RHEL, no Docker, no systemd)
+- Python 3.11+ (target environment: RHEL, no Docker, no systemd)
 - FastAPI + Uvicorn (registry API)
 - SQLite via stdlib sqlite3 (registry backing store, WAL mode)
 - pyreadstat + pyarrow + pandas (SAS-to-Parquet conversion)
@@ -19,18 +19,17 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
 
 ## Commands
 
-- `uv run pytest` -- run all tests
-- `uv run registry-api` -- start the registry API on port 8000
-- `uv run registry-auth` -- manage auth tokens (add-user, list-users, revoke-user, rotate-token)
-- `uv pip install -e ".[registry,dev]"` -- install with registry and dev deps
-- `uv pip install -e ".[consumer]"` -- install event consumer deps (websockets, httpx)
-- `uv pip install -e ".[converter]"` -- install SAS-to-Parquet converter deps (pyreadstat, pyarrow)
-- `uv run registry-convert` -- drain unconverted deliveries backlog (backfill CLI)
-- `uv run registry-convert --limit 10` -- process at most 10 deliveries
-- `uv run registry-convert --shard 0/4` -- process shard 0 of 4 (horizontal split)
-- `uv run registry-convert --include-failed` -- re-attempt errored deliveries
-- `uv run registry-convert-daemon` -- start the event-driven converter daemon
-- `pipeline/scripts/ensure_converter.sh` -- PID-based watchdog for the daemon
+- `pytest` -- run all tests
+- `registry-api` -- start the registry API on port 8000
+- `registry-auth` -- manage auth tokens (add-user, list-users, revoke-user, rotate-token)
+- `pip install -e ".[registry,converter,consumer,dev]"` -- install all deps
+- `registry-convert` -- drain unconverted deliveries backlog (backfill CLI)
+- `registry-convert --limit 10` -- process at most 10 deliveries
+- `registry-convert --shard 0/4` -- process shard 0 of 4 (horizontal split)
+- `registry-convert --include-failed` -- re-attempt errored deliveries
+- `registry-convert-daemon` -- start the event-driven converter daemon
+- `pipeline/scripts/ensure_registry.sh` -- PID-based watchdog for the registry API
+- `pipeline/scripts/ensure_converter.sh` -- PID-based watchdog for the converter daemon
 
 ## Project Structure
 
@@ -49,7 +48,9 @@ SAS-to-Parquet data pipeline for healthcare data arriving on a network share. Cr
   - `scripts/ensure_registry.sh` -- PID-based watchdog for registry API
   - `scripts/ensure_converter.sh` -- PID-based watchdog for converter daemon
 - `tests/` -- mirrors src structure
-- `docs/implementation-plans/` -- phased implementation plans
+- `docs/` -- documentation
+  - `setup-guide.md` -- end-to-end setup and operations guide
+  - `implementation-plans/` -- phased implementation plans
 - `output/` -- pipeline output directory
 
 ## Conventions
