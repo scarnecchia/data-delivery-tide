@@ -40,7 +40,7 @@ class DeliveryCreate(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def check_metadata_size(cls, v):
+    def check_metadata_size(cls, v: dict | None) -> dict | None:
         return _validate_metadata_size(v)
 
 
@@ -54,7 +54,7 @@ class DeliveryUpdate(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def check_metadata_size(cls, v):
+    def check_metadata_size(cls, v: dict | None) -> dict | None:
         return _validate_metadata_size(v)
 
 
@@ -100,14 +100,14 @@ class DeliveryFilters(BaseModel):
 
     @field_validator("limit")
     @classmethod
-    def clamp_limit(cls, v):
+    def clamp_limit(cls, v: int) -> int:
         if v < 1:
             return 1
         return min(v, 1000)
 
     @field_validator("offset")
     @classmethod
-    def check_offset(cls, v):
+    def check_offset(cls, v: int) -> int:
         if v < 0:
             return 0
         return v

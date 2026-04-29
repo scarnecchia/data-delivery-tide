@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+from collections.abc import Generator
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -187,7 +188,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def get_db():
+def get_db() -> Generator[sqlite3.Connection, None, None]:
     """
     FastAPI dependency injection generator for database connections.
 
@@ -330,7 +331,9 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     if row:
         row_dict = dict(row)
         return _deserialize_metadata(row_dict)
-    return None
+    # Unreachable: the INSERT above guarantees the row exists.
+    # Annotated as dict per design (#19 AC1.3); this line is defensive only.
+    return None  # type: ignore[return-value]
 
 
 def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
