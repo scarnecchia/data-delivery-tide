@@ -1,12 +1,15 @@
 # pattern: Functional Core
+import dataclasses
 import hashlib
-from typing import Any, TypedDict
+from dataclasses import dataclass
+from typing import Any
 
 from pipeline.crawler.fingerprint import FileEntry
 from pipeline.crawler.parser import ParsedDelivery, ParseError
 
 
-class ParsedMetadata(TypedDict):
+@dataclass(frozen=True)
+class ParsedMetadata:
     request_id: str
     project: str
     request_type: str
@@ -15,7 +18,8 @@ class ParsedMetadata(TypedDict):
     version: str
 
 
-class CrawlManifest(TypedDict):
+@dataclass(frozen=True)
+class CrawlManifest:
     crawled_at: str
     crawler_version: str
     delivery_id: str
@@ -30,12 +34,19 @@ class CrawlManifest(TypedDict):
     total_bytes: int
 
 
-class ErrorManifest(TypedDict):
+@dataclass(frozen=True)
+class ErrorManifest:
     error_at: str
     crawler_version: str
     raw_path: str
     scan_root: str
     error: str
+
+
+@dataclass(frozen=True)
+class ErrorManifestResult:
+    filename: str
+    manifest: ErrorManifest
 
 
 def make_delivery_id(source_path: str) -> str:
@@ -54,46 +65,47 @@ def build_manifest(
     crawled_at: str,
     lexicon_id: str,
 ) -> CrawlManifest:
-    """Build a crawl manifest dict from parsed metadata and file inventory."""
+    """Build a crawl manifest from parsed metadata and file inventory."""
     delivery_id = make_delivery_id(parsed.source_path)
-    return {
-        "crawled_at": crawled_at,
-        "crawler_version": crawler_version,
-        "delivery_id": delivery_id,
-        "source_path": parsed.source_path,
-        "scan_root": parsed.scan_root,
-        "parsed": {
-            "request_id": parsed.request_id,
-            "project": parsed.project,
-            "request_type": parsed.request_type,
-            "workplan_id": parsed.workplan_id,
-            "dp_id": parsed.dp_id,
-            "version": parsed.version,
-        },
-        "lexicon_id": lexicon_id,
-        "status": parsed.status,
-        "fingerprint": fingerprint,
-        "files": [dict(f) for f in files],
-        "file_count": len(files),
-        "total_bytes": sum(f["size_bytes"] for f in files),
-    }
+    return CrawlManifest(
+        crawled_at=crawled_at,
+        crawler_version=crawler_version,
+        delivery_id=delivery_id,
+        source_path=parsed.source_path,
+        scan_root=parsed.scan_root,
+        parsed=ParsedMetadata(
+            request_id=parsed.request_id,
+            project=parsed.project,
+            request_type=parsed.request_type,
+            workplan_id=parsed.workplan_id,
+            dp_id=parsed.dp_id,
+            version=parsed.version,
+        ),
+        lexicon_id=lexicon_id,
+        status=parsed.status,
+        fingerprint=fingerprint,
+        files=[dataclasses.asdict(f) for f in files],
+        file_count=len(files),
+        total_bytes=sum(f.size_bytes for f in files),
+    )
 
 
 def build_error_manifest(
     error: ParseError,
     crawler_version: str,
     error_at: str,
-) -> tuple[str, ErrorManifest]:
-    """Build an error manifest dict and its deterministic filename.
+) -> ErrorManifestResult:
+    """Build an error manifest and its deterministic filename.
 
-    Returns (filename, manifest_dict) where filename is sha256 hex of raw_path.
+    Returns ErrorManifestResult(filename, manifest) where filename is
+    the SHA-256 hex of error.raw_path.
     """
     filename = hashlib.sha256(error.raw_path.encode()).hexdigest()
-    manifest: ErrorManifest = {
-        "error_at": error_at,
-        "crawler_version": crawler_version,
-        "raw_path": error.raw_path,
-        "scan_root": error.scan_root,
-        "error": error.reason,
-    }
-    return filename, manifest
+    manifest = ErrorManifest(
+        error_at=error_at,
+        crawler_version=crawler_version,
+        raw_path=error.raw_path,
+        scan_root=error.scan_root,
+        error=error.reason,
+    )
+    return ErrorManifestResult(filename=filename, manifest=manifest)

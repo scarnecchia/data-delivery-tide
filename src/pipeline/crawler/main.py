@@ -1,19 +1,38 @@
 # pattern: Imperative Shell
+import dataclasses
 import json
 import logging
 import os
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from pipeline.config import PipelineConfig, ScanRoot, settings
 from pipeline.crawler.fingerprint import FileEntry, compute_fingerprint
 from pipeline.crawler.http import RegistryClientError, RegistryUnreachableError, post_delivery
-from pipeline.crawler.manifest import CrawlManifest, build_error_manifest, build_manifest
+from pipeline.crawler.manifest import (
+    CrawlManifest,
+    build_error_manifest,
+    build_manifest,
+)
 from pipeline.crawler.parser import ParsedDelivery, ParseError, derive_statuses, parse_path
 from pipeline.json_logging import get_logger
 from pipeline.lexicons import load_all_lexicons
+
+
+@dataclass(frozen=True)
+class WalkResult:
+    source_path: str
+    scan_root: str
+
+
+@dataclass(frozen=True)
+class DeliveryAccumulator:
+    files: list[FileEntry]
+    fingerprint: str
+    manifest: CrawlManifest
 
 
 def inventory_files(source_path: str) -> list[FileEntry]:
@@ -37,7 +56,7 @@ def walk_roots(
     valid_terminals: set[str],
     exclusions: set[str] | None = None,
     logger: logging.Logger | None = None,
-) -> list[tuple[str, str]]:
+) -> list[WalkResult]:
     """Find all terminal directories under configured scan roots.
 
     Descends exactly 5 levels following the canonical structure:
@@ -46,12 +65,12 @@ def walk_roots(
     valid_terminals: set of terminal directory names to match.
     exclusions: dpid directory names to skip entirely.
 
-    Returns list of (source_path, scan_root_path) tuples.
+    Returns list of WalkResult records.
     Skips non-existent scan roots.
     """
     if exclusions is None:
         exclusions = set()
-    results = []
+    results: list[WalkResult] = []
     for root in scan_roots:
         root_path = root.path
         target = root.target
@@ -131,7 +150,12 @@ def walk_roots(
                             terminal_entry.is_dir(follow_symlinks=False)
                             and terminal_entry.name in valid_terminals
                         ):
-                            results.append((terminal_entry.path, root_path))
+                            results.append(
+                                WalkResult(
+                                    source_path=terminal_entry.path,
+                                    scan_root=root_path,
+                                )
+                            )
 
     return results
 
@@ -188,12 +212,12 @@ def crawl(
     # --- Pass 1: Parse, inventory, fingerprint, write manifests ---
     # Collect successful deliveries with their file data for pass 2
     parsed_deliveries: list[ParsedDelivery] = []
-    delivery_data: dict[
-        str, tuple[list[FileEntry], str, CrawlManifest]
-    ] = {}  # source_path -> (files, fingerprint, manifest)
+    delivery_data: dict[str, DeliveryAccumulator] = {}
     delivery_lexicons: dict[str, tuple[str, object]] = {}  # source_path -> (lexicon_id, lexicon)
 
-    for source_path, scan_root in candidates:
+    for candidate in candidates:
+        source_path = candidate.source_path
+        scan_root = candidate.scan_root
         lexicon_id, lexicon = root_lexicon_map[scan_root]
         result = parse_path(source_path, scan_root, exclusions, lexicon.dir_map)
 
@@ -202,14 +226,14 @@ def crawl(
             continue
 
         if isinstance(result, ParseError):
-            filename, error_manifest = build_error_manifest(
+            error_result = build_error_manifest(
                 result,
                 config.crawler_version,
                 now,
             )
-            error_path = os.path.join(error_dir, f"{filename}.json")
+            error_path = os.path.join(error_dir, f"{error_result.filename}.json")
             with open(error_path, "w") as f:
-                json.dump(error_manifest, f, indent=2)
+                json.dump(dataclasses.asdict(error_result.manifest), f, indent=2)
             logger.warning(
                 "parse error",
                 extra={"scan_root": scan_root, "source_path": source_path, "reason": result.reason},
@@ -229,13 +253,17 @@ def crawl(
         )
 
         # Write crawl manifest
-        delivery_id = manifest["delivery_id"]
+        delivery_id = manifest.delivery_id
         manifest_path = os.path.join(manifest_dir, f"{delivery_id}.json")
         with open(manifest_path, "w") as f:
-            json.dump(manifest, f, indent=2)
+            json.dump(dataclasses.asdict(manifest), f, indent=2)
 
         parsed_deliveries.append(result)
-        delivery_data[result.source_path] = (files, fingerprint, manifest)
+        delivery_data[result.source_path] = DeliveryAccumulator(
+            files=files,
+            fingerprint=fingerprint,
+            manifest=manifest,
+        )
         delivery_lexicons[result.source_path] = (lexicon_id, lexicon)
 
         # --- Sub-delivery discovery ---
@@ -281,13 +309,17 @@ def crawl(
                 sub_lexicon_id,
             )
 
-            sub_delivery_id = sub_manifest["delivery_id"]
+            sub_delivery_id = sub_manifest.delivery_id
             sub_manifest_path = os.path.join(manifest_dir, f"{sub_delivery_id}.json")
             with open(sub_manifest_path, "w") as f:
-                json.dump(sub_manifest, f, indent=2)
+                json.dump(dataclasses.asdict(sub_manifest), f, indent=2)
 
             parsed_deliveries.append(sub_delivery)
-            delivery_data[sub_delivery.source_path] = (sub_files, sub_fingerprint, sub_manifest)
+            delivery_data[sub_delivery.source_path] = DeliveryAccumulator(
+                files=sub_files,
+                fingerprint=sub_fingerprint,
+                manifest=sub_manifest,
+            )
             delivery_lexicons[sub_delivery.source_path] = (sub_lexicon_id, sub_lexicon)
 
     # --- Pass 2: Derive statuses by lexicon, POST to registry ---
@@ -309,8 +341,11 @@ def crawl(
     processed = 0
 
     for delivery in resolved_deliveries:
-        files, fingerprint, manifest = delivery_data[delivery.source_path]
-        delivery_id = manifest["delivery_id"]
+        acc = delivery_data[delivery.source_path]
+        files = acc.files
+        fingerprint = acc.fingerprint
+        manifest = acc.manifest
+        delivery_id = manifest.delivery_id
         lexicon_id, _ = delivery_lexicons[delivery.source_path]
 
         payload = {
@@ -325,7 +360,7 @@ def crawl(
             "status": delivery.status,
             "source_path": delivery.source_path,
             "file_count": len(files),
-            "total_bytes": sum(f["size_bytes"] for f in files),
+            "total_bytes": sum(f.size_bytes for f in files),
             "fingerprint": fingerprint,
         }
         post_fn(config.registry_api_url, payload, token=token)

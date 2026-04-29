@@ -9,7 +9,7 @@ import pytest
 
 from pipeline.config import ScanRoot
 from pipeline.crawler.http import RegistryUnreachableError
-from pipeline.crawler.main import crawl, inventory_files, walk_roots
+from pipeline.crawler.main import WalkResult, crawl, inventory_files, walk_roots
 
 
 class FakePostDelivery:
@@ -57,7 +57,7 @@ class TestWalkRoots:
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
-        paths = [r[0] for r in results]
+        paths = [r.source_path for r in results]
         assert passed_path in paths
         assert pending_path in paths
 
@@ -94,8 +94,8 @@ class TestWalkRoots:
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
-        assert (str(v1_path), str(scan_root1)) in results
-        assert (str(v2_path), str(scan_root2)) in results
+        assert WalkResult(source_path=str(v1_path), scan_root=str(scan_root1)) in results
+        assert WalkResult(source_path=str(v2_path), scan_root=str(scan_root2)) in results
 
     def test_ac2_5_non_existent_scan_root_skipped(self, tmp_path):
         """AC2.5: Non-existent scan_root is skipped (does not cause error)."""
@@ -121,7 +121,7 @@ class TestWalkRoots:
 
         # Should only find the existing root's delivery
         assert len(results) == 1
-        assert str(v1_path) in results[0][0]
+        assert str(v1_path) in results[0].source_path
 
     def test_ac2_3_msoc_in_sibling_not_discovered(self, tmp_path):
         """AC2.3: msoc inside a sibling of target (e.g. compare/) is not discovered."""
@@ -212,7 +212,7 @@ class TestWalkRoots:
 
         # Both should be discovered
         assert len(results) == 2
-        paths = [r[0] for r in results]
+        paths = [r.source_path for r in results]
         assert str(dpid1_msoc) in paths
         assert str(dpid2_msoc) in paths
 
@@ -249,7 +249,7 @@ class TestWalkRoots:
 
         # Both should be discovered
         assert len(results) == 2
-        paths = [r[0] for r in results]
+        paths = [r.source_path for r in results]
         assert str(v1_msoc) in paths
         assert str(v2_msoc_new) in paths
 
@@ -324,7 +324,7 @@ class TestWalkRoots:
 
         # Should discover msoc under custom target
         assert len(results) == 1
-        assert (str(compare_msoc), str(scan_root)) in results
+        assert WalkResult(source_path=str(compare_msoc), scan_root=str(scan_root)) in results
 
     def test_exclusions_skip_dpid_directories(self, tmp_path):
         """Excluded dpid directories are not descended into at all."""
@@ -346,7 +346,7 @@ class TestWalkRoots:
         ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, exclusions={"nsdp"})
 
-        dpid_dirs = {p.split("/")[-5] for p, _ in results}
+        dpid_dirs = {r.source_path.split("/")[-5] for r in results}
         assert dpid_dirs == {"mkscnr", "othrdp"}
 
 
@@ -369,19 +369,19 @@ class TestInventoryFiles:
         result = inventory_files(source_path)
 
         assert len(result) == 2
-        filenames = {f["filename"] for f in result}
+        filenames = {f.filename for f in result}
         assert "dataset1.sas7bdat" in filenames
         assert "dataset2.sas7bdat" in filenames
 
         # Check sizes
-        sizes = {f["filename"]: f["size_bytes"] for f in result}
+        sizes = {f.filename: f.size_bytes for f in result}
         assert sizes["dataset1.sas7bdat"] == 1024
         assert sizes["dataset2.sas7bdat"] == 2048
 
         # Check modified_at is ISO format
         for f in result:
-            assert f["modified_at"]  # not empty
-            datetime.fromisoformat(f["modified_at"])  # should not raise
+            assert f.modified_at  # not empty
+            datetime.fromisoformat(f.modified_at)  # should not raise
 
     def test_ac2_6_empty_delivery_directory_inventory_empty(self, delivery_tree):
         """AC2.6: Empty delivery directory (no .sas7bdat files) returns empty inventory."""
@@ -1048,7 +1048,7 @@ class TestWalkRootsOSErrorLogging:
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         # Sibling scan_root produced its terminal — continue semantics preserved.
-        assert (str(good_msoc), str(good_root)) in results
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(good_root)) in results
 
         warn_calls = [
             c
@@ -1076,7 +1076,7 @@ class TestWalkRootsOSErrorLogging:
         ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
-        assert (str(good_msoc), str(scan_root)) in results
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(scan_root)) in results
 
         warn_calls = [
             c
@@ -1111,7 +1111,7 @@ class TestWalkRootsOSErrorLogging:
         ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
-        assert (str(good_msoc), str(scan_root)) in results
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(scan_root)) in results
 
         warn_calls = [
             c
@@ -1146,7 +1146,7 @@ class TestWalkRootsOSErrorLogging:
         ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
-        assert (str(good_msoc), str(scan_root)) in results
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(scan_root)) in results
 
         warn_calls = [
             c
