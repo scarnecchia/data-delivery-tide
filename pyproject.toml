@@ -63,5 +63,17 @@ python_version = "3.11"
 strict = true
 files = ["src/pipeline"]
 
+[[tool.mypy.overrides]]
+module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pyreadstat", "pyreadstat.*"]
+ignore_missing_imports = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pipeline"]
