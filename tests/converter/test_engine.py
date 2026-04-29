@@ -806,6 +806,66 @@ class TestConvertOneIntegration:
         assert payload["failed_count"] == 0
 
 
+class TestEngineExcInfoLogging:
+    """GH23 phase 2: PATCH and emit failures must include exc_info in WARNING records."""
+
+    def _make_failing_setup(self, tmp_path):
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+        (source_dir / "data.sas7bdat").write_bytes(b"")
+
+        def always_fail(src, out, **kwargs):
+            raise RuntimeError(f"convert boom: {src.name}")
+
+        return source_dir, always_fail
+
+    def test_patch_failure_warning_has_exc_info(self, tmp_path, caplog):
+        import logging
+        source_dir, always_fail = self._make_failing_setup(tmp_path)
+        http = _StubHttp(_make_delivery(str(source_dir)))
+
+        def patch_raises(api_url, delivery_id, updates):
+            raise RuntimeError("boom-patch")
+        http.patch_delivery = patch_raises
+
+        caplog.set_level(logging.WARNING, logger="pipeline.converter.engine")
+        convert_one(
+            "d1", "http://registry",
+            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            http_module=http, convert_fn=always_fail,
+        )
+
+        records = [r for r in caplog.records
+                   if r.message == "failed to PATCH conversion_error to registry"]
+        assert records, "expected PATCH failure warning"
+        rec = records[0]
+        assert rec.exc_info is not None
+        assert rec.exc_info[0] is RuntimeError
+
+    def test_emit_failure_warning_has_exc_info(self, tmp_path, caplog):
+        import logging
+        source_dir, always_fail = self._make_failing_setup(tmp_path)
+        http = _StubHttp(_make_delivery(str(source_dir)))
+
+        def emit_raises(api_url, event_type, delivery_id, payload):
+            raise RuntimeError("boom-emit")
+        http.emit_event = emit_raises
+
+        caplog.set_level(logging.WARNING, logger="pipeline.converter.engine")
+        convert_one(
+            "d1", "http://registry",
+            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            http_module=http, convert_fn=always_fail,
+        )
+
+        records = [r for r in caplog.records
+                   if r.message == "failed to emit conversion.failed event"]
+        assert records, "expected emit failure warning"
+        rec = records[0]
+        assert rec.exc_info is not None
+        assert rec.exc_info[0] is RuntimeError
+
+
 def _convert_sas_with_sav_chunks(src, out, chunk_iter_factory, **kwargs):
     """
     Adapter that calls convert_sas_to_parquet with a custom chunk iterator

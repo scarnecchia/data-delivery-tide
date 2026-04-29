@@ -177,6 +177,7 @@ def convert_one(
             logger.warning(
                 "failed to PATCH conversion_error to registry",
                 extra={"delivery_id": delivery_id, "source_path": source_path_str},
+                exc_info=True,
             )
 
         event_payload = {
@@ -191,6 +192,7 @@ def convert_one(
             logger.warning(
                 "failed to emit conversion.failed event",
                 extra={"delivery_id": delivery_id, "source_path": source_path_str},
+                exc_info=True,
             )
 
         logger.error(

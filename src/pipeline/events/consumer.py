@@ -73,8 +73,10 @@ class EventConsumer:
             buffer_task.cancel()
             try:
                 await buffer_task
-            except (asyncio.CancelledError, ConnectionClosed, Exception):
+            except (asyncio.CancelledError, ConnectionClosed):
                 pass
+            except Exception:
+                logger.debug("buffer task raised unexpected exception", exc_info=True)
 
             for event in self._ws_buffer:
                 if event["seq"] > self._last_seq:
@@ -91,8 +93,10 @@ class EventConsumer:
                 buffer_task.cancel()
                 try:
                     await buffer_task
-                except (asyncio.CancelledError, ConnectionClosed, Exception):
+                except (asyncio.CancelledError, ConnectionClosed):
                     pass
+                except Exception:
+                    logger.debug("buffer task raised unexpected exception", exc_info=True)
 
     async def _buffer_ws(self, websocket) -> None:
         """Buffer incoming WS events while catch-up is in progress."""

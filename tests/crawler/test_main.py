@@ -864,3 +864,127 @@ class TestMain:
             main()
 
         assert exc_info.value.code == 1
+
+
+# ---- GH23 phase 5: walk_roots logs OSError before continue ----
+
+import os as _os
+
+
+class TestWalkRootsOSErrorLogging:
+    """GH23.AC5: each scandir OSError site warns with path + exc_info before continuing."""
+
+    @staticmethod
+    def _patch_scandir_to_fail_on(monkeypatch, target_path: str):
+        real_scandir = _os.scandir
+
+        def fake_scandir(path):
+            if str(path) == str(target_path):
+                raise OSError("simulated")
+            return real_scandir(path)
+
+        monkeypatch.setattr(_os, "scandir", fake_scandir)
+
+    def test_site1_root_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        # Two sibling scan roots: one fails at level 1, the other yields a terminal.
+        bad_root = tmp_path / "bad"
+        bad_root.mkdir()
+        good_root = tmp_path / "good"
+        good_msoc = good_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_root))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [
+            ScanRoot(path=str(bad_root), label="qa", lexicon="soc.qar", target="packages"),
+            ScanRoot(path=str(good_root), label="qa", lexicon="soc.qar", target="packages"),
+        ]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        # Sibling scan_root produced its terminal — continue semantics preserved.
+        assert (str(good_msoc), str(good_root)) in results
+
+        warn_calls = [c for c in logger.warning.call_args_list
+                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_root)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_site2_target_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        scan_root = tmp_path / "qa"
+        bad_target = scan_root / "bad" / "packages"
+        bad_target.mkdir(parents=True)
+        good_msoc = scan_root / "good" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_good_v01" / "msoc"
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_target))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        assert (str(good_msoc), str(scan_root)) in results
+
+        warn_calls = [c for c in logger.warning.call_args_list
+                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_target)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_site3_request_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        scan_root = tmp_path / "qa"
+        # bad request directory
+        bad_request = scan_root / "mkscnr" / "packages" / "bad_request"
+        bad_request.mkdir(parents=True)
+        # sibling good request that yields a terminal
+        good_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_request))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        assert (str(good_msoc), str(scan_root)) in results
+
+        warn_calls = [c for c in logger.warning.call_args_list
+                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_request)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_site4_version_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        scan_root = tmp_path / "qa"
+        # bad version dir under shared request
+        bad_version = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "bad_version"
+        bad_version.mkdir(parents=True)
+        # sibling good version dir with a terminal
+        good_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc"
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_version))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        assert (str(good_msoc), str(scan_root)) in results
+
+        warn_calls = [c for c in logger.warning.call_args_list
+                      if c[0] and c[0][0] == "scandir failed, skipping"]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_version)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_no_logger_does_not_raise(self, tmp_path, monkeypatch):
+        """GH23.AC5.1 logger=None branch: missing logger must not raise."""
+        bad_root = tmp_path / "bad"
+        bad_root.mkdir()
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_root))
+
+        scan_roots = [ScanRoot(path=str(bad_root), label="qa", lexicon="soc.qar", target="packages")]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
+        assert results == []

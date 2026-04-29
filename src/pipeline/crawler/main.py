@@ -61,6 +61,12 @@ def walk_roots(
         try:
             dpid_entries = list(os.scandir(root_path))
         except OSError:
+            if logger:
+                logger.warning(
+                    "scandir failed, skipping",
+                    extra={"path": root_path},
+                    exc_info=True,
+                )
             continue
         for dpid_entry in dpid_entries:
             if not dpid_entry.is_dir(follow_symlinks=False):
@@ -82,6 +88,12 @@ def walk_roots(
             try:
                 request_entries = list(os.scandir(target_path))
             except OSError:
+                if logger:
+                    logger.warning(
+                        "scandir failed, skipping",
+                        extra={"path": target_path},
+                        exc_info=True,
+                    )
                 continue
             for request_entry in request_entries:
                 if not request_entry.is_dir(follow_symlinks=False):
@@ -91,6 +103,12 @@ def walk_roots(
                 try:
                     version_entries = list(os.scandir(request_entry.path))
                 except OSError:
+                    if logger:
+                        logger.warning(
+                            "scandir failed, skipping",
+                            extra={"path": request_entry.path},
+                            exc_info=True,
+                        )
                     continue
                 for version_entry in version_entries:
                     if not version_entry.is_dir(follow_symlinks=False):
@@ -100,6 +118,12 @@ def walk_roots(
                     try:
                         terminal_entries = list(os.scandir(version_entry.path))
                     except OSError:
+                        if logger:
+                            logger.warning(
+                                "scandir failed, skipping",
+                                extra={"path": version_entry.path},
+                                exc_info=True,
+                            )
                         continue
                     for terminal_entry in terminal_entries:
                         if terminal_entry.is_dir(follow_symlinks=False) and terminal_entry.name in valid_terminals:

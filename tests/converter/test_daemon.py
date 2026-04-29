@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import logging
+import os
 import time
 
 import pytest
@@ -72,6 +74,36 @@ class TestPersistLastSeq:
         persist_last_seq(state, 999)
         # Simulate restart: new process reads the same file.
         assert load_last_seq(state) == 999
+
+    def test_cleanup_unlink_failure_logs_debug(self, tmp_path, caplog, monkeypatch):
+        # GH23.AC1.3, GH23.AC1.4
+        from pathlib import Path as _Path
+
+        state = tmp_path / "state.json"
+
+        def boom_replace(*args, **kwargs):
+            raise RuntimeError("replace boom")
+
+        def boom_unlink(self, *args, **kwargs):
+            raise OSError("unlink boom")
+
+        monkeypatch.setattr(os, "replace", boom_replace)
+        monkeypatch.setattr(_Path, "unlink", boom_unlink)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.converter.daemon")
+
+        with pytest.raises(RuntimeError, match="replace boom"):
+            persist_last_seq(state, 42)
+
+        records = [
+            r for r in caplog.records
+            if r.name == "pipeline.converter.daemon"
+            and r.message == "tmp file unlink failed during cleanup"
+        ]
+        assert len(records) == 1
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].exc_info is not None
+        assert records[0].exc_info[0] is OSError
 
 
 class _StubConsumer:
