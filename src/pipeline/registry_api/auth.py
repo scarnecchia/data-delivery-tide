@@ -26,7 +26,7 @@ class TokenInfo(BaseModel):
 
 
 def require_auth(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),  # noqa: B008
     db: DbDep = ...,
 ) -> TokenInfo:
     """

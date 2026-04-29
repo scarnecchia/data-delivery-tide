@@ -1,12 +1,19 @@
 # pattern: Imperative Shell
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import signal
 import uuid
 from pathlib import Path
+
+from pipeline.config import settings
+from pipeline.converter.engine import convert_one
+from pipeline.converter.protocols import ConsumerFactoryProtocol, ConvertOneFnProtocol
+from pipeline.events.consumer import EventConsumer
+from pipeline.json_logging import get_logger
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +63,6 @@ def persist_last_seq(state_path: Path, seq: int) -> None:
             except OSError:
                 logger.debug("tmp file unlink failed during cleanup", exc_info=True)
         raise
-
-
-from pipeline.config import settings
-from pipeline.converter.engine import convert_one
-from pipeline.converter.protocols import ConsumerFactoryProtocol, ConvertOneFnProtocol
-from pipeline.events.consumer import EventConsumer
-from pipeline.json_logging import get_logger
 
 
 class DaemonRunner:
@@ -131,11 +131,9 @@ class DaemonRunner:
             consumer_task.cancel()
 
         for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                loop.add_signal_handler(sig, _request_shutdown)
-            except NotImplementedError:
+            with contextlib.suppress(NotImplementedError):
                 # Windows test environments. Not a target platform.
-                pass
+                loop.add_signal_handler(sig, _request_shutdown)
 
         try:
             await consumer_task

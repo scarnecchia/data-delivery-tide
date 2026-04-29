@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import importlib
 import json
-from collections.abc import Callable
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pipeline.lexicons.models import Lexicon, MetadataField
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 MAX_INHERITANCE_DEPTH = 3
 
@@ -67,7 +69,7 @@ def _check_inheritance_depth(
 ) -> list[str]:
     """Check that no inheritance chain exceeds MAX_INHERITANCE_DEPTH."""
     errors: list[str] = []
-    for lid, data in raw_lexicons.items():
+    for lid in raw_lexicons:
         depth = 0
         current = lid
         while raw_lexicons.get(current, {}).get("extends"):

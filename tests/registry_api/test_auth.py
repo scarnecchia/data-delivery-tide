@@ -47,11 +47,11 @@ def auth_app(auth_db):
         return {"username": token.username, "role": token.role}
 
     @app.post("/write-protected")
-    def write_protected_endpoint(token: TokenInfo = require_role("write")):
+    def write_protected_endpoint(token: TokenInfo = require_role("write")):  # noqa: B008
         return {"username": token.username, "role": token.role}
 
     @app.post("/admin-protected")
-    def admin_protected_endpoint(token: TokenInfo = require_role("admin")):
+    def admin_protected_endpoint(token: TokenInfo = require_role("admin")):  # noqa: B008
         return {"username": token.username, "role": token.role}
 
     yield app

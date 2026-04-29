@@ -72,7 +72,7 @@ async def create_delivery(
     data: DeliveryCreate,
     db: DbDep,
     request: Request,
-    token: TokenInfo = require_role("write"),  # type: ignore[assignment]
+    token: TokenInfo = require_role("write"),  # type: ignore[assignment]  # noqa: B008
 ) -> dict:
     """
     Create or upsert a delivery.
@@ -122,13 +122,15 @@ async def create_delivery(
 
 @protected_router.get("/deliveries", response_model=PaginatedDeliveryResponse)
 async def list_all_deliveries(
-    db: DbDep, filters: DeliveryFilters = Depends()
+    db: DbDep,
+    filters: DeliveryFilters = Depends(),  # noqa: B008
 ) -> PaginatedDeliveryResponse:
     """
     List deliveries with optional filtering and pagination.
 
     Query parameters:
-    - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match
+    - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id,
+      scan_root: exact match
     - converted: boolean, True = converted, False = not converted
     - version: exact match or "latest" for highest version per (dp_id, workplan_id)
     - limit: max results per page (default 100, max 1000)
@@ -182,7 +184,7 @@ async def update_single_delivery(
     data: DeliveryUpdate,
     db: DbDep,
     request: Request,
-    token: TokenInfo = require_role("write"),  # type: ignore[assignment]
+    token: TokenInfo = require_role("write"),  # type: ignore[assignment]  # noqa: B008
 ) -> dict:
     """
     Partially update a delivery.
@@ -219,10 +221,14 @@ async def update_single_delivery(
         if new_status not in allowed_transitions:
             raise HTTPException(
                 status_code=422,
-                detail=f"transition from '{old_status}' to '{new_status}' not allowed for lexicon '{old['lexicon_id']}'",
+                detail=(
+                    f"transition from '{old_status}' to '{new_status}' not allowed "
+                    f"for lexicon '{old['lexicon_id']}'"
+                ),
             )
 
-        # Metadata is returned from db.py deserialized as dict; handle both dict and string for safety
+        # Metadata is returned from db.py deserialized as dict; handle both dict
+        # and string for safety
         metadata_val = old.get("metadata", {})
         existing_metadata = (
             metadata_val if isinstance(metadata_val, dict) else json.loads(metadata_val or "{}")
@@ -288,7 +294,7 @@ async def get_events(db: DbDep, after: int, limit: int = 100) -> list[dict]:
 async def emit_event(
     data: EventCreate,
     db: DbDep,
-    token: TokenInfo = require_role("write"),  # type: ignore[assignment]
+    token: TokenInfo = require_role("write"),  # type: ignore[assignment]  # noqa: B008
 ) -> dict:
     """
     Emit a converter lifecycle event.

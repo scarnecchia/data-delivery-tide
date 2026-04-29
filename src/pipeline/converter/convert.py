@@ -43,7 +43,7 @@ def _build_column_labels(
     """
     if not column_labels:
         return {}
-    return {name: (label or "") for name, label in zip(column_names, column_labels)}
+    return {name: (label or "") for name, label in zip(column_names, column_labels, strict=False)}
 
 
 def _file_metadata_bytes(

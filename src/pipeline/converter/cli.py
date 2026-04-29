@@ -89,8 +89,7 @@ def _iter_unconverted(
         page = http_module.list_unconverted(api_url, after=cursor, limit=page_size)
         if not page:
             return
-        for delivery in page:
-            yield delivery
+        yield from page
         cursor = page[-1]["delivery_id"]
 
 
