@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pipeline.lexicons import load_all_lexicons, LexiconLoadError
+from pipeline.lexicons import LexiconLoadError, load_all_lexicons
 
 
 @dataclass

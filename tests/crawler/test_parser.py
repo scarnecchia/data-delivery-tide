@@ -1,8 +1,7 @@
 # pattern: test file
-from pipeline.crawler.parser import ParsedDelivery, ParseError, parse_path, derive_statuses
-from pipeline.lexicons.models import Lexicon, MetadataField
+from pipeline.crawler.parser import ParsedDelivery, ParseError, derive_statuses, parse_path
+from pipeline.lexicons.models import Lexicon
 from pipeline.lexicons.soc.qa import derive as qa_derive
-
 
 # Standard dir_map for tests using msoc/msoc_new directories
 STANDARD_DIR_MAP = {"msoc": "passed", "msoc_new": "pending"}

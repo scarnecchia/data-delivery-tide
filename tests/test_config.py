@@ -1,8 +1,9 @@
 # pattern: test file
 import json
+
 import pytest
 
-from pipeline.config import load_config, PipelineConfig, ScanRoot
+from pipeline.config import PipelineConfig, ScanRoot, load_config
 from pipeline.lexicons import LexiconLoadError
 
 

@@ -6,7 +6,7 @@ import os
 import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -211,5 +211,5 @@ def convert_sas_to_parquet(
         value_labels=value_labels_out,
         sas_encoding=sas_encoding_out,
         bytes_written=output_path.stat().st_size,
-        wrote_at=datetime.now(timezone.utc),
+        wrote_at=datetime.now(UTC),
     )

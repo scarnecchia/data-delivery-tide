@@ -1,9 +1,10 @@
 # pattern: test file
-import pytest
 import json
 from pathlib import Path
 
-from pipeline.config import ScanRoot, PipelineConfig
+import pytest
+
+from pipeline.config import PipelineConfig, ScanRoot
 
 
 @pytest.fixture

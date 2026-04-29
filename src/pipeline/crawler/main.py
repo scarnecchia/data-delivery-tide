@@ -3,14 +3,14 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pipeline.config import PipelineConfig, ScanRoot, settings
+from pipeline.crawler.fingerprint import FileEntry, compute_fingerprint
+from pipeline.crawler.http import RegistryClientError, RegistryUnreachableError, post_delivery
+from pipeline.crawler.manifest import build_error_manifest, build_manifest
+from pipeline.crawler.parser import ParsedDelivery, ParseError, derive_statuses, parse_path
 from pipeline.json_logging import get_logger
-from pipeline.crawler.parser import parse_path, derive_statuses, ParsedDelivery, ParseError
-from pipeline.crawler.fingerprint import compute_fingerprint, FileEntry
-from pipeline.crawler.manifest import build_manifest, build_error_manifest
-from pipeline.crawler.http import post_delivery, RegistryUnreachableError, RegistryClientError
 from pipeline.lexicons import load_all_lexicons
 
 
@@ -24,7 +24,7 @@ def inventory_files(source_path: str) -> list[FileEntry]:
                 FileEntry(
                     filename=entry.name,
                     size_bytes=stat.st_size,
-                    modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                    modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
                 )
             )
     return files
@@ -159,7 +159,7 @@ def crawl(config: PipelineConfig, logger: logging.Logger, token: str | None = No
     exclusions = set(config.dp_id_exclusions)
     # Single timestamp for the entire crawl run — all manifests from this run
     # share the same crawled_at. This marks the run, not individual processing.
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Check scan roots existence, log warnings for missing
     for root in config.scan_roots:

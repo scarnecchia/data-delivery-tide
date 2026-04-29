@@ -5,11 +5,10 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline.registry_api.db import init_db, get_db
-from pipeline.registry_api.main import app
-from pipeline.lexicons.models import Lexicon, MetadataField
 from pipeline.config import ScanRoot
-
+from pipeline.lexicons.models import Lexicon, MetadataField
+from pipeline.registry_api.db import get_db, init_db
+from pipeline.registry_api.main import app
 
 TEST_LEXICON = Lexicon(
     id="soc.qar",

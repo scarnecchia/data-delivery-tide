@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from pipeline.converter.daemon import load_last_seq, persist_last_seq, DaemonRunner
+from pipeline.converter.daemon import DaemonRunner, load_last_seq, persist_last_seq
 
 
 class TestLoadLastSeq:

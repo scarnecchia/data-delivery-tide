@@ -1,7 +1,7 @@
 # pattern: Imperative Shell (orchestration + side effects), with helper pure functions
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -130,7 +130,7 @@ def convert_one(
             raise
         except BaseException as exc:
             error_class = classify_exception(exc)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             failures[sas_file.name] = {
                 "class": error_class,
                 "message": str(exc)[:500],
@@ -165,7 +165,7 @@ def convert_one(
 
     # Total failure.
     if not successes:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         error_dict = {
             "class": "multi_file_failure",
             "message": f"all {len(failures)} files failed conversion",

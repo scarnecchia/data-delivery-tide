@@ -205,8 +205,8 @@ class _TestClientHttpAdapter:
 class TestEndToEndConverter:
     def test_crawler_to_converter_full_chain(self, end_to_end_env, monkeypatch):
         # AC10.1
-        from pipeline.crawler.main import crawl
         from pipeline.converter.engine import convert_one
+        from pipeline.crawler.main import crawl
         from pipeline.json_logging import get_logger
 
         env = end_to_end_env

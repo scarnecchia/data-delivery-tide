@@ -35,7 +35,7 @@ def test_no_hardcoded_qa_references() -> None:
                 found_references.append((str(py_file), pattern))
 
     assert not found_references, (
-        f"Found hardcoded QA references that must use lexicon system:\n"
+        "Found hardcoded QA references that must use lexicon system:\n"
         + "\n".join(f"  {path}: {pattern}" for path, pattern in found_references)
     )
 

@@ -1,7 +1,7 @@
 # pattern: Imperative Shell
 import json
 import posixpath
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -9,25 +9,25 @@ from pipeline.registry_api.auth import TokenInfo, require_auth, require_role
 from pipeline.registry_api.db import (
     DbDep,
     delivery_exists,
+    get_actionable,
+    get_delivery,
     get_events_after,
     insert_event,
-    make_delivery_id,
-    upsert_delivery,
-    get_delivery,
     list_deliveries,
-    get_actionable,
+    make_delivery_id,
     update_delivery,
+    upsert_delivery,
 )
+from pipeline.registry_api.events import manager
 from pipeline.registry_api.models import (
     DeliveryCreate,
-    DeliveryUpdate,
-    DeliveryResponse,
     DeliveryFilters,
+    DeliveryResponse,
+    DeliveryUpdate,
     EventCreate,
     EventRecord,
     PaginatedDeliveryResponse,
 )
-from pipeline.registry_api.events import manager
 
 public_router = APIRouter()
 protected_router = APIRouter(dependencies=[Depends(require_auth)])
@@ -235,7 +235,7 @@ async def update_single_delivery(
         for field_name, field_def in lexicon.metadata_fields.items():
             if field_def.set_on == new_status:
                 if field_def.type == "datetime":
-                    existing_metadata[field_name] = datetime.now(timezone.utc).isoformat()
+                    existing_metadata[field_name] = datetime.now(UTC).isoformat()
                 elif field_def.type == "boolean":
                     existing_metadata[field_name] = True
                 elif field_def.type == "string":

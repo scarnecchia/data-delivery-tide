@@ -4,7 +4,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends
@@ -200,7 +200,7 @@ DbDep = Annotated[sqlite3.Connection, Depends(get_db)]
 
 def _get_iso_now() -> str:
     """Get current timestamp as ISO 8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _deserialize_metadata(row_dict: dict) -> dict:
@@ -513,7 +513,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
             update_dict["metadata"] = json.dumps(metadata)
 
     # Build UPDATE statement
-    set_clauses = [f"{field} = ?" for field in update_dict.keys()]
+    set_clauses = [f"{field} = ?" for field in update_dict]
     set_clause = ", ".join(set_clauses)
     params = list(update_dict.values()) + [delivery_id]
 

@@ -1,14 +1,14 @@
 # pattern: test file
 import json
 import urllib.error
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from pipeline.crawler.http import (
-    post_delivery,
-    RegistryUnreachableError,
     RegistryClientError,
+    RegistryUnreachableError,
+    post_delivery,
 )
 
 
@@ -75,23 +75,22 @@ class TestPostDeliverySuccess:
         payload = {"source_path": "/data/test", "version": "v01"}
         response_body = {"delivery_id": "abc123", "status": "pending"}
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            with patch("time.sleep"):
-                mock_response = MagicMock()
-                mock_response.read.return_value = json.dumps(response_body).encode()
+        with patch("urllib.request.urlopen") as mock_urlopen, patch("time.sleep"):
+            mock_response = MagicMock()
+            mock_response.read.return_value = json.dumps(response_body).encode()
 
-                mock_urlopen.side_effect = [
-                    urllib.error.URLError("Connection refused"),
-                    MagicMock(
-                        __enter__=MagicMock(return_value=mock_response),
-                        __exit__=MagicMock(return_value=False),
-                    ),
-                ]
+            mock_urlopen.side_effect = [
+                urllib.error.URLError("Connection refused"),
+                MagicMock(
+                    __enter__=MagicMock(return_value=mock_response),
+                    __exit__=MagicMock(return_value=False),
+                ),
+            ]
 
-                result = post_delivery("http://localhost:8000", payload)
+            result = post_delivery("http://localhost:8000", payload)
 
-                assert result == response_body
-                assert mock_urlopen.call_count == 2
+            assert result == response_body
+            assert mock_urlopen.call_count == 2
 
 
 class TestPostDeliveryFailure:

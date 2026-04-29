@@ -1,14 +1,15 @@
 # pattern: test file
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from datetime import datetime
 import logging
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from pipeline.config import ScanRoot
-from pipeline.crawler.main import walk_roots, inventory_files, crawl
 from pipeline.crawler.http import RegistryUnreachableError
+from pipeline.crawler.main import crawl, inventory_files, walk_roots
 
 
 class TestWalkRoots:
@@ -311,7 +312,7 @@ class TestWalkRoots:
                 scan_root
                 / dpid
                 / "packages"
-                / f"soc_qar_wp001"
+                / "soc_qar_wp001"
                 / f"soc_qar_wp001_{dpid}_v01"
                 / "msoc"
             )

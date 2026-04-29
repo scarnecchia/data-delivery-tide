@@ -5,11 +5,9 @@ from typing import Annotated, Any, Literal
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
 from pydantic import BaseModel
 
 from pipeline.registry_api.db import DbDep, get_token_by_hash
-
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 

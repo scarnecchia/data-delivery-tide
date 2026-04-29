@@ -1791,6 +1791,7 @@ class TestWebSocketAuth:
     def test_ws_connect_with_revoked_token_rejected(self, client, test_db):
         """WebSocket connection with revoked token is rejected with 1008."""
         import hashlib
+
         from starlette.websockets import WebSocketDisconnect as StarletteWSDisconnect
 
         # Create a revoked token

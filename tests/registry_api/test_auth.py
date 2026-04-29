@@ -6,8 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from pipeline.registry_api.auth import require_auth, require_role, AuthDep, TokenInfo
-from pipeline.registry_api.db import init_db, get_db
+from pipeline.registry_api.auth import AuthDep, TokenInfo, require_role
+from pipeline.registry_api.db import get_db, init_db
 
 
 @pytest.fixture

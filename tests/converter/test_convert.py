@@ -2,18 +2,17 @@
 
 import json
 import logging
-import pyarrow as pa
-import pyarrow.parquet as pq
+
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
-from pipeline.converter.convert import convert_sas_to_parquet
+from pipeline.converter.classify import SchemaDriftError
 from pipeline.converter.convert import (
-    ConversionMetadata,
     _build_column_labels,
     _file_metadata_bytes,
+    convert_sas_to_parquet,
 )
-from pipeline.converter.classify import SchemaDriftError
 
 
 class TestBuildColumnLabels:

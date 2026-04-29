@@ -5,7 +5,6 @@ import pytest
 
 from pipeline.lexicons import (
     Lexicon,
-    MetadataField,
     LexiconLoadError,
     load_all_lexicons,
     load_lexicon,
@@ -653,7 +652,6 @@ class TestErrorEdgeCases:
     def test_malformed_json_reported(self, make_lexicon_file, lexicons_dir):
         """Malformed JSON file reported."""
         # Write invalid JSON directly
-        import json
 
         (lexicons_dir / "bad").mkdir(parents=True, exist_ok=True)
         with open(lexicons_dir / "bad" / "test.json", "w") as f:

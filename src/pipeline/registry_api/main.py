@@ -9,7 +9,7 @@ from pipeline.config import settings
 from pipeline.lexicons import load_all_lexicons
 from pipeline.registry_api.db import DbDep, get_token_by_hash, init_db
 from pipeline.registry_api.events import manager
-from pipeline.registry_api.routes import public_router, protected_router
+from pipeline.registry_api.routes import protected_router, public_router
 
 
 @asynccontextmanager

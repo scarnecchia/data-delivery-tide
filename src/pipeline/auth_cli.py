@@ -5,7 +5,7 @@ import hashlib
 import secrets
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pipeline.config import settings
 from pipeline.registry_api.db import init_db
@@ -26,7 +26,7 @@ def _hash_token(raw_token: str) -> str:
 
 def _iso_now() -> str:
     """Get current timestamp as ISO 8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def cmd_add_user(args: argparse.Namespace) -> int:

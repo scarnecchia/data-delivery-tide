@@ -1,10 +1,11 @@
 # pattern: test file
 
 import argparse
-import pytest
 import hashlib
 
-from pipeline.converter.cli import _build_parser, _parse_shard, _in_shard, _iter_unconverted, _run
+import pytest
+
+from pipeline.converter.cli import _build_parser, _in_shard, _iter_unconverted, _parse_shard, _run
 from pipeline.converter.http import RegistryUnreachableError
 
 

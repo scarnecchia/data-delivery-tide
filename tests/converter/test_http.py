@@ -1,18 +1,18 @@
 # pattern: test file
 
 import json
-from unittest.mock import patch, MagicMock
 import urllib.error
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from pipeline.converter.http import (
-    RegistryUnreachableError,
     RegistryClientError,
-    get_delivery,
-    patch_delivery,
+    RegistryUnreachableError,
     emit_event,
+    get_delivery,
     list_unconverted,
+    patch_delivery,
 )
 
 

@@ -1,21 +1,22 @@
 # pattern: test file
 import hashlib
 import sqlite3
+
 import pytest
 
 from pipeline.registry_api.db import (
-    make_delivery_id,
-    init_db,
-    get_connection,
-    upsert_delivery,
-    get_delivery,
-    list_deliveries,
-    get_actionable,
-    update_delivery,
-    get_token_by_hash,
-    insert_event,
-    get_events_after,
     delivery_exists,
+    get_actionable,
+    get_connection,
+    get_delivery,
+    get_events_after,
+    get_token_by_hash,
+    init_db,
+    insert_event,
+    list_deliveries,
+    make_delivery_id,
+    update_delivery,
+    upsert_delivery,
 )
 
 

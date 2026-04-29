@@ -6,11 +6,12 @@ with mocked dependencies rather than reimplementing dedup logic inline.
 """
 
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from pipeline.events.consumer import EventConsumer
 from websockets.exceptions import ConnectionClosed
+
+from pipeline.events.consumer import EventConsumer
 
 
 @pytest.mark.asyncio
@@ -451,7 +452,7 @@ async def test_reconnection_after_disconnect():
 
             try:
                 await asyncio.wait_for(consumer.run(), timeout=0.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Expected: run() loops indefinitely
                 pass
 

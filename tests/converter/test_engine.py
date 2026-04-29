@@ -1,15 +1,14 @@
 # pattern: test file
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
 import pandas as pd
 import pyarrow.parquet as pq
-import pyreadstat
+import pytest
 
 from pipeline.converter.convert import ConversionMetadata
-from pipeline.converter.engine import convert_one, _build_parquet_dir, _find_sas_files
+from pipeline.converter.engine import _build_parquet_dir, _find_sas_files, convert_one
 
 
 class _StubHttp:
@@ -144,7 +143,7 @@ class TestConvertOneHappyPath:
         (source_dir / "beta.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -199,7 +198,7 @@ class TestConvertOneHappyPath:
         (source_dir / "data.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -237,7 +236,7 @@ class TestConvertOneHappyPath:
         (source_dir / "file2.SAS7BDAT").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -276,7 +275,7 @@ class TestConvertOneHappyPath:
         (source_dir / "msoc.SAS7BDAT").write_bytes(b"unused by stub")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -393,7 +392,7 @@ class TestConvertOneSkipGuards:
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir), dp_id="mkscnr"))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -433,7 +432,7 @@ class TestConvertOneSkipGuards:
             )
         )
 
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -472,7 +471,7 @@ class TestConvertOnePartialSuccess:
         (source_dir / "good2.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def selective_convert(src, out, **kwargs):
             if src.stem == "bad":
@@ -809,7 +808,7 @@ class TestConvertOneLogging:
         (source_dir / "data.sas7bdat").write_bytes(b"")
         http = _StubHttp(_make_delivery(str(source_dir)))
 
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -851,7 +850,7 @@ class TestConvertOneLogging:
         (source_dir / "f2.sas7bdat").write_bytes(b"")
         http = _StubHttp(_make_delivery(str(source_dir)))
 
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)

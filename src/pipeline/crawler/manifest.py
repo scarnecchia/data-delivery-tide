@@ -3,7 +3,7 @@ import hashlib
 from typing import TypedDict
 
 from pipeline.crawler.fingerprint import FileEntry
-from pipeline.crawler.parser import ParseError, ParsedDelivery
+from pipeline.crawler.parser import ParsedDelivery, ParseError
 
 
 class ParsedMetadata(TypedDict):

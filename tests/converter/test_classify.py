@@ -1,10 +1,10 @@
 # pattern: test file
 
-import pytest
 import pyarrow as pa
+import pytest
 from pyreadstat import PyreadstatError, ReadstatError
 
-from pipeline.converter.classify import classify_exception, SchemaDriftError
+from pipeline.converter.classify import SchemaDriftError, classify_exception
 
 
 class TestClassifyException:

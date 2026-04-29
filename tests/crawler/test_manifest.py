@@ -1,6 +1,6 @@
 # pattern: test file
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pipeline.crawler.fingerprint import FileEntry
 from pipeline.crawler.manifest import (
@@ -8,7 +8,7 @@ from pipeline.crawler.manifest import (
     build_manifest,
     make_delivery_id,
 )
-from pipeline.crawler.parser import ParseError, ParsedDelivery
+from pipeline.crawler.parser import ParsedDelivery, ParseError
 
 
 def make_parsed_delivery(**overrides) -> ParsedDelivery:
@@ -70,7 +70,7 @@ class TestBuildManifest:
         ]
         fingerprint = "sha256:abc123"
         crawler_version = "0.1.0"
-        crawled_at = datetime.now(timezone.utc).isoformat()
+        crawled_at = datetime.now(UTC).isoformat()
 
         manifest = build_manifest(
             parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
@@ -95,7 +95,7 @@ class TestBuildManifest:
         files: list[FileEntry] = []
         fingerprint = "sha256:empty"
         crawler_version = "0.1.0"
-        crawled_at = datetime.now(timezone.utc).isoformat()
+        crawled_at = datetime.now(UTC).isoformat()
 
         manifest = build_manifest(
             parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
@@ -121,7 +121,7 @@ class TestBuildManifest:
         ]
         fingerprint = "sha256:abc"
         crawler_version = "0.1.0"
-        crawled_at = datetime.now(timezone.utc).isoformat()
+        crawled_at = datetime.now(UTC).isoformat()
 
         manifest = build_manifest(
             parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
@@ -167,7 +167,7 @@ class TestBuildManifest:
         ]
         fingerprint = "sha256:abc"
         crawler_version = "0.1.0"
-        crawled_at = datetime.now(timezone.utc).isoformat()
+        crawled_at = datetime.now(UTC).isoformat()
 
         manifest = build_manifest(
             parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
@@ -192,7 +192,7 @@ class TestBuildManifest:
         ]
         fingerprint = "sha256:abc"
         crawler_version = "0.1.0"
-        crawled_at = datetime.now(timezone.utc).isoformat()
+        crawled_at = datetime.now(UTC).isoformat()
 
         manifest = build_manifest(
             parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
@@ -213,7 +213,7 @@ class TestBuildManifest:
         files: list[FileEntry] = []
         fingerprint = "sha256:empty"
         crawler_version = "0.1.0"
-        crawled_at = datetime.now(timezone.utc).isoformat()
+        crawled_at = datetime.now(UTC).isoformat()
 
         manifest = build_manifest(
             parsed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
@@ -233,7 +233,7 @@ class TestBuildManifest:
         files: list[FileEntry] = []
         fingerprint = "sha256:empty"
         crawler_version = "0.1.0"
-        crawled_at = datetime.now(timezone.utc).isoformat()
+        crawled_at = datetime.now(UTC).isoformat()
 
         manifest_passed = build_manifest(
             parsed_passed, files, fingerprint, crawler_version, crawled_at, "test.lexicon"
@@ -259,7 +259,7 @@ class TestBuildErrorManifest:
             reason="path does not end with msoc or msoc_new",
         )
         crawler_version = "0.1.0"
-        error_at = datetime.now(timezone.utc).isoformat()
+        error_at = datetime.now(UTC).isoformat()
 
         filename, manifest = build_error_manifest(error, crawler_version, error_at)
 
@@ -292,7 +292,7 @@ class TestBuildErrorManifest:
             reason="some error",
         )
         crawler_version = "0.1.0"
-        error_at = datetime.now(timezone.utc).isoformat()
+        error_at = datetime.now(UTC).isoformat()
 
         filename, manifest = build_error_manifest(error, crawler_version, error_at)
 
@@ -307,7 +307,7 @@ class TestBuildErrorManifest:
             reason="some error",
         )
         crawler_version = "0.1.0"
-        error_at = datetime.now(timezone.utc).isoformat()
+        error_at = datetime.now(UTC).isoformat()
 
         filename1, _ = build_error_manifest(error, crawler_version, error_at)
         filename2, _ = build_error_manifest(error, crawler_version, error_at)
