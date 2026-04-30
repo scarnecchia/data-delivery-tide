@@ -143,6 +143,17 @@ Run tests:
 pytest
 ```
 
+## Development
+
+Install the dev extras and enable the pre-commit hook so `ruff` lints and formats staged files on every commit:
+
+```bash
+pip install -e ".[registry,converter,consumer,dev]"
+pre-commit install
+```
+
+The hook runs `ruff check --fix --exit-non-zero-on-fix` followed by `ruff format` (configured in `.pre-commit-config.yaml`). If fixes are applied, the commit is aborted so you can review them — re-stage and commit again. Run against the full repo with `pre-commit run --all-files`.
+
 ## Converter (`registry-convert`, `registry-convert-daemon`)
 
 Converts registered SAS7BDAT deliveries to Parquet files, writing output

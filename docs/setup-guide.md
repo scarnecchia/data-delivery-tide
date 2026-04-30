@@ -91,6 +91,23 @@ registry-auth --help
 registry-convert --help
 ```
 
+### Developer Setup (Optional)
+
+If you're contributing code, install the `dev` extras and enable the pre-commit hook so `ruff` lints and formats staged files on every commit:
+
+```bash
+pip install -e ".[registry,converter,consumer,dev]"
+pre-commit install
+```
+
+The hook configuration lives in `.pre-commit-config.yaml`. On commit it runs `ruff check --fix --exit-non-zero-on-fix` followed by `ruff format`. If it applies any fixes, the commit is aborted so you can review the changes — re-stage them and commit again.
+
+To run the hooks against the entire repo (e.g., after first installing):
+
+```bash
+pre-commit run --all-files
+```
+
 ---
 
 ## 3. Configuration

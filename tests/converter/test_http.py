@@ -179,7 +179,9 @@ class TestAuthentication:
     def test_token_sets_authorization_header(self):
         fake = FakeUrlopen([{"delivery_id": "abc"}])
         sleep = FakeSleep()
-        get_delivery("http://localhost:8000", "abc", token="secret-token", urlopen=fake, sleep=sleep)
+        get_delivery(
+            "http://localhost:8000", "abc", token="secret-token", urlopen=fake, sleep=sleep
+        )
         request = fake.calls[0]
         assert request.get_header("Authorization") == "Bearer secret-token"
 
@@ -193,13 +195,23 @@ class TestAuthentication:
     def test_patch_sends_token(self):
         fake = FakeUrlopen([{"delivery_id": "abc"}])
         sleep = FakeSleep()
-        patch_delivery("http://localhost:8000", "abc", {"k": "v"}, token="tok", urlopen=fake, sleep=sleep)
+        patch_delivery(
+            "http://localhost:8000", "abc", {"k": "v"}, token="tok", urlopen=fake, sleep=sleep
+        )
         assert fake.calls[0].get_header("Authorization") == "Bearer tok"
 
     def test_emit_event_sends_token(self):
         fake = FakeUrlopen([{"seq": 1}])
         sleep = FakeSleep()
-        emit_event("http://localhost:8000", "conversion.completed", "abc", {}, token="tok", urlopen=fake, sleep=sleep)
+        emit_event(
+            "http://localhost:8000",
+            "conversion.completed",
+            "abc",
+            {},
+            token="tok",
+            urlopen=fake,
+            sleep=sleep,
+        )
         assert fake.calls[0].get_header("Authorization") == "Bearer tok"
 
 

@@ -847,7 +847,9 @@ class TestListDeliveries:
         ids = [r.delivery_id for r in results]
         assert ids == sorted(ids)
 
-    def test_list_deliveries_after_cursor_returns_only_later_ids(self, memory_db, sample_deliveries):
+    def test_list_deliveries_after_cursor_returns_only_later_ids(
+        self, memory_db, sample_deliveries
+    ):
         all_results, _ = list_deliveries(memory_db, {})
         cursor_id = all_results[1].delivery_id
 
@@ -872,9 +874,7 @@ class TestListDeliveries:
         assert len(all_unconverted) >= 2
         cursor_id = all_unconverted[0].delivery_id
 
-        results, total = list_deliveries(
-            memory_db, {"converted": False, "after": cursor_id}
-        )
+        results, total = list_deliveries(memory_db, {"converted": False, "after": cursor_id})
 
         assert all(r.delivery_id > cursor_id for r in results)
         assert all(r.parquet_converted_at is None for r in results)
