@@ -1,23 +1,26 @@
 # pattern: test file
 
 import json
-import pyarrow as pa
-import pyarrow.parquet as pq
+import logging
+
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
-from pipeline.converter.convert import convert_sas_to_parquet
+from pipeline.converter.classify import SchemaDriftError
 from pipeline.converter.convert import (
-    ConversionMetadata,
     _build_column_labels,
     _file_metadata_bytes,
+    convert_sas_to_parquet,
 )
-from pipeline.converter.classify import SchemaDriftError
 
 
 class TestBuildColumnLabels:
     def test_zips_parallel_lists(self):
-        assert _build_column_labels(["a", "b"], ["A label", "B label"]) == {"a": "A label", "b": "B label"}
+        assert _build_column_labels(["a", "b"], ["A label", "B label"]) == {
+            "a": "A label",
+            "b": "B label",
+        }
 
     def test_empty_strings_preserved_not_dropped(self):
         # AC1.6: a column with no label still appears in the map.
@@ -55,11 +58,19 @@ class TestFileMetadataBytes:
 
     def test_all_four_keys_present(self):
         meta = _file_metadata_bytes({}, {}, "", "0")
-        assert set(meta.keys()) == {b"sas_labels", b"sas_value_labels", b"sas_encoding", b"converter_version"}
+        assert set(meta.keys()) == {
+            b"sas_labels",
+            b"sas_value_labels",
+            b"sas_encoding",
+            b"converter_version",
+        }
 
 
+@pytest.mark.integration
 class TestConvertSasToParquetHappyPath:
-    def test_roundtrip_row_count_matches(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
+    def test_roundtrip_row_count_matches(
+        self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path
+    ):
         # AC1.1
         df = pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": ["x", "y", "z", "w", "v"]})
         src = sas_fixture_factory(df=df)
@@ -72,7 +83,9 @@ class TestConvertSasToParquetHappyPath:
         table = pq.read_table(out)
         assert table.num_rows == 5
 
-    def test_output_path_constructed_as_expected(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
+    def test_output_path_constructed_as_expected(
+        self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path
+    ):
         # AC2.4, AC2.5
         df = pd.DataFrame({"a": [1]})
         src = sas_fixture_factory(df=df, filename="x.sas7bdat")
@@ -90,10 +103,12 @@ class TestConvertSasToParquetHappyPath:
         # groups (few rows, highly repetitive data) because the uncompressed
         # size is smaller than the compressed result. 1000 varied rows ensures
         # the writer actually applies the codec and reports it in metadata.
-        df = pd.DataFrame({
-            "a": list(range(1000)),
-            "b": [f"str_value_{i}" for i in range(1000)],
-        })
+        df = pd.DataFrame(
+            {
+                "a": list(range(1000)),
+                "b": [f"str_value_{i}" for i in range(1000)],
+            }
+        )
         src = sas_fixture_factory(df=df)
         out = tmp_path / "test.parquet"
 
@@ -106,7 +121,9 @@ class TestConvertSasToParquetHappyPath:
         codecs = {rg.column(i).compression.upper() for i in range(meta.num_columns)}
         assert "ZSTD" in codecs, f"expected ZSTD in row group codecs, got {codecs}"
 
-    def test_embeds_all_four_file_metadata_keys(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
+    def test_embeds_all_four_file_metadata_keys(
+        self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path
+    ):
         # AC1.3, AC1.4
         df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
         src = sas_fixture_factory(
@@ -116,7 +133,9 @@ class TestConvertSasToParquetHappyPath:
         )
         out = tmp_path / "test.parquet"
 
-        convert_sas_to_parquet(src, out, converter_version="9.9.9", chunk_iter_factory=sav_chunk_iter_factory)
+        convert_sas_to_parquet(
+            src, out, converter_version="9.9.9", chunk_iter_factory=sav_chunk_iter_factory
+        )
 
         file_meta = pq.read_metadata(out).metadata
         assert b"sas_labels" in file_meta
@@ -124,10 +143,13 @@ class TestConvertSasToParquetHappyPath:
         assert b"sas_encoding" in file_meta
         assert b"converter_version" in file_meta
         import json as _json
+
         assert _json.loads(file_meta[b"sas_labels"]) == {"a": "A label", "b": "B label"}
         assert file_meta[b"converter_version"] == b"9.9.9"
 
-    def test_no_column_labels_yields_empty_dict(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
+    def test_no_column_labels_yields_empty_dict(
+        self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path
+    ):
         # AC1.6
         df = pd.DataFrame({"a": [1, 2]})
         src = sas_fixture_factory(df=df)  # no column_labels
@@ -137,6 +159,7 @@ class TestConvertSasToParquetHappyPath:
 
         file_meta = pq.read_metadata(out).metadata
         import json as _json
+
         loaded = _json.loads(file_meta[b"sas_labels"])
         assert isinstance(loaded, dict)
         assert loaded == {} or all(v == "" for v in loaded.values())
@@ -154,8 +177,11 @@ class TestConvertSasToParquetHappyPath:
         assert meta.num_row_groups == 3
 
 
+@pytest.mark.integration
 class TestConvertAtomicWrite:
-    def test_final_path_only_exists_on_success(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
+    def test_final_path_only_exists_on_success(
+        self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path
+    ):
         # AC2.1: tmp file is used; on success no tmp files remain.
         df = pd.DataFrame({"a": [1]})
         src = sas_fixture_factory(df=df)
@@ -201,18 +227,25 @@ class TestConvertAtomicWrite:
         assert not out.exists()
 
 
+@pytest.mark.integration
 class TestConvertSchemaStability:
-    def test_multiple_chunks_same_schema_succeeds(self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path):
+    def test_multiple_chunks_same_schema_succeeds(
+        self, sas_fixture_factory, sav_chunk_iter_factory, tmp_path
+    ):
         # AC3.1: chunks 2 through N match chunk 1 -> all write.
-        df = pd.DataFrame({
-            "int_col": list(range(250)),
-            "str_col": [f"s{i}" for i in range(250)],
-            "float_col": [float(i) * 1.5 for i in range(250)],
-        })
+        df = pd.DataFrame(
+            {
+                "int_col": list(range(250)),
+                "str_col": [f"s{i}" for i in range(250)],
+                "float_col": [float(i) * 1.5 for i in range(250)],
+            }
+        )
         src = sas_fixture_factory(df=df)
         out = tmp_path / "test.parquet"
 
-        result = convert_sas_to_parquet(src, out, chunk_size=100, chunk_iter_factory=sav_chunk_iter_factory)
+        result = convert_sas_to_parquet(
+            src, out, chunk_size=100, chunk_iter_factory=sav_chunk_iter_factory
+        )
 
         assert result.row_count == 250
         assert result.column_count == 3
@@ -232,6 +265,7 @@ class TestConvertSchemaDrift:
             variable_value_labels = {}
             file_encoding = "UTF-8"
             column_names = list(columns)
+
         return _Meta()
 
     def test_dtype_drift_raises_schema_drift_error(self, tmp_path):
@@ -281,3 +315,83 @@ class TestConvertSchemaDrift:
 
         with pytest.raises(SchemaDriftError):
             convert_sas_to_parquet(src, out, chunk_iter_factory=drift_iter)
+
+
+class TestConvertCleanupLogging:
+    def _meta_stub(self, columns):
+        class _Meta:
+            column_labels = ["" for _ in columns]
+            variable_value_labels = {}
+            file_encoding = "UTF-8"
+            column_names = list(columns)
+
+        return _Meta()
+
+    def _boom_after_first_chunk(self, meta):
+        def _iter(source_path, chunk_size):
+            yield pd.DataFrame({"a": [1]}), meta
+            raise RuntimeError("simulated I/O failure")
+
+        return _iter
+
+    def test_writer_close_failure_logs_debug(self, tmp_path, caplog, monkeypatch):
+        # GH23.AC1.1, GH23.AC1.4
+        src = tmp_path / "unused.sav"
+        src.write_bytes(b"")
+        out = tmp_path / "test.parquet"
+        meta = self._meta_stub(["a"])
+
+        def boom_close(self, *args, **kwargs):
+            raise RuntimeError("close boom")
+
+        monkeypatch.setattr(pq.ParquetWriter, "close", boom_close)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.converter.convert")
+
+        with pytest.raises(RuntimeError, match="simulated"):
+            convert_sas_to_parquet(src, out, chunk_iter_factory=self._boom_after_first_chunk(meta))
+
+        records = [
+            r
+            for r in caplog.records
+            if r.name == "pipeline.converter.convert"
+            and r.message == "writer close failed during cleanup"
+        ]
+        assert len(records) == 1
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].exc_info is not None
+        assert records[0].exc_info[0] is RuntimeError
+
+    def test_tmp_unlink_failure_logs_debug(self, tmp_path, caplog, monkeypatch):
+        # GH23.AC1.2, GH23.AC1.4
+        from pathlib import Path as _Path
+
+        src = tmp_path / "unused.sav"
+        src.write_bytes(b"")
+        out = tmp_path / "test.parquet"
+        meta = self._meta_stub(["a"])
+
+        original_unlink = _Path.unlink
+
+        def boom_unlink(self, *args, **kwargs):
+            raise OSError("unlink boom")
+
+        monkeypatch.setattr(_Path, "unlink", boom_unlink)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.converter.convert")
+
+        with pytest.raises(RuntimeError, match="simulated"):
+            convert_sas_to_parquet(src, out, chunk_iter_factory=self._boom_after_first_chunk(meta))
+
+        records = [
+            r
+            for r in caplog.records
+            if r.name == "pipeline.converter.convert"
+            and r.message == "tmp file unlink failed during cleanup"
+        ]
+        assert len(records) == 1
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].exc_info is not None
+        assert records[0].exc_info[0] is OSError
+
+        monkeypatch.setattr(_Path, "unlink", original_unlink)

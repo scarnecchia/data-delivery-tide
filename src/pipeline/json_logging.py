@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class JsonFormatter(logging.Formatter):
@@ -10,9 +10,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         entry = {
-            "timestamp": datetime.fromtimestamp(
-                record.created, tz=timezone.utc
-            ).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
         }
@@ -58,9 +56,7 @@ def get_logger(
     # File handler (if log_dir provided)
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
-        file_handler = logging.FileHandler(
-            os.path.join(log_dir, log_filename)
-        )
+        file_handler = logging.FileHandler(os.path.join(log_dir, log_filename))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

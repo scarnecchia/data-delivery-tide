@@ -3,10 +3,13 @@
 import hashlib
 import json
 import sqlite3
-from datetime import datetime, timezone
-from typing import Annotated
+from collections.abc import Generator
+from datetime import UTC, datetime
+from typing import Annotated, Any
 
 from fastapi import Depends
+
+from pipeline.registry_api.records import DeliveryRecord, EventRow, TokenRecord
 
 
 def make_delivery_id(source_path: str) -> str:
@@ -32,9 +35,7 @@ def _migrate_events_check_constraint(conn: sqlite3.Connection) -> None:
     cursor = conn.cursor()
 
     # Check if events table exists
-    cursor.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='events'"
-    )
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='events'")
     row = cursor.fetchone()
     if row is None:
         # Fresh DB with no events table yet, migration not needed
@@ -125,6 +126,7 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
                 event_type  TEXT NOT NULL CHECK (event_type IN ('delivery.created', 'delivery.status_changed', 'conversion.completed', 'conversion.failed')),
                 delivery_id TEXT NOT NULL,
                 payload     TEXT NOT NULL,
+                username    TEXT,
                 created_at  TEXT NOT NULL
             )
             """
@@ -137,14 +139,21 @@ def init_db(db_path_or_conn: str | sqlite3.Connection) -> None:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_actionable ON deliveries (lexicon_id, status, parquet_converted_at)"
         )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_dp_wp ON deliveries (dp_id, workplan_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_request_id ON deliveries (request_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lexicon ON deliveries (lexicon_id)")
+
+        # Create the tokens table
         cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_dp_wp ON deliveries (dp_id, workplan_id)"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_request_id ON deliveries (request_id)"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_lexicon ON deliveries (lexicon_id)"
+            """
+            CREATE TABLE IF NOT EXISTS tokens (
+                token_hash   TEXT PRIMARY KEY,
+                username     TEXT NOT NULL UNIQUE,
+                role         TEXT NOT NULL CHECK (role IN ('admin', 'write', 'read')),
+                created_at   TEXT NOT NULL,
+                revoked_at   TEXT
+            )
+            """
         )
 
         # Enable WAL mode only for file-based databases
@@ -173,7 +182,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def get_db():
+def get_db() -> Generator[sqlite3.Connection, None, None]:
     """
     FastAPI dependency injection generator for database connections.
 
@@ -193,25 +202,64 @@ DbDep = Annotated[sqlite3.Connection, Depends(get_db)]
 
 def _get_iso_now() -> str:
     """Get current timestamp as ISO 8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _deserialize_metadata(row_dict: dict) -> dict:
+def _parse_metadata(raw: object) -> dict[str, Any]:
+    """Decode a metadata column value to a dict.
+
+    Falls back to {} on NULL or invalid JSON.
     """
-    Deserialize metadata JSON field in a delivery row.
-
-    Converts the metadata field from JSON string to dict.
-    Modifies the dict in-place.
-    """
-    if "metadata" in row_dict and isinstance(row_dict["metadata"], str):
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw  # already deserialised (defensive)
+    if isinstance(raw, str):
         try:
-            row_dict["metadata"] = json.loads(row_dict["metadata"])
+            value = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            row_dict["metadata"] = {}
-    return row_dict
+            return {}
+        return value if isinstance(value, dict) else {}
+    return {}
 
 
-def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
+def _record_from_row(row: sqlite3.Row) -> DeliveryRecord:
+    """Convert a deliveries-table row to a DeliveryRecord."""
+    return DeliveryRecord(
+        delivery_id=row["delivery_id"],
+        request_id=row["request_id"],
+        project=row["project"],
+        request_type=row["request_type"],
+        workplan_id=row["workplan_id"],
+        dp_id=row["dp_id"],
+        version=row["version"],
+        scan_root=row["scan_root"],
+        lexicon_id=row["lexicon_id"],
+        status=row["status"],
+        metadata=_parse_metadata(row["metadata"]),
+        first_seen_at=row["first_seen_at"],
+        parquet_converted_at=row["parquet_converted_at"],
+        file_count=row["file_count"],
+        total_bytes=row["total_bytes"],
+        source_path=row["source_path"],
+        output_path=row["output_path"],
+        fingerprint=row["fingerprint"],
+        last_updated_at=row["last_updated_at"],
+    )
+
+
+def _token_record_from_row(row: sqlite3.Row) -> TokenRecord:
+    """Convert a tokens-table row to a TokenRecord."""
+    return TokenRecord(
+        token_hash=row["token_hash"],
+        username=row["username"],
+        role=row["role"],
+        created_at=row["created_at"],
+        revoked_at=row["revoked_at"],
+    )
+
+
+def upsert_delivery(conn: sqlite3.Connection, data: dict[str, Any]) -> DeliveryRecord | None:
     """
     Insert or update a delivery record.
 
@@ -221,7 +269,7 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
 
     Args:
         conn: sqlite3.Connection
-        data: dict with delivery data. Must contain 'source_path'.
+        data: dict[str, Any] with delivery data. Must contain 'source_path'.
 
     Returns:
         dict: The full row as a dict (with sqlite3.Row converted to dict).
@@ -314,12 +362,12 @@ def upsert_delivery(conn: sqlite3.Connection, data: dict) -> dict:
     row = cursor.fetchone()
 
     if row:
-        row_dict = dict(row)
-        return _deserialize_metadata(row_dict)
+        return _record_from_row(row)
+    # Unreachable: the INSERT above guarantees the row exists.
     return None
 
 
-def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
+def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> DeliveryRecord | None:
     """
     Retrieve a delivery by ID.
 
@@ -334,31 +382,31 @@ def get_delivery(conn: sqlite3.Connection, delivery_id: str) -> dict | None:
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
     if row:
-        row_dict = dict(row)
-        return _deserialize_metadata(row_dict)
+        return _record_from_row(row)
     return None
 
 
-def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
+def list_deliveries(
+    conn: sqlite3.Connection, filters: dict[str, Any]
+) -> tuple[list[DeliveryRecord], int]:
     """
-    List deliveries with optional filtering and keyset pagination.
+    List deliveries with optional filtering and pagination.
 
     Supported filter keys:
     - dp_id, project, request_type, workplan_id, request_id, status, lexicon_id, scan_root: exact match with =
     - converted: boolean, if True: parquet_converted_at IS NOT NULL, if False: IS NULL
     - version: if "latest", returns highest version per (dp_id, workplan_id); otherwise exact match
-    - after: delivery_id cursor for keyset pagination (returns rows with delivery_id > after)
-    - limit: maximum number of rows to return (capped at 1000)
+    - limit: max rows to return (default 100)
+    - offset: number of rows to skip (default 0)
 
-    All filters combine with AND. Empty filters dict returns all rows.
-    Results are always ordered by delivery_id ascending.
+    All filters combine with AND. Empty filters dict returns all rows (paginated).
 
     Args:
         conn: sqlite3.Connection
-        filters: dict of filter keys and values
+        filters: dict[str, Any] of filter keys and values
 
     Returns:
-        list: List of delivery dicts
+        tuple: (list of delivery dicts, total count matching filters)
     """
     cursor = conn.cursor()
 
@@ -366,7 +414,16 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
     where_clauses = []
     params = []
 
-    exact_match_fields = ["dp_id", "project", "request_type", "workplan_id", "request_id", "status", "lexicon_id", "scan_root"]
+    exact_match_fields = [
+        "dp_id",
+        "project",
+        "request_type",
+        "workplan_id",
+        "request_id",
+        "status",
+        "lexicon_id",
+        "scan_root",
+    ]
 
     for field in exact_match_fields:
         if field in filters:
@@ -389,29 +446,29 @@ def list_deliveries(conn: sqlite3.Connection, filters: dict) -> list[dict]:
             where_clauses.append("version = ?")
             params.append(filters["version"])
 
-    if "after" in filters and filters["after"] is not None:
-        where_clauses.append("delivery_id > ?")
-        params.append(filters["after"])
-
-    # Build query
-    query = "SELECT * FROM deliveries"
+    # Build WHERE string
+    where_str = ""
     if where_clauses:
-        query += " WHERE " + " AND ".join(where_clauses)
+        where_str = " WHERE " + " AND ".join(where_clauses)
 
-    # Always order by delivery_id for deterministic pagination
-    query += " ORDER BY delivery_id ASC"
+    # Get total count
+    count_query = f"SELECT COUNT(*) FROM deliveries{where_str}"
+    cursor.execute(count_query, params)
+    total = cursor.fetchone()[0]
 
-    # Apply limit if specified
-    if "limit" in filters and filters["limit"] is not None:
-        capped = min(int(filters["limit"]), 1000)
-        query += f" LIMIT {capped}"
+    # Get paginated results
+    limit = filters.get("limit", 100)
+    offset = filters.get("offset", 0)
 
-    cursor.execute(query, params)
+    query = f"SELECT * FROM deliveries{where_str} LIMIT ? OFFSET ?"
+    cursor.execute(query, params + [limit, offset])
     rows = cursor.fetchall()
-    return [_deserialize_metadata(dict(row)) for row in rows]
+    return [_record_from_row(row) for row in rows], total
 
 
-def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]) -> list[dict]:
+def get_actionable(
+    conn: sqlite3.Connection, lexicon_actionable: dict[str, list[str]]
+) -> list[DeliveryRecord]:
     """
     Get actionable deliveries matching per-lexicon actionable statuses.
 
@@ -421,7 +478,7 @@ def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[
 
     Args:
         conn: sqlite3.Connection
-        lexicon_actionable: dict mapping lexicon_id to list of actionable status values
+        lexicon_actionable: dict[str, Any] mapping lexicon_id to list of actionable status values
 
     Returns:
         list: List of actionable delivery dicts
@@ -446,10 +503,12 @@ def get_actionable(conn: sqlite3.Connection, lexicon_actionable: dict[str, list[
     )
 
     rows = cursor.fetchall()
-    return [_deserialize_metadata(dict(row)) for row in rows]
+    return [_record_from_row(row) for row in rows]
 
 
-def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -> dict | None:
+def update_delivery(
+    conn: sqlite3.Connection, delivery_id: str, updates: dict[str, Any]
+) -> DeliveryRecord | None:
     """
     Update a delivery by ID.
 
@@ -460,7 +519,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     Args:
         conn: sqlite3.Connection
         delivery_id: The delivery ID to update
-        updates: dict of fields to update
+        updates: dict[str, Any] of fields to update
 
     Returns:
         dict: The updated delivery row as a dict, or None if not found
@@ -472,7 +531,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
         cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
         row = cursor.fetchone()
         if row:
-            return _deserialize_metadata(dict(row))
+            return _record_from_row(row)
         return None
 
     # Allowed update fields
@@ -486,7 +545,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
         cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
         row = cursor.fetchone()
         if row:
-            return _deserialize_metadata(dict(row))
+            return _record_from_row(row)
         return None
 
     # Serialize metadata if present
@@ -496,7 +555,7 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
             update_dict["metadata"] = json.dumps(metadata)
 
     # Build UPDATE statement
-    set_clauses = [f"{field} = ?" for field in update_dict.keys()]
+    set_clauses = [f"{field} = ?" for field in update_dict]
     set_clause = ", ".join(set_clauses)
     params = list(update_dict.values()) + [delivery_id]
 
@@ -510,16 +569,30 @@ def update_delivery(conn: sqlite3.Connection, delivery_id: str, updates: dict) -
     cursor.execute("SELECT * FROM deliveries WHERE delivery_id = ?", (delivery_id,))
     row = cursor.fetchone()
     if row:
-        return _deserialize_metadata(dict(row))
+        return _record_from_row(row)
     return None
+
+
+def get_token_by_hash(conn: sqlite3.Connection, token_hash: str) -> TokenRecord | None:
+    """
+    Look up a token by its SHA-256 hash.
+
+    Returns the token row as a dict if found, or None if not found.
+    Does NOT filter by revoked_at — caller decides how to handle revoked tokens.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM tokens WHERE token_hash = ?", (token_hash,))
+    row = cursor.fetchone()
+    return _token_record_from_row(row) if row else None
 
 
 def insert_event(
     conn: sqlite3.Connection,
     event_type: str,
     delivery_id: str,
-    payload: dict,
-) -> dict:
+    payload: dict[str, Any],
+    username: str | None = None,
+) -> EventRow:
     """
     Insert an event record and return it with the assigned sequence number.
 
@@ -535,6 +608,7 @@ def insert_event(
               bytes_written, output_path, etc.
             - 'conversion.failed': converter-computed dict with error_class,
               error_message, etc.
+        username: The authenticated user who triggered this event (optional)
 
     Returns:
         dict: The inserted event row as a dict, including the auto-assigned seq.
@@ -542,26 +616,28 @@ def insert_event(
     now = _get_iso_now()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-        (event_type, delivery_id, json.dumps(payload), now),
+        "INSERT INTO events (event_type, delivery_id, payload, username, created_at) VALUES (?, ?, ?, ?, ?)",
+        (event_type, delivery_id, json.dumps(payload), username, now),
     )
     conn.commit()
 
     seq = cursor.lastrowid
-    return {
-        "seq": seq,
-        "event_type": event_type,
-        "delivery_id": delivery_id,
-        "payload": payload,
-        "created_at": now,
-    }
+    assert seq is not None
+    return EventRow(
+        seq=seq,
+        event_type=event_type,  # type: ignore[arg-type]
+        delivery_id=delivery_id,
+        payload=payload,
+        username=username,
+        created_at=now,
+    )
 
 
 def get_events_after(
     conn: sqlite3.Connection,
     after_seq: int,
     limit: int = 100,
-) -> list[dict]:
+) -> list[EventRow]:
     """
     Retrieve events with seq greater than after_seq, ordered by seq ascending.
 
@@ -581,12 +657,17 @@ def get_events_after(
     )
     rows = cursor.fetchall()
 
-    result = []
-    for row in rows:
-        event = dict(row)
-        event["payload"] = json.loads(event["payload"])
-        result.append(event)
-    return result
+    return [
+        EventRow(
+            seq=row["seq"],
+            event_type=row["event_type"],
+            delivery_id=row["delivery_id"],
+            payload=json.loads(row["payload"]),
+            username=row["username"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
 
 
 def delivery_exists(conn: sqlite3.Connection, delivery_id: str) -> bool:

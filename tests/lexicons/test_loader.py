@@ -1,15 +1,22 @@
-# pattern: Functional Core
+# pattern: test file
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from pipeline.lexicons import Lexicon, MetadataField, LexiconLoadError, load_all_lexicons, load_lexicon
+from pipeline.lexicons import (
+    Lexicon,
+    LexiconLoadError,
+    load_all_lexicons,
+    load_lexicon,
+)
 
 
 class TestLoadSingleLexicon:
     """lexicon-system.AC1.1 — Load a single valid lexicon (no extends)."""
 
-    def test_load_single_valid_lexicon_returns_lexicon_instance(self, make_lexicon_file, lexicons_dir):
+    def test_load_single_valid_lexicon_returns_lexicon_instance(
+        self, make_lexicon_file, lexicons_dir
+    ):
         """AC1.1: Load single lexicon returns Lexicon instance with correct fields."""
         make_lexicon_file(
             "soc/_base.json",
@@ -89,7 +96,9 @@ class TestLoadSingleLexicon:
 
         assert isinstance(lexicon.statuses, tuple)
         assert isinstance(lexicon.actionable_statuses, tuple)
-        assert isinstance(lexicon.transitions["pending"] if "pending" in lexicon.transitions else (), tuple)
+        assert isinstance(
+            lexicon.transitions["pending"] if "pending" in lexicon.transitions else (), tuple
+        )
 
 
 class TestInheritanceWithExtends:
@@ -126,7 +135,9 @@ class TestInheritanceWithExtends:
         assert "passed_at" in child.metadata_fields
         assert child.metadata_fields["passed_at"].set_on == "passed"
 
-    def test_base_processed_before_child_in_topological_order(self, make_lexicon_file, lexicons_dir):
+    def test_base_processed_before_child_in_topological_order(
+        self, make_lexicon_file, lexicons_dir
+    ):
         """AC1.2: Base lexicon is loaded and resolved before child."""
         make_lexicon_file(
             "soc/_base.json",
@@ -540,7 +551,10 @@ class TestBatchErrorReporting:
                 "dir_map": {"msoc": "bad_dir"},  # error: bad_dir not in statuses
                 "actionable_statuses": ["bad_action"],  # error: bad_action not in statuses
                 "metadata_fields": {
-                    "field1": {"type": "datetime", "set_on": "bad_set_on"},  # error: bad_set_on not in statuses
+                    "field1": {
+                        "type": "datetime",
+                        "set_on": "bad_set_on",
+                    },  # error: bad_set_on not in statuses
                 },
             },
         )
@@ -638,7 +652,7 @@ class TestErrorEdgeCases:
     def test_malformed_json_reported(self, make_lexicon_file, lexicons_dir):
         """Malformed JSON file reported."""
         # Write invalid JSON directly
-        import json
+
         (lexicons_dir / "bad").mkdir(parents=True, exist_ok=True)
         with open(lexicons_dir / "bad" / "test.json", "w") as f:
             f.write("{invalid json")

@@ -1,6 +1,7 @@
 # pattern: Imperative Shell
 
 import logging
+from typing import Any
 
 from fastapi import WebSocket
 
@@ -22,7 +23,7 @@ class ConnectionManager:
         """Remove a WebSocket connection from the active set."""
         self.active_connections.discard(websocket)
 
-    async def broadcast(self, event: dict) -> None:
+    async def broadcast(self, event: dict[str, Any]) -> None:
         """
         Send event as JSON to all active connections.
 
@@ -34,6 +35,10 @@ class ConnectionManager:
             try:
                 await connection.send_json(event)
             except Exception:
+                logger.debug(
+                    "WebSocket send failed, marking connection dead",
+                    exc_info=True,
+                )
                 dead.append(connection)
 
         for connection in dead:

@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pipeline.lexicons import load_all_lexicons, LexiconLoadError
+from pipeline.lexicons import LexiconLoadError, load_all_lexicons
 
 
 @dataclass
@@ -34,6 +34,8 @@ class PipelineConfig:
     converter_state_path: str
     converter_cli_batch_size: int
     converter_cli_sleep_empty_secs: int
+    api_host: str = "127.0.0.1"
+    api_port: int = 8000
 
 
 def load_config(path: str | None = None) -> PipelineConfig:
@@ -87,6 +89,8 @@ def load_config(path: str | None = None) -> PipelineConfig:
         crawl_manifest_dir=data.get("crawl_manifest_dir", "pipeline/crawl_manifests"),
         crawler_version=data.get("crawler_version", "1.0.0"),
         lexicons_dir=lexicons_dir,
+        api_host=data.get("api_host", "127.0.0.1"),
+        api_port=data.get("api_port", 8000),
         converter_version=data.get("converter_version", "0.1.0"),
         converter_chunk_size=data.get("converter_chunk_size", 100_000),
         converter_compression=data.get("converter_compression", "zstd"),
@@ -96,10 +100,10 @@ def load_config(path: str | None = None) -> PipelineConfig:
     )
 
 
-_settings = None
+_settings: PipelineConfig | None = None
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> PipelineConfig:
     global _settings
     if name == "settings":
         if _settings is None:

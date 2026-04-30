@@ -3,6 +3,8 @@ import json
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from typing import Any, cast
 
 
 class RegistryUnreachableError(Exception):
@@ -21,13 +23,21 @@ class RegistryClientError(Exception):
 _BACKOFF_SECONDS = (2, 4, 8)
 
 
-def _request_with_retry(request: urllib.request.Request) -> dict:
+def _request_with_retry(
+    request: urllib.request.Request,
+    *,
+    token: str | None = None,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
     """Execute a urllib Request with exponential backoff on 5xx/network errors."""
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
     last_error: Exception | None = None
 
     for attempt in range(len(_BACKOFF_SECONDS) + 1):
         try:
-            with urllib.request.urlopen(request) as response:
+            with urlopen(request) as response:
                 body = response.read().decode()
                 return json.loads(body) if body else {}
         except urllib.error.HTTPError as exc:
@@ -38,14 +48,21 @@ def _request_with_retry(request: urllib.request.Request) -> dict:
             last_error = exc
 
         if attempt < len(_BACKOFF_SECONDS):
-            time.sleep(_BACKOFF_SECONDS[attempt])
+            sleep(_BACKOFF_SECONDS[attempt])
 
     raise RegistryUnreachableError(
         f"registry API unreachable after {len(_BACKOFF_SECONDS) + 1} attempts: {last_error}"
     )
 
 
-def get_delivery(api_url: str, delivery_id: str) -> dict:
+def get_delivery(
+    api_url: str,
+    delivery_id: str,
+    token: str | None = None,
+    *,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
     """
     GET /deliveries/{delivery_id} — returns the DeliveryResponse dict.
 
@@ -53,10 +70,18 @@ def get_delivery(api_url: str, delivery_id: str) -> dict:
     """
     url = f"{api_url.rstrip('/')}/deliveries/{delivery_id}"
     request = urllib.request.Request(url, method="GET")
-    return _request_with_retry(request)
+    return _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep)
 
 
-def patch_delivery(api_url: str, delivery_id: str, updates: dict) -> dict:
+def patch_delivery(
+    api_url: str,
+    delivery_id: str,
+    updates: dict[str, Any],
+    token: str | None = None,
+    *,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
     """
     PATCH /deliveries/{delivery_id} with the given partial update dict.
 
@@ -70,14 +95,18 @@ def patch_delivery(api_url: str, delivery_id: str, updates: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="PATCH",
     )
-    return _request_with_retry(request)
+    return _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep)
 
 
 def list_unconverted(
     api_url: str,
     after: str = "",
     limit: int = 200,
-) -> list[dict]:
+    token: str | None = None,
+    *,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+    sleep: Callable[[float], None] = time.sleep,
+) -> list[dict[str, Any]]:
     """
     GET /deliveries?converted=false&after=&limit= — returns a page of delivery dicts.
 
@@ -88,10 +117,22 @@ def list_unconverted(
     params = f"converted=false&after={after}&limit={limit}"
     url = f"{api_url.rstrip('/')}/deliveries?{params}"
     request = urllib.request.Request(url, method="GET")
-    return _request_with_retry(request)
+    return cast(
+        "list[dict[str, Any]]",
+        _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep),
+    )
 
 
-def emit_event(api_url: str, event_type: str, delivery_id: str, payload: dict) -> dict:
+def emit_event(
+    api_url: str,
+    event_type: str,
+    delivery_id: str,
+    payload: dict[str, Any],
+    token: str | None = None,
+    *,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
     """
     POST /events with the given EventCreate body — returns the inserted EventRecord.
 
@@ -99,15 +140,17 @@ def emit_event(api_url: str, event_type: str, delivery_id: str, payload: dict) -
     the registry rejects other values with 422.
     """
     url = f"{api_url.rstrip('/')}/events"
-    body = json.dumps({
-        "event_type": event_type,
-        "delivery_id": delivery_id,
-        "payload": payload,
-    }).encode()
+    body = json.dumps(
+        {
+            "event_type": event_type,
+            "delivery_id": delivery_id,
+            "payload": payload,
+        }
+    ).encode()
     request = urllib.request.Request(
         url,
         data=body,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    return _request_with_retry(request)
+    return _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep)

@@ -1,19 +1,44 @@
+# pattern: test file
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from datetime import datetime
 import logging
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
 
 from pipeline.config import ScanRoot
-from pipeline.crawler.main import walk_roots, inventory_files, crawl
 from pipeline.crawler.http import RegistryUnreachableError
+from pipeline.crawler.main import WalkResult, crawl, inventory_files, walk_roots
+
+
+class FakePostDelivery:
+    """Recorder for crawl()'s post_fn parameter."""
+
+    def __init__(self, return_value=None):
+        self.calls: list[dict] = []
+        self._return_value = return_value if return_value is not None else {}
+
+    def __call__(self, api_url, payload, *, token=None):
+        self.calls.append({"api_url": api_url, "payload": payload, "token": token})
+        return self._return_value
+
+    @property
+    def call_count(self) -> int:
+        return len(self.calls)
+
+    @property
+    def called(self) -> bool:
+        return len(self.calls) > 0
+
+    def reset_mock(self) -> None:
+        self.calls.clear()
 
 
 class TestWalkRoots:
     """AC2.1, AC2.4, AC2.5 — Discover msoc/msoc_new directories."""
 
-    def test_ac2_1_discovers_msoc_and_msoc_new_directories(self, delivery_tree):
+    def test_walk_roots_discovers_msoc_and_msoc_new_directories(self, delivery_tree):
         """AC2.1: Crawler discovers both msoc and msoc_new directories."""
         passed_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -32,20 +57,34 @@ class TestWalkRoots:
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
-        paths = [r[0] for r in results]
+        paths = [r.source_path for r in results]
         assert passed_path in paths
         assert pending_path in paths
 
-    def test_ac2_4_processes_multiple_scan_roots(self, tmp_path):
+    def test_walk_roots_processes_multiple_scan_roots(self, tmp_path):
         """AC2.4: Crawler processes deliveries from multiple scan roots."""
         # Root 1
         scan_root1 = tmp_path / "requests" / "qa"
-        v1_path = scan_root1 / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        v1_path = (
+            scan_root1
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         v1_path.mkdir(parents=True)
 
         # Root 2
         scan_root2 = tmp_path / "requests" / "qm"
-        v2_path = scan_root2 / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc_new"
+        v2_path = (
+            scan_root2
+            / "nsdp"
+            / "packages"
+            / "soc_qar_wp002"
+            / "soc_qar_wp002_nsdp_v01"
+            / "msoc_new"
+        )
         v2_path.mkdir(parents=True)
 
         scan_roots = [
@@ -55,14 +94,21 @@ class TestWalkRoots:
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         assert len(results) == 2
-        assert (str(v1_path), str(scan_root1)) in results
-        assert (str(v2_path), str(scan_root2)) in results
+        assert WalkResult(source_path=str(v1_path), scan_root=str(scan_root1)) in results
+        assert WalkResult(source_path=str(v2_path), scan_root=str(scan_root2)) in results
 
-    def test_ac2_5_non_existent_scan_root_skipped(self, tmp_path):
+    def test_walk_roots_non_existent_scan_root_skipped(self, tmp_path):
         """AC2.5: Non-existent scan_root is skipped (does not cause error)."""
         existing_root = tmp_path / "requests" / "qa"
         existing_root.mkdir(parents=True)
-        v1_path = existing_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        v1_path = (
+            existing_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         v1_path.mkdir(parents=True)
 
         missing_root = tmp_path / "nonexistent"
@@ -75,24 +121,28 @@ class TestWalkRoots:
 
         # Should only find the existing root's delivery
         assert len(results) == 1
-        assert str(v1_path) in results[0][0]
+        assert str(v1_path) in results[0].source_path
 
-    def test_ac2_3_msoc_in_sibling_not_discovered(self, tmp_path):
+    def test_walk_roots_msoc_in_sibling_not_discovered(self, tmp_path):
         """AC2.3: msoc inside a sibling of target (e.g. compare/) is not discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create msoc under 'compare' directory, not under 'packages' (target)
-        compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        compare_msoc = (
+            scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        )
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty — the msoc under 'compare' should not be discovered
         assert len(results) == 0
 
-    def test_ac2_4_msoc_at_wrong_depth_not_discovered(self, tmp_path):
+    def test_walk_roots_msoc_at_wrong_depth_not_discovered(self, tmp_path):
         """AC2.4: msoc directly under dpid (no target/request/version levels) is not discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -101,70 +151,109 @@ class TestWalkRoots:
         msoc_wrong_depth = scan_root / "mkscnr" / "msoc"
         msoc_wrong_depth.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
         assert len(results) == 0
 
-    def test_ac2_5_msoc_nested_too_deep_not_discovered(self, tmp_path):
+    def test_walk_roots_msoc_nested_too_deep_not_discovered(self, tmp_path):
         """AC2.5: msoc nested too deep (extra level between version_dir and msoc) is not discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create msoc with an extra nesting level
-        msoc_nested = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "subdir" / "msoc"
+        msoc_nested = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "subdir"
+            / "msoc"
+        )
         msoc_nested.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Result should be empty
         assert len(results) == 0
 
-    def test_ac2_6_multiple_dpids_discovered(self, tmp_path):
+    def test_walk_roots_multiple_dpids_discovered(self, tmp_path):
         """AC2.6: Multiple dpids under the same scan root are all traversed."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create two dpids with valid msoc at canonical depth
-        dpid1_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        dpid1_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         dpid1_msoc.mkdir(parents=True)
 
-        dpid2_msoc = scan_root / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc"
+        dpid2_msoc = (
+            scan_root / "nsdp" / "packages" / "soc_qar_wp002" / "soc_qar_wp002_nsdp_v01" / "msoc"
+        )
         dpid2_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
         assert len(results) == 2
-        paths = [r[0] for r in results]
+        paths = [r.source_path for r in results]
         assert str(dpid1_msoc) in paths
         assert str(dpid2_msoc) in paths
 
-    def test_ac2_7_multiple_version_dirs_discovered(self, tmp_path):
+    def test_walk_roots_multiple_version_dirs_discovered(self, tmp_path):
         """AC2.7: Multiple version directories under the same request_id are all discovered."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create one dpid with one request_id containing two version directories
-        v1_msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        v1_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         v1_msoc.mkdir(parents=True)
 
-        v2_msoc_new = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc_new"
+        v2_msoc_new = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc_new"
+        )
         v2_msoc_new.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Both should be discovered
         assert len(results) == 2
-        paths = [r[0] for r in results]
+        paths = [r.source_path for r in results]
         assert str(v1_msoc) in paths
         assert str(v2_msoc_new) in paths
 
-    def test_ac3_1_warning_when_target_missing(self, tmp_path):
+    def test_walk_roots_warning_when_target_missing(self, tmp_path):
         """AC3.1: Warning logged when a dpid directory is missing its target subdirectory."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
@@ -174,7 +263,9 @@ class TestWalkRoots:
         dpid_dir.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         # Assert warning was logged
@@ -187,17 +278,26 @@ class TestWalkRoots:
         # Result should be empty
         assert len(results) == 0
 
-    def test_ac3_2_no_warning_when_target_exists(self, tmp_path):
+    def test_walk_roots_no_warning_when_target_exists(self, tmp_path):
         """AC3.2: No warning logged when target subdirectory exists."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create valid delivery with target directory
-        msoc = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         msoc.mkdir(parents=True)
 
         logger = MagicMock(spec=logging.Logger)
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
 
         # Assert warning was NOT logged
@@ -206,41 +306,54 @@ class TestWalkRoots:
         # Result should have one delivery
         assert len(results) == 1
 
-    def test_custom_target_directory(self, tmp_path):
+    def test_walk_roots_custom_target_directory(self, tmp_path):
         """Custom target: Create msoc under non-default target and verify discovery."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create msoc under 'compare' directory (custom target)
-        compare_msoc = scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        compare_msoc = (
+            scan_root / "mkscnr" / "compare" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        )
         compare_msoc.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="compare")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="compare")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"})
 
         # Should discover msoc under custom target
         assert len(results) == 1
-        assert (str(compare_msoc), str(scan_root)) in results
+        assert WalkResult(source_path=str(compare_msoc), scan_root=str(scan_root)) in results
 
-    def test_exclusions_skip_dpid_directories(self, tmp_path):
+    def test_walk_roots_exclusions_skip_dpid_directories(self, tmp_path):
         """Excluded dpid directories are not descended into at all."""
         scan_root = tmp_path / "requests" / "qa"
 
         for dpid in ("mkscnr", "nsdp", "othrdp"):
-            d = scan_root / dpid / "packages" / f"soc_qar_wp001" / f"soc_qar_wp001_{dpid}_v01" / "msoc"
+            d = (
+                scan_root
+                / dpid
+                / "packages"
+                / "soc_qar_wp001"
+                / f"soc_qar_wp001_{dpid}_v01"
+                / "msoc"
+            )
             d.mkdir(parents=True)
 
-        scan_roots = [ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")]
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
         results = walk_roots(scan_roots, {"msoc", "msoc_new"}, exclusions={"nsdp"})
 
-        dpid_dirs = {p.split("/")[-5] for p, _ in results}
+        dpid_dirs = {r.source_path.split("/")[-5] for r in results}
         assert dpid_dirs == {"mkscnr", "othrdp"}
 
 
 class TestInventoryFiles:
     """AC2.2, AC2.6 — File inventory with metadata."""
 
-    def test_ac2_2_inventory_sas_files_with_metadata(self, delivery_tree):
+    def test_inventory_files_includes_metadata(self, delivery_tree):
         """AC2.2: File inventory includes all .sas7bdat files with correct size_bytes and modified_at."""
         source_path, _ = delivery_tree(
             dp_id="mkscnr",
@@ -256,21 +369,21 @@ class TestInventoryFiles:
         result = inventory_files(source_path)
 
         assert len(result) == 2
-        filenames = {f["filename"] for f in result}
+        filenames = {f.filename for f in result}
         assert "dataset1.sas7bdat" in filenames
         assert "dataset2.sas7bdat" in filenames
 
         # Check sizes
-        sizes = {f["filename"]: f["size_bytes"] for f in result}
+        sizes = {f.filename: f.size_bytes for f in result}
         assert sizes["dataset1.sas7bdat"] == 1024
         assert sizes["dataset2.sas7bdat"] == 2048
 
         # Check modified_at is ISO format
         for f in result:
-            assert f["modified_at"]  # not empty
-            datetime.fromisoformat(f["modified_at"])  # should not raise
+            assert f.modified_at  # not empty
+            datetime.fromisoformat(f.modified_at)  # should not raise
 
-    def test_ac2_6_empty_delivery_directory_inventory_empty(self, delivery_tree):
+    def test_inventory_files_empty_directory_returns_empty(self, delivery_tree):
         """AC2.6: Empty delivery directory (no .sas7bdat files) returns empty inventory."""
         source_path, _ = delivery_tree(
             dp_id="mkscnr",
@@ -288,10 +401,7 @@ class TestInventoryFiles:
 class TestCrawl:
     """AC2.3, AC2.7, AC3.4, AC4.4, AC7.1, AC7.2 — Full crawl orchestration."""
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac2_3_posts_valid_delivery_payload_to_registry(
-        self, mock_post, delivery_tree, make_crawler_config
-    ):
+    def test_crawl_posts_valid_delivery_payload(self, delivery_tree, make_crawler_config):
         """AC2.3: Crawler POSTs valid DeliveryCreate payload to registry API."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -306,12 +416,12 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Verify post_delivery was called
-        assert mock_post.called
-        call_args = mock_post.call_args[0]
-        payload = call_args[1]
+        assert fake_post.called
+        payload = fake_post.calls[0]["payload"]
 
         # Verify payload structure
         assert payload["request_id"] == "soc_qar_wp001"
@@ -327,21 +437,34 @@ class TestCrawl:
         assert payload["total_bytes"] == 1024
         assert payload["fingerprint"].startswith("sha256:")
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac2_7_pending_superseded_by_newer_version_marked_failed(
-        self, mock_post, tmp_path, make_crawler_config
+    def test_crawl_pending_superseded_by_newer_version_marked_failed(
+        self, tmp_path, make_crawler_config
     ):
         """AC2.7: Pending delivery with newer version for same workplan+dp_id is POSTed with status=failed."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # v01 pending
-        v1_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc_new"
+        v1_path = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc_new"
+        )
         v1_path.mkdir(parents=True)
         (v1_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
 
         # v02 pending
-        v2_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc_new"
+        v2_path = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc_new"
+        )
         v2_path.mkdir(parents=True)
         (v2_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -350,11 +473,11 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        assert mock_post.call_count == 2
-        calls = mock_post.call_args_list
-        payloads = [call[0][1] for call in calls]
+        assert fake_post.call_count == 2
+        payloads = [c["payload"] for c in fake_post.calls]
 
         v1_payload = next(p for p in payloads if p["version"] == "v01")
         v2_payload = next(p for p in payloads if p["version"] == "v02")
@@ -362,9 +485,8 @@ class TestCrawl:
         assert v1_payload["status"] == "failed"
         assert v2_payload["status"] == "pending"
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac3_4_re_crawling_same_delivery_overwrites_manifest_idempotent(
-        self, mock_post, delivery_tree, make_crawler_config
+    def test_crawl_re_crawl_overwrites_manifest_idempotent(
+        self, delivery_tree, make_crawler_config
     ):
         """AC3.4: Re-crawling same unchanged delivery overwrites manifest with identical content (idempotent)."""
         source_path, scan_root = delivery_tree(
@@ -379,18 +501,18 @@ class TestCrawl:
             scan_roots=[{"path": scan_root, "label": "qa"}],
         )
         logger = MagicMock()
+        fake_post = FakePostDelivery()
 
         # First crawl
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_dir = config.crawl_manifest_dir
         manifest_files_1 = list(Path(manifest_dir).glob("*.json"))
         manifest_1 = json.loads(manifest_files_1[0].read_text())
 
-        # Clear mock calls
-        mock_post.reset_mock()
+        fake_post.reset_mock()
 
         # Second crawl (re-crawl same directory)
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_files_2 = list(Path(manifest_dir).glob("*.json"))
         manifest_2 = json.loads(manifest_files_2[0].read_text())
 
@@ -402,16 +524,15 @@ class TestCrawl:
         assert manifest_1["file_count"] == manifest_2["file_count"]
         assert manifest_1["files"] == manifest_2["files"]
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac4_4_excluded_dp_ids_no_error_manifest(
-        self, mock_post, tmp_path, make_crawler_config
-    ):
+    def test_crawl_excluded_dp_ids_no_error_manifest(self, tmp_path, make_crawler_config):
         """AC4.4: Excluded dp_ids do NOT produce error manifests (they are expected, not errors)."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create a delivery with excluded dp_id
-        excluded_path = scan_root / "nsdp" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_nsdp_v01" / "msoc"
+        excluded_path = (
+            scan_root / "nsdp" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_nsdp_v01" / "msoc"
+        )
         excluded_path.mkdir(parents=True)
 
         config = make_crawler_config(
@@ -420,7 +541,8 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Check that no error manifest was written
         error_dir = Path(config.crawl_manifest_dir) / "errors"
@@ -428,12 +550,9 @@ class TestCrawl:
         assert len(error_manifests) == 0
 
         # And post_delivery should not have been called
-        assert not mock_post.called
+        assert not fake_post.called
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_excluded_dpid_folder_blocks_all_deliveries_inside(
-        self, mock_post, tmp_path, make_crawler_config
-    ):
+    def test_crawl_excluded_dpid_folder_blocks_all_deliveries(self, tmp_path, make_crawler_config):
         """Excluded dpid folder must block ALL deliveries inside, even if
         version directory encodes a different dp_id than the folder name."""
         scan_root = tmp_path / "requests" / "qa"
@@ -441,16 +560,19 @@ class TestCrawl:
 
         # dpid folder is "nsdp" (excluded), but version dir encodes dp_id "mkscnr"
         sneaky_path = (
-            scan_root / "nsdp" / "packages" / "soc_qar_wp001"
-            / "soc_qar_wp001_mkscnr_v01" / "msoc"
+            scan_root / "nsdp" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
         )
         sneaky_path.mkdir(parents=True)
         (sneaky_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
 
         # Also create a normal non-excluded delivery
         normal_path = (
-            scan_root / "othrdp" / "packages" / "soc_qar_wp002"
-            / "soc_qar_wp002_othrdp_v01" / "msoc"
+            scan_root
+            / "othrdp"
+            / "packages"
+            / "soc_qar_wp002"
+            / "soc_qar_wp002_othrdp_v01"
+            / "msoc"
         )
         normal_path.mkdir(parents=True)
         (normal_path / "data.sas7bdat").write_bytes(b"\x00" * 100)
@@ -461,17 +583,17 @@ class TestCrawl:
         )
 
         logger = MagicMock()
-        count = crawl(config, logger)
+        fake_post = FakePostDelivery()
+        count = crawl(config, logger, post_fn=fake_post)
 
         # Only the non-excluded delivery should be processed
         assert count == 1
-        assert mock_post.call_count == 1
-        posted_payload = mock_post.call_args[0][1]
+        assert fake_post.call_count == 1
+        posted_payload = fake_post.calls[0]["payload"]
         assert posted_payload["dp_id"] == "othrdp"
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac7_1_idempotent_crawl_produces_identical_manifests(
-        self, mock_post, delivery_tree, make_crawler_config
+    def test_crawl_idempotent_produces_identical_manifests(
+        self, delivery_tree, make_crawler_config
     ):
         """AC7.1: Running crawler twice on same directory tree produces identical manifests."""
         source_path, scan_root = delivery_tree(
@@ -486,16 +608,17 @@ class TestCrawl:
             scan_roots=[{"path": scan_root, "label": "qa"}],
         )
         logger = MagicMock()
+        fake_post = FakePostDelivery()
 
         # First crawl
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_files_1 = sorted(Path(config.crawl_manifest_dir).glob("*.json"))
         manifests_1 = [json.loads(f.read_text()) for f in manifest_files_1]
 
-        mock_post.reset_mock()
+        fake_post.reset_mock()
 
         # Second crawl
-        crawl(config, logger)
+        crawl(config, logger, post_fn=fake_post)
         manifest_files_2 = sorted(Path(config.crawl_manifest_dir).glob("*.json"))
         manifests_2 = [json.loads(f.read_text()) for f in manifest_files_2]
 
@@ -509,10 +632,7 @@ class TestCrawl:
             assert m1["file_count"] == m2["file_count"]
             assert m1["files"] == m2["files"]
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac7_2_unchanged_fingerprint_on_re_crawl(
-        self, mock_post, delivery_tree, make_crawler_config
-    ):
+    def test_crawl_unchanged_fingerprint_on_re_crawl(self, delivery_tree, make_crawler_config):
         """AC7.2: Unchanged fingerprint means registry POST payload fingerprint unchanged on re-crawl."""
         source_path, scan_root = delivery_tree(
             dp_id="mkscnr",
@@ -526,17 +646,18 @@ class TestCrawl:
             scan_roots=[{"path": scan_root, "label": "qa"}],
         )
         logger = MagicMock()
+        fake_post = FakePostDelivery()
 
         # First crawl
-        crawl(config, logger)
-        first_payload = mock_post.call_args_list[0][0][1]
+        crawl(config, logger, post_fn=fake_post)
+        first_payload = fake_post.calls[0]["payload"]
         first_fingerprint = first_payload["fingerprint"]
 
-        mock_post.reset_mock()
+        fake_post.reset_mock()
 
         # Second crawl
-        crawl(config, logger)
-        second_payload = mock_post.call_args_list[0][0][1]
+        crawl(config, logger, post_fn=fake_post)
+        second_payload = fake_post.calls[0]["payload"]
         second_fingerprint = second_payload["fingerprint"]
 
         assert first_fingerprint == second_fingerprint
@@ -545,9 +666,8 @@ class TestCrawl:
 class TestLexiconSystemAC5Integration:
     """lexicon-system.AC5.6 — Crawler POST payload includes lexicon_id and status."""
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_ac5_6_crawler_post_payload_includes_lexicon_id_and_status(
-        self, mock_post, delivery_tree, make_crawler_config
+    def test_crawl_post_payload_includes_lexicon_id_and_status(
+        self, delivery_tree, make_crawler_config
     ):
         """AC5.6: Crawler POST payload includes lexicon_id and status (not qa_status)."""
         source_path, scan_root = delivery_tree(
@@ -563,12 +683,12 @@ class TestLexiconSystemAC5Integration:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Verify post_delivery was called
-        assert mock_post.called
-        call_args = mock_post.call_args[0]
-        payload = call_args[1]
+        assert fake_post.called
+        payload = fake_post.calls[0]["payload"]
 
         # AC5.6: Payload must include lexicon_id and status, not qa_status
         assert "lexicon_id" in payload
@@ -579,13 +699,54 @@ class TestLexiconSystemAC5Integration:
         assert payload["status"] == "passed"
 
 
+class TestCrawlAuth:
+    """Token forwarding from crawl() to post_delivery()."""
+
+    def test_crawl_token_forwarded_to_registry(self, delivery_tree, make_crawler_config):
+        """crawl() forwards token kwarg to post_delivery()."""
+        source_path, scan_root = delivery_tree(
+            dp_id="mkscnr",
+            request_id="soc_qar_wp001",
+            version_dir_name="soc_qar_wp001_mkscnr_v01",
+            status="passed",
+            sas_files=[("dataset.sas7bdat", 1024)],
+        )
+
+        config = make_crawler_config(
+            scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
+        )
+        logger = MagicMock()
+        fake_post = FakePostDelivery()
+        crawl(config, logger, token="my-secret-token", post_fn=fake_post)
+
+        assert fake_post.called
+        assert fake_post.calls[0]["token"] == "my-secret-token"
+
+    def test_crawl_no_token_forwards_none(self, delivery_tree, make_crawler_config):
+        """crawl() without token passes token=None to post_delivery()."""
+        source_path, scan_root = delivery_tree(
+            dp_id="mkscnr",
+            request_id="soc_qar_wp001",
+            version_dir_name="soc_qar_wp001_mkscnr_v01",
+            status="passed",
+            sas_files=[("dataset.sas7bdat", 1024)],
+        )
+
+        config = make_crawler_config(
+            scan_roots=[{"path": scan_root, "label": "qa", "lexicon": "soc.qar"}],
+        )
+        logger = MagicMock()
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
+
+        assert fake_post.called
+        assert fake_post.calls[0]["token"] is None
+
+
 class TestSubDeliveryDiscovery:
     """sub-deliveries.AC4.1-AC4.8 — Crawler sub-directory discovery."""
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_created_when_sub_dir_exists(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_crawl_sub_delivery_created_when_sub_dir_exists(self, sub_delivery_setup):
         """AC4.1, AC4.2: Sub-delivery created when sub-dir exists, with correct source_path."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -593,20 +754,18 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Verify post_delivery was called twice (parent + sub-delivery)
-        assert mock_post.call_count == 2
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        assert fake_post.call_count == 2
+        payloads = [c["payload"] for c in fake_post.calls]
 
         # Find the sub-delivery (should have source_path ending with scdm_snapshot)
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
         assert sub_payload["source_path"].endswith("scdm_snapshot")
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_inherits_parent_identity(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_crawl_sub_delivery_inherits_parent_identity(self, sub_delivery_setup):
         """AC4.3: Sub-delivery inherits request_id, project, workplan_id, dp_id, version from parent."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -614,9 +773,10 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
@@ -627,10 +787,7 @@ class TestSubDeliveryDiscovery:
         assert sub_payload["dp_id"] == parent_payload["dp_id"] == "mkscnr"
         assert sub_payload["version"] == parent_payload["version"] == "v01"
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_inherits_parent_status(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_crawl_sub_delivery_inherits_parent_status(self, sub_delivery_setup):
         """AC4.4: Sub-delivery inherits status from parent's dir_map resolution."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent.sas7bdat", 100)],
@@ -639,18 +796,16 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
         # Sub-delivery should inherit parent's status ("passed")
         assert sub_payload["status"] == "passed"
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_has_own_delivery_id(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_crawl_sub_delivery_has_own_delivery_id(self, sub_delivery_setup):
         """AC4.5: Sub-delivery has its own delivery_id (SHA-256 of its source_path)."""
         import hashlib
 
@@ -660,9 +815,10 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
@@ -678,10 +834,7 @@ class TestSubDeliveryDiscovery:
         manifest_content = json.loads(manifest_path.read_text())
         assert manifest_content["delivery_id"] == expected_sub_delivery_id
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_delivery_has_own_file_inventory(
-        self, mock_post, sub_delivery_setup
-    ):
+    def test_crawl_sub_delivery_has_own_file_inventory(self, sub_delivery_setup):
         """AC4.6: Sub-delivery has its own file inventory and fingerprint."""
         scan_root, config, parent_path, sub_path = sub_delivery_setup(
             parent_files=[("parent1.sas7bdat", 100), ("parent2.sas7bdat", 200)],
@@ -689,9 +842,10 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        payloads = [c["payload"] for c in fake_post.calls]
         parent_payload = next(p for p in payloads if "scdm_snapshot" not in p["source_path"])
         sub_payload = next(p for p in payloads if "scdm_snapshot" in p["source_path"])
 
@@ -703,15 +857,21 @@ class TestSubDeliveryDiscovery:
         # Fingerprints should differ
         assert parent_payload["fingerprint"] != sub_payload["fingerprint"]
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_missing_sub_dir_silently_skipped(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    def test_crawl_missing_sub_dir_silently_skipped(
+        self, tmp_path, make_crawler_config, lexicons_dir
     ):
         """AC4.7: Missing sub-directory is silently skipped (no error, no sub-delivery)."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
-        parent_path = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+        parent_path = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
         parent_path.mkdir(parents=True)
         (parent_path / "parent.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -726,23 +886,30 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Only parent should be POSTed
-        assert mock_post.call_count == 1
-        payload = mock_post.call_args[0][1]
+        assert fake_post.call_count == 1
+        payload = fake_post.calls[0]["payload"]
         assert "scdm_snapshot" not in payload["source_path"]
 
-    @patch("pipeline.crawler.main.post_delivery")
-    def test_sub_deliveries_grouped_by_own_lexicon_for_derivation(
-        self, mock_post, tmp_path, make_crawler_config, lexicons_dir
+    def test_crawl_sub_deliveries_grouped_by_own_lexicon(
+        self, tmp_path, make_crawler_config, lexicons_dir
     ):
         """AC4.8: Sub-deliveries are grouped by their own lexicon for derivation."""
         scan_root = tmp_path / "requests" / "qa"
         scan_root.mkdir(parents=True)
 
         # Create v01 (pending from msoc_new)
-        parent_v1 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v01" / "msoc_new"
+        parent_v1 = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc_new"
+        )
         parent_v1.mkdir(parents=True)
         (parent_v1 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -751,7 +918,14 @@ class TestSubDeliveryDiscovery:
         (sub_v1 / "sub.sas7bdat").write_bytes(b"\x00" * 50)
 
         # Create v02 (passed from msoc)
-        parent_v2 = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_mkscnr_v02" / "msoc"
+        parent_v2 = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc"
+        )
         parent_v2.mkdir(parents=True)
         (parent_v2 / "parent.sas7bdat").write_bytes(b"\x00" * 100)
 
@@ -769,26 +943,37 @@ class TestSubDeliveryDiscovery:
         )
 
         logger = MagicMock()
-        crawl(config, logger)
+        fake_post = FakePostDelivery()
+        crawl(config, logger, post_fn=fake_post)
 
         # Should have 4 POSTs: parent_v01, sub_v01, parent_v02, sub_v02
-        assert mock_post.call_count == 4
-        payloads = [call[0][1] for call in mock_post.call_args_list]
+        assert fake_post.call_count == 4
+        payloads = [c["payload"] for c in fake_post.calls]
 
         # v01 parent is pending (from msoc_new)
-        v1_parent = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" not in p["source_path"])
+        v1_parent = next(
+            p for p in payloads if p["version"] == "v01" and "scdm_snapshot" not in p["source_path"]
+        )
         # v01 sub inherits parent status (pending)
-        v1_sub = next(p for p in payloads if p["version"] == "v01" and "scdm_snapshot" in p["source_path"])
+        v1_sub = next(
+            p for p in payloads if p["version"] == "v01" and "scdm_snapshot" in p["source_path"]
+        )
         # v02 parent is passed (from msoc)
-        v2_parent = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" not in p["source_path"])
+        v2_parent = next(
+            p for p in payloads if p["version"] == "v02" and "scdm_snapshot" not in p["source_path"]
+        )
         # v02 sub inherits parent status (passed)
-        v2_sub = next(p for p in payloads if p["version"] == "v02" and "scdm_snapshot" in p["source_path"])
+        v2_sub = next(
+            p for p in payloads if p["version"] == "v02" and "scdm_snapshot" in p["source_path"]
+        )
 
         # After derivation, v01_parent should be failed (superseded by v02)
         # v01_sub inherited parent's initial status (pending) and keeps it
         # (soc.scdm has no derive_hook, so derivation doesn't affect it)
         assert v1_parent["status"] == "failed"
-        assert v1_sub["status"] == "pending"  # Inherited parent's initial status, not affected by parent's derivation
+        assert (
+            v1_sub["status"] == "pending"
+        )  # Inherited parent's initial status, not affected by parent's derivation
         assert v2_parent["status"] == "passed"
         assert v2_sub["status"] == "passed"  # Inherited parent's initial status
 
@@ -796,19 +981,191 @@ class TestSubDeliveryDiscovery:
 class TestMain:
     """AC5.4 — Exit code on RegistryUnreachableError."""
 
-    @patch("pipeline.crawler.main.settings")
-    @patch("pipeline.crawler.main.get_logger")
-    @patch("pipeline.crawler.main.crawl")
-    def test_ac5_4_registry_unreachable_exits_nonzero(
-        self, mock_crawl, mock_logger, mock_settings
-    ):
+    def test_main_registry_unreachable_exits_nonzero(self, monkeypatch):
         """AC5.4: Crawler exits non-zero when RegistryUnreachableError is raised."""
-        mock_crawl.side_effect = RegistryUnreachableError("connection refused")
-        mock_settings.log_dir = "/tmp"
+        import pipeline.crawler.main as crawler_main
 
-        from pipeline.crawler.main import main
+        fake_settings = type("FakeSettings", (), {"log_dir": "/tmp"})()
+        monkeypatch.setattr(crawler_main, "settings", fake_settings)
+        monkeypatch.setattr(
+            crawler_main,
+            "get_logger",
+            lambda *a, **kw: MagicMock(spec=logging.Logger),
+        )
+
+        def fake_crawl(*args, **kwargs):
+            raise RegistryUnreachableError("connection refused")
+
+        monkeypatch.setattr(crawler_main, "crawl", fake_crawl)
 
         with pytest.raises(SystemExit) as exc_info:
-            main()
+            crawler_main.main()
 
         assert exc_info.value.code == 1
+
+
+# ---- GH23 phase 5: walk_roots logs OSError before continue ----
+
+import os as _os
+
+
+class TestWalkRootsOSErrorLogging:
+    """GH23.AC5: each scandir OSError site warns with path + exc_info before continuing."""
+
+    @staticmethod
+    def _patch_scandir_to_fail_on(monkeypatch, target_path: str):
+        real_scandir = _os.scandir
+
+        def fake_scandir(path):
+            if str(path) == str(target_path):
+                raise OSError("simulated")
+            return real_scandir(path)
+
+        monkeypatch.setattr(_os, "scandir", fake_scandir)
+
+    def test_site1_root_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        # Two sibling scan roots: one fails at level 1, the other yields a terminal.
+        bad_root = tmp_path / "bad"
+        bad_root.mkdir()
+        good_root = tmp_path / "good"
+        good_msoc = (
+            good_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_root))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [
+            ScanRoot(path=str(bad_root), label="qa", lexicon="soc.qar", target="packages"),
+            ScanRoot(path=str(good_root), label="qa", lexicon="soc.qar", target="packages"),
+        ]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        # Sibling scan_root produced its terminal — continue semantics preserved.
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(good_root)) in results
+
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_root)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_site2_target_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        scan_root = tmp_path / "qa"
+        bad_target = scan_root / "bad" / "packages"
+        bad_target.mkdir(parents=True)
+        good_msoc = (
+            scan_root / "good" / "packages" / "soc_qar_wp001" / "soc_qar_wp001_good_v01" / "msoc"
+        )
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_target))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(scan_root)) in results
+
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_target)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_site3_request_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        scan_root = tmp_path / "qa"
+        # bad request directory
+        bad_request = scan_root / "mkscnr" / "packages" / "bad_request"
+        bad_request.mkdir(parents=True)
+        # sibling good request that yields a terminal
+        good_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v01"
+            / "msoc"
+        )
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_request))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(scan_root)) in results
+
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_request)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_site4_version_scandir_failure_logs_warning(self, tmp_path, monkeypatch):
+        scan_root = tmp_path / "qa"
+        # bad version dir under shared request
+        bad_version = scan_root / "mkscnr" / "packages" / "soc_qar_wp001" / "bad_version"
+        bad_version.mkdir(parents=True)
+        # sibling good version dir with a terminal
+        good_msoc = (
+            scan_root
+            / "mkscnr"
+            / "packages"
+            / "soc_qar_wp001"
+            / "soc_qar_wp001_mkscnr_v02"
+            / "msoc"
+        )
+        good_msoc.mkdir(parents=True)
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_version))
+
+        logger = MagicMock(spec=logging.Logger)
+        scan_roots = [
+            ScanRoot(path=str(scan_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"}, logger=logger)
+
+        assert WalkResult(source_path=str(good_msoc), scan_root=str(scan_root)) in results
+
+        warn_calls = [
+            c
+            for c in logger.warning.call_args_list
+            if c[0] and c[0][0] == "scandir failed, skipping"
+        ]
+        assert len(warn_calls) == 1
+        assert warn_calls[0][1]["extra"]["path"] == str(bad_version)
+        assert warn_calls[0][1]["exc_info"] is True
+
+    def test_no_logger_does_not_raise(self, tmp_path, monkeypatch):
+        """GH23.AC5.1 logger=None branch: missing logger must not raise."""
+        bad_root = tmp_path / "bad"
+        bad_root.mkdir()
+
+        self._patch_scandir_to_fail_on(monkeypatch, str(bad_root))
+
+        scan_roots = [
+            ScanRoot(path=str(bad_root), label="qa", lexicon="soc.qar", target="packages")
+        ]
+        results = walk_roots(scan_roots, {"msoc", "msoc_new"})
+        assert results == []

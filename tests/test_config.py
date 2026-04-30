@@ -1,7 +1,9 @@
+# pattern: test file
 import json
+
 import pytest
 
-from pipeline.config import load_config, PipelineConfig, ScanRoot
+from pipeline.config import PipelineConfig, ScanRoot, load_config
 from pipeline.lexicons import LexiconLoadError
 
 
@@ -12,13 +14,17 @@ def _make_lexicons(tmp_path, lexicon_id="soc.qar"):
     lex_dir = tmp_path / "lexicons"
     lex_file = lex_dir / "/".join(parts[:-1]) / f"{parts[-1]}.json"
     lex_file.parent.mkdir(parents=True, exist_ok=True)
-    lex_file.write_text(json.dumps({
-        "statuses": ["pending", "passed", "failed"],
-        "transitions": {"pending": ["passed", "failed"], "passed": [], "failed": []},
-        "dir_map": {"msoc": "passed", "msoc_new": "pending"},
-        "actionable_statuses": ["passed"],
-        "metadata_fields": {},
-    }))
+    lex_file.write_text(
+        json.dumps(
+            {
+                "statuses": ["pending", "passed", "failed"],
+                "transitions": {"pending": ["passed", "failed"], "passed": [], "failed": []},
+                "dir_map": {"msoc": "passed", "msoc_new": "pending"},
+                "actionable_statuses": ["passed"],
+                "metadata_fields": {},
+            }
+        )
+    )
     return str(lex_dir)
 
 
@@ -156,7 +162,12 @@ class TestLoadConfig:
         config_data = {
             "lexicons_dir": "lexicons",
             "scan_roots": [
-                {"path": "/test/qa", "label": "Test QA", "lexicon": "soc.qar", "target": "packages"},
+                {
+                    "path": "/test/qa",
+                    "label": "Test QA",
+                    "lexicon": "soc.qar",
+                    "target": "packages",
+                },
             ],
             "registry_api_url": "http://test:8000",
             "output_root": "/test/output",

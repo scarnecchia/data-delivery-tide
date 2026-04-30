@@ -1,10 +1,11 @@
 # pattern: test file
 
 import argparse
-import pytest
 import hashlib
 
-from pipeline.converter.cli import _build_parser, _parse_shard, _in_shard, _iter_unconverted, _run
+import pytest
+
+from pipeline.converter.cli import _build_parser, _in_shard, _iter_unconverted, _parse_shard, _run
 from pipeline.converter.http import RegistryUnreachableError
 
 
@@ -18,7 +19,9 @@ class TestParseShard:
     def test_valid_three_of_four(self):
         assert _parse_shard("3/4") == (3, 4)
 
-    @pytest.mark.parametrize("bad", ["", "/", "0", "1/2/3", "a/b", "-1/4", "4/4", "5/4", "0/0", "0/-1"])
+    @pytest.mark.parametrize(
+        "bad", ["", "/", "0", "1/2/3", "a/b", "-1/4", "4/4", "5/4", "0/0", "0/-1"]
+    )
     def test_malformed_raises(self, bad):
         with pytest.raises(ValueError):
             _parse_shard(bad)
@@ -76,13 +79,13 @@ class _StubCliHttp:
         self.call_count = 0
         self.RegistryUnreachableError = RegistryUnreachableError
 
-    def list_unconverted(self, api_url, after, limit):
+    def list_unconverted(self, api_url, after, limit, token=None):
         self.call_count += 1
         if not self.pages:
             return []
         return self.pages.pop(0)
 
-    def patch_delivery(self, api_url, delivery_id, updates):
+    def patch_delivery(self, api_url, delivery_id, updates, token=None):
         self.patches.append((delivery_id, updates))
         return {}
 
@@ -93,20 +96,24 @@ def _fake_args(*, limit=None, shard=None, include_failed=False):
 
 class TestIterUnconverted:
     def test_stops_on_empty_page(self):
-        http = _StubCliHttp(pages=[
-            [{"delivery_id": "a" * 64}, {"delivery_id": "b" * 64}],
-            [],
-        ])
+        http = _StubCliHttp(
+            pages=[
+                [{"delivery_id": "a" * 64}, {"delivery_id": "b" * 64}],
+                [],
+            ]
+        )
         result = list(_iter_unconverted("http://x", page_size=2, http_module=http))
         assert [d["delivery_id"] for d in result] == ["a" * 64, "b" * 64]
         assert http.call_count == 2
 
     def test_pages_multiple_times(self):
-        http = _StubCliHttp(pages=[
-            [{"delivery_id": "a" * 64}, {"delivery_id": "b" * 64}],
-            [{"delivery_id": "c" * 64}],
-            [],
-        ])
+        http = _StubCliHttp(
+            pages=[
+                [{"delivery_id": "a" * 64}, {"delivery_id": "b" * 64}],
+                [{"delivery_id": "c" * 64}],
+                [],
+            ]
+        )
         result = list(_iter_unconverted("http://x", page_size=2, http_module=http))
         assert len(result) == 3
         assert http.call_count == 3
@@ -116,10 +123,13 @@ class TestRunMainLoop:
     def test_empty_backlog_exits_zero(self, monkeypatch):
         # AC8.1
         monkeypatch.setattr("pipeline.converter.cli.settings.log_dir", None)
-        monkeypatch.setattr("pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000")
+        monkeypatch.setattr(
+            "pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000"
+        )
         monkeypatch.setattr("pipeline.converter.cli.settings.converter_cli_batch_size", 200)
         http = _StubCliHttp(pages=[[]])
         calls = []
+
         def convert_one_fn(*args, **kwargs):
             calls.append((args, kwargs))
 
@@ -130,14 +140,21 @@ class TestRunMainLoop:
     def test_processes_all_deliveries(self, monkeypatch):
         # AC8.2
         monkeypatch.setattr("pipeline.converter.cli.settings.log_dir", None)
-        monkeypatch.setattr("pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000")
+        monkeypatch.setattr(
+            "pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000"
+        )
         monkeypatch.setattr("pipeline.converter.cli.settings.converter_cli_batch_size", 200)
-        http = _StubCliHttp(pages=[
-            [{"delivery_id": "a" * 64, "metadata": {}},
-             {"delivery_id": "b" * 64, "metadata": {}}],
-            [],
-        ])
+        http = _StubCliHttp(
+            pages=[
+                [
+                    {"delivery_id": "a" * 64, "metadata": {}},
+                    {"delivery_id": "b" * 64, "metadata": {}},
+                ],
+                [],
+            ]
+        )
         calls = []
+
         def convert_one_fn(delivery_id, api_url, **kwargs):
             calls.append(delivery_id)
 
@@ -148,13 +165,18 @@ class TestRunMainLoop:
     def test_limit_caps_processing(self, monkeypatch):
         # AC8.3
         monkeypatch.setattr("pipeline.converter.cli.settings.log_dir", None)
-        monkeypatch.setattr("pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000")
+        monkeypatch.setattr(
+            "pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000"
+        )
         monkeypatch.setattr("pipeline.converter.cli.settings.converter_cli_batch_size", 200)
-        http = _StubCliHttp(pages=[
-            [{"delivery_id": f"{i:064x}", "metadata": {}} for i in range(5)],
-            [],
-        ])
+        http = _StubCliHttp(
+            pages=[
+                [{"delivery_id": f"{i:064x}", "metadata": {}} for i in range(5)],
+                [],
+            ]
+        )
         calls = []
+
         def convert_one_fn(delivery_id, api_url, **kwargs):
             calls.append(delivery_id)
 
@@ -165,7 +187,9 @@ class TestRunMainLoop:
     def test_shard_filter_skips_out_of_shard(self, monkeypatch):
         # AC8.4
         monkeypatch.setattr("pipeline.converter.cli.settings.log_dir", None)
-        monkeypatch.setattr("pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000")
+        monkeypatch.setattr(
+            "pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000"
+        )
         monkeypatch.setattr("pipeline.converter.cli.settings.converter_cli_batch_size", 200)
         # Hand-picked hex prefixes that deterministically land in shard 0 and 1 of 2:
         # int("00000000", 16) % 2 == 0  (shard 0)
@@ -180,10 +204,13 @@ class TestRunMainLoop:
         ids_in_order = [shard_0_id, shard_1_id, shard_0_id_b, shard_1_id_b]
         http = _StubCliHttp(pages=[[{"delivery_id": d, "metadata": {}} for d in ids_in_order], []])
         calls = []
+
         def convert_one_fn(delivery_id, api_url, **kwargs):
             calls.append(delivery_id)
 
-        rc = _run(_fake_args(shard=None), shard=(0, 2), http_module=http, convert_one_fn=convert_one_fn)
+        rc = _run(
+            _fake_args(shard=None), shard=(0, 2), http_module=http, convert_one_fn=convert_one_fn
+        )
         assert rc == 0
         # Exact expected shard-0 processing.
         assert calls == [shard_0_id, shard_0_id_b]
@@ -191,7 +218,9 @@ class TestRunMainLoop:
     def test_include_failed_clears_conversion_error_first(self, monkeypatch):
         # AC8.5
         monkeypatch.setattr("pipeline.converter.cli.settings.log_dir", None)
-        monkeypatch.setattr("pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000")
+        monkeypatch.setattr(
+            "pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000"
+        )
         monkeypatch.setattr("pipeline.converter.cli.settings.converter_cli_batch_size", 200)
         errored = {
             "delivery_id": "a" * 64,
@@ -199,11 +228,16 @@ class TestRunMainLoop:
         }
         http = _StubCliHttp(pages=[[errored], []])
         calls = []
+
         def convert_one_fn(delivery_id, api_url, **kwargs):
             calls.append(delivery_id)
 
-        rc = _run(_fake_args(include_failed=True), shard=None,
-                  http_module=http, convert_one_fn=convert_one_fn)
+        rc = _run(
+            _fake_args(include_failed=True),
+            shard=None,
+            http_module=http,
+            convert_one_fn=convert_one_fn,
+        )
         assert rc == 0
         # PATCH must have been issued to clear the error before the engine call.
         assert http.patches == [("a" * 64, {"metadata": {"conversion_error": None}})]
@@ -212,7 +246,9 @@ class TestRunMainLoop:
     def test_without_include_failed_skips_errored(self, monkeypatch):
         # AC8.5 (negative case)
         monkeypatch.setattr("pipeline.converter.cli.settings.log_dir", None)
-        monkeypatch.setattr("pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000")
+        monkeypatch.setattr(
+            "pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000"
+        )
         monkeypatch.setattr("pipeline.converter.cli.settings.converter_cli_batch_size", 200)
         # Without --include-failed, errored deliveries are returned by the
         # registry (they ARE unconverted) — but we rely on the engine's skip
@@ -224,11 +260,16 @@ class TestRunMainLoop:
         }
         http = _StubCliHttp(pages=[[errored], []])
         calls = []
+
         def convert_one_fn(delivery_id, api_url, **kwargs):
             calls.append(delivery_id)  # engine would skip, but we still stub it
 
-        rc = _run(_fake_args(include_failed=False), shard=None,
-                  http_module=http, convert_one_fn=convert_one_fn)
+        rc = _run(
+            _fake_args(include_failed=False),
+            shard=None,
+            http_module=http,
+            convert_one_fn=convert_one_fn,
+        )
         assert rc == 0
         assert http.patches == []  # no clearing PATCH
 
@@ -236,6 +277,7 @@ class TestRunMainLoop:
 class TestMainEntryPoint:
     def test_help_exits_cleanly(self, capsys):
         from pipeline.converter.cli import main
+
         with pytest.raises(SystemExit) as exc_info:
             main(["--help"])
         assert exc_info.value.code == 0
@@ -246,6 +288,7 @@ class TestMainEntryPoint:
 
     def test_invalid_shard_returns_two(self, capsys):
         from pipeline.converter.cli import main
+
         rc = main(["--shard", "notvalid"])
         assert rc == 2
         err = capsys.readouterr().err
@@ -256,18 +299,24 @@ class TestRegistryUnreachable:
     def test_exits_nonzero_on_unreachable(self, monkeypatch):
         # AC8.6
         monkeypatch.setattr("pipeline.converter.cli.settings.log_dir", None)
-        monkeypatch.setattr("pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000")
+        monkeypatch.setattr(
+            "pipeline.converter.cli.settings.registry_api_url", "http://localhost:8000"
+        )
         monkeypatch.setattr("pipeline.converter.cli.settings.converter_cli_batch_size", 200)
+
         class _FailingHttp:
             RegistryUnreachableError = RegistryUnreachableError
+
             def list_unconverted(self, *args, **kwargs):
                 raise RegistryUnreachableError("cannot connect")
+
             def patch_delivery(self, *args, **kwargs):
                 raise AssertionError("should not be called")
 
         def convert_one_fn(*args, **kwargs):
             raise AssertionError("should not be called")
 
-        rc = _run(_fake_args(), shard=None, http_module=_FailingHttp(),
-                  convert_one_fn=convert_one_fn)
+        rc = _run(
+            _fake_args(), shard=None, http_module=_FailingHttp(), convert_one_fn=convert_one_fn
+        )
         assert rc == 1

@@ -1,15 +1,14 @@
 # pattern: test file
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
 import pandas as pd
 import pyarrow.parquet as pq
-import pyreadstat
+import pytest
 
 from pipeline.converter.convert import ConversionMetadata
-from pipeline.converter.engine import convert_one, _build_parquet_dir, _find_sas_files
+from pipeline.converter.engine import _build_parquet_dir, _find_sas_files, convert_one
 
 
 class _StubHttp:
@@ -20,14 +19,14 @@ class _StubHttp:
         self.patches: list[tuple[str, dict]] = []
         self.events: list[tuple[str, str, dict]] = []
 
-    def get_delivery(self, api_url, delivery_id):
+    def get_delivery(self, api_url, delivery_id, token=None):
         return self.delivery
 
-    def patch_delivery(self, api_url, delivery_id, updates):
+    def patch_delivery(self, api_url, delivery_id, updates, token=None):
         self.patches.append((delivery_id, updates))
         return self.delivery
 
-    def emit_event(self, api_url, event_type, delivery_id, payload):
+    def emit_event(self, api_url, event_type, delivery_id, payload, token=None):
         self.events.append((event_type, delivery_id, payload))
         return {"seq": 1, "event_type": event_type, "delivery_id": delivery_id, "payload": payload}
 
@@ -136,7 +135,7 @@ class TestHelpers:
 
 
 class TestConvertOneHappyPath:
-    def test_multiple_files_all_succeed(self, tmp_path):
+    def test_convert_one_multiple_files_all_succeed(self, tmp_path):
         """AC2.1, AC3.1, AC3.3, AC3.4, AC7.1: Multiple files all succeed."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -144,7 +143,7 @@ class TestConvertOneHappyPath:
         (source_dir / "beta.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -152,14 +151,23 @@ class TestConvertOneHappyPath:
             rows = 10 if src.stem == "alpha" else 20
             bytes_w = 100 if src.stem == "alpha" else 200
             return ConversionMetadata(
-                row_count=rows, column_count=2, column_labels={}, value_labels={},
-                sas_encoding="UTF-8", bytes_written=bytes_w, wrote_at=fake_wrote_at,
+                row_count=rows,
+                column_count=2,
+                column_labels={},
+                value_labels={},
+                sas_encoding="UTF-8",
+                bytes_written=bytes_w,
+                wrote_at=fake_wrote_at,
             )
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=fake_convert,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=fake_convert,
         )
 
         assert result.outcome == "success"
@@ -183,27 +191,36 @@ class TestConvertOneHappyPath:
         assert payload["total_bytes"] == 300  # 100 + 200
         assert payload["failed_count"] == 0
 
-    def test_single_file_backward_compat(self, tmp_path):
+    def test_convert_one_single_file_backward_compat(self, tmp_path):
         """Backward compatibility: single file works, output_path is now directory."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
         (source_dir / "data.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"pq")
             return ConversionMetadata(
-                row_count=5, column_count=1, column_labels={}, value_labels={},
-                sas_encoding="UTF-8", bytes_written=50, wrote_at=fake_wrote_at,
+                row_count=5,
+                column_count=1,
+                column_labels={},
+                value_labels={},
+                sas_encoding="UTF-8",
+                bytes_written=50,
+                wrote_at=fake_wrote_at,
             )
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=fake_convert,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=fake_convert,
         )
 
         assert result.outcome == "success"
@@ -211,7 +228,7 @@ class TestConvertOneHappyPath:
         assert patch["output_path"] == str(source_dir / "parquet")
         assert patch["metadata"]["converted_files"] == ["data.parquet"]
 
-    def test_mixed_case_extension_discovered_and_converted(self, tmp_path):
+    def test_convert_one_mixed_case_extension_discovered(self, tmp_path):
         """AC1.1: Mixed-case .SAS7BDAT files are discovered and converted."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -219,20 +236,29 @@ class TestConvertOneHappyPath:
         (source_dir / "file2.SAS7BDAT").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"pq")
             return ConversionMetadata(
-                row_count=1, column_count=1, column_labels={}, value_labels={},
-                sas_encoding="UTF-8", bytes_written=1, wrote_at=fake_wrote_at,
+                row_count=1,
+                column_count=1,
+                column_labels={},
+                value_labels={},
+                sas_encoding="UTF-8",
+                bytes_written=1,
+                wrote_at=fake_wrote_at,
             )
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=fake_convert,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=fake_convert,
         )
 
         assert result.outcome == "success"
@@ -243,49 +269,61 @@ class TestConvertOneHappyPath:
         assert "file1.parquet" in converted
         assert "file2.parquet" in converted
 
-
-    def test_uppercase_sas_extension_found(self, tmp_path):
+    def test_convert_one_uppercase_sas_extension_found(self, tmp_path):
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.SAS7BDAT").write_bytes(b"unused by stub")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"pq")
             return ConversionMetadata(
-                row_count=1, column_count=1, column_labels={}, value_labels={},
-                sas_encoding="UTF-8", bytes_written=2, wrote_at=fake_wrote_at,
+                row_count=1,
+                column_count=1,
+                column_labels={},
+                value_labels={},
+                sas_encoding="UTF-8",
+                bytes_written=2,
+                wrote_at=fake_wrote_at,
             )
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=fake_convert,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=fake_convert,
         )
         assert result.outcome == "success"
 
 
 class TestConvertOneSkipGuards:
-    def test_skip_when_already_converted_flag_set(self, tmp_path):
+    def test_convert_one_skip_when_already_converted(self, tmp_path):
         """AC6.1: parquet_converted_at set (flag-only, no file check) -> skip."""
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
 
-        http = _StubHttp(_make_delivery(
-            str(source_dir), parquet_converted_at="2026-04-15T00:00:00+00:00"
-        ))
+        http = _StubHttp(
+            _make_delivery(str(source_dir), parquet_converted_at="2026-04-15T00:00:00+00:00")
+        )
 
         def should_not_be_called(src, out, **kwargs):
             raise AssertionError("convert_fn should not be invoked on already converted delivery")
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=should_not_be_called,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=should_not_be_called,
         )
 
         assert result.outcome == "skipped"
@@ -293,31 +331,37 @@ class TestConvertOneSkipGuards:
         assert http.patches == []
         assert http.events == []
 
-    def test_skip_when_conversion_error_set(self, tmp_path):
+    def test_convert_one_skip_when_conversion_error_set(self, tmp_path):
         # AC5.3
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
 
-        http = _StubHttp(_make_delivery(
-            str(source_dir),
-            metadata={"conversion_error": {"class": "parse_error", "message": "x"}},
-        ))
+        http = _StubHttp(
+            _make_delivery(
+                str(source_dir),
+                metadata={"conversion_error": {"class": "parse_error", "message": "x"}},
+            )
+        )
 
         def should_not_be_called(src, out, **kwargs):
             raise AssertionError("convert_fn should not be invoked on errored delivery")
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=should_not_be_called,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=should_not_be_called,
         )
         assert result.outcome == "skipped"
         assert result.reason == "errored"
         assert http.patches == []
         assert http.events == []
 
-    def test_skip_when_dp_id_excluded(self, tmp_path):
+    def test_convert_one_skip_when_dp_id_excluded(self, tmp_path):
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
@@ -328,9 +372,13 @@ class TestConvertOneSkipGuards:
             raise AssertionError("convert_fn should not be invoked on excluded dp_id")
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=should_not_be_called,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=should_not_be_called,
             dp_id_exclusions={"nsdp"},
         )
         assert result.outcome == "skipped"
@@ -338,55 +386,75 @@ class TestConvertOneSkipGuards:
         assert http.patches == []
         assert http.events == []
 
-    def test_no_skip_when_dp_id_not_excluded(self, tmp_path):
+    def test_convert_one_no_skip_when_dp_id_not_excluded(self, tmp_path):
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir), dp_id="mkscnr"))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"")
             return ConversionMetadata(
-                row_count=0, column_count=0, column_labels={}, value_labels={},
-                sas_encoding="", bytes_written=0, wrote_at=fake_wrote_at,
+                row_count=0,
+                column_count=0,
+                column_labels={},
+                value_labels={},
+                sas_encoding="",
+                bytes_written=0,
+                wrote_at=fake_wrote_at,
             )
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=fake_convert,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=fake_convert,
             dp_id_exclusions={"nsdp"},
         )
         assert result.outcome == "success"
 
-    def test_null_conversion_error_does_not_skip(self, tmp_path):
+    def test_convert_one_null_conversion_error_does_not_skip(self, tmp_path):
         # AC7.3 interaction: {"conversion_error": null} means processable.
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
         (source_dir / "msoc.sas7bdat").write_bytes(b"")
 
-        http = _StubHttp(_make_delivery(
-            str(source_dir),
-            metadata={"conversion_error": None, "other_key": "preserved"},
-        ))
+        http = _StubHttp(
+            _make_delivery(
+                str(source_dir),
+                metadata={"conversion_error": None, "other_key": "preserved"},
+            )
+        )
 
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"")
             return ConversionMetadata(
-                row_count=0, column_count=0, column_labels={}, value_labels={},
-                sas_encoding="", bytes_written=0, wrote_at=fake_wrote_at,
+                row_count=0,
+                column_count=0,
+                column_labels={},
+                value_labels={},
+                sas_encoding="",
+                bytes_written=0,
+                wrote_at=fake_wrote_at,
             )
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=fake_convert,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=fake_convert,
         )
         assert result.outcome == "success"
 
@@ -394,7 +462,7 @@ class TestConvertOneSkipGuards:
 class TestConvertOnePartialSuccess:
     """AC3.1, AC3.2, AC3.3, AC3.4: At least one succeeds, rest fail."""
 
-    def test_partial_success_patches_with_converted_files_and_errors(self, tmp_path):
+    def test_convert_one_partial_success_with_errors(self, tmp_path):
         """3 files, 1 fails. Verify success PATCH with converted_files and conversion_errors."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -403,7 +471,7 @@ class TestConvertOnePartialSuccess:
         (source_dir / "good2.sas7bdat").write_bytes(b"")
 
         http = _StubHttp(_make_delivery(str(source_dir)))
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def selective_convert(src, out, **kwargs):
             if src.stem == "bad":
@@ -412,14 +480,23 @@ class TestConvertOnePartialSuccess:
             out.write_bytes(b"pq")
             rows = 5 if src.stem == "good1" else 10
             return ConversionMetadata(
-                row_count=rows, column_count=1, column_labels={}, value_labels={},
-                sas_encoding="UTF-8", bytes_written=50, wrote_at=fake_wrote_at,
+                row_count=rows,
+                column_count=1,
+                column_labels={},
+                value_labels={},
+                sas_encoding="UTF-8",
+                bytes_written=50,
+                wrote_at=fake_wrote_at,
             )
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=selective_convert,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=selective_convert,
         )
 
         assert result.outcome == "success"
@@ -446,7 +523,7 @@ class TestConvertOnePartialSuccess:
 class TestConvertOneTotalFailure:
     """AC4.1, AC4.2, AC4.3, AC4.4: All files fail."""
 
-    def test_all_files_fail(self, tmp_path):
+    def test_convert_one_all_files_fail(self, tmp_path):
         """All files fail. Verify multi_file_failure + conversion_errors."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -459,9 +536,13 @@ class TestConvertOneTotalFailure:
             raise RuntimeError(f"always fails: {src.name}")
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=always_fail,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=always_fail,
         )
 
         assert result.outcome == "failure"
@@ -482,7 +563,7 @@ class TestConvertOneTotalFailure:
         event_type, _, _ = http.events[0]
         assert event_type == "conversion.failed"
 
-    def test_skip_guard_blocks_errored_delivery(self, tmp_path):
+    def test_convert_one_skip_guard_blocks_errored_delivery(self, tmp_path):
         """AC4.4: Skip guard blocks re-processing errored deliveries."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -492,18 +573,24 @@ class TestConvertOneTotalFailure:
             "class": "multi_file_failure",
             "message": "all 1 files failed conversion",
         }
-        http = _StubHttp(_make_delivery(
-            str(source_dir),
-            metadata={"conversion_error": conversion_error},
-        ))
+        http = _StubHttp(
+            _make_delivery(
+                str(source_dir),
+                metadata={"conversion_error": conversion_error},
+            )
+        )
 
         def should_not_be_called(src, out, **kwargs):
             raise AssertionError("should not convert errored delivery")
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=should_not_be_called,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=should_not_be_called,
         )
 
         assert result.outcome == "skipped"
@@ -513,7 +600,7 @@ class TestConvertOneTotalFailure:
 class TestConvertOneEmptyDir:
     """AC5.1, AC5.2, AC9.1: Empty directory handling."""
 
-    def test_no_sas_files_skips_with_no_side_effects(self, tmp_path):
+    def test_convert_one_no_sas_files_skips(self, tmp_path):
         """AC5.1, AC5.2: No SAS files -> skip, no PATCH, no event, no dir_contents diagnostic."""
         source_dir = tmp_path / "empty"
         source_dir.mkdir()
@@ -521,9 +608,13 @@ class TestConvertOneEmptyDir:
         http = _StubHttp(_make_delivery(str(source_dir)))
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=lambda *a, **k: pytest.fail("should not convert"),
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=lambda *a, **k: pytest.fail("should not convert"),
         )
 
         assert result.outcome == "skipped"
@@ -531,9 +622,10 @@ class TestConvertOneEmptyDir:
         assert http.patches == []
         assert http.events == []
 
-    def test_no_diagnostic_dir_contents_logged(self, tmp_path, caplog):
+    def test_convert_one_no_diagnostic_dir_contents_logged(self, tmp_path, caplog):
         """AC9.1: No dir_contents diagnostic in logs."""
         import logging
+
         source_dir = tmp_path / "empty"
         source_dir.mkdir()
 
@@ -541,9 +633,13 @@ class TestConvertOneEmptyDir:
 
         caplog.set_level(logging.INFO, logger="converter")
         convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=lambda *a, **k: pytest.fail(""),
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=lambda *a, **k: pytest.fail(""),
             log_dir=None,
         )
 
@@ -555,7 +651,7 @@ class TestConvertOneEmptyDir:
 class TestConvertOneInterrupt:
     """AC2.3: KeyboardInterrupt and SystemExit propagate immediately."""
 
-    def test_keyboard_interrupt_propagates_no_patch_or_event(self, tmp_path):
+    def test_convert_one_keyboard_interrupt_propagates(self, tmp_path):
         """AC2.3: KeyboardInterrupt during file conversion propagates."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -568,15 +664,19 @@ class TestConvertOneInterrupt:
 
         with pytest.raises(KeyboardInterrupt):
             convert_one(
-                "d1", "http://registry",
-                converter_version="0.1.0", chunk_size=100, compression="zstd",
-                http_module=http, convert_fn=raises_interrupt,
+                "d1",
+                "http://registry",
+                converter_version="0.1.0",
+                chunk_size=100,
+                compression="zstd",
+                http_module=http,
+                convert_fn=raises_interrupt,
             )
 
         assert http.patches == []
         assert http.events == []
 
-    def test_system_exit_propagates_no_patch_or_event(self, tmp_path):
+    def test_convert_one_system_exit_propagates(self, tmp_path):
         """AC2.3: SystemExit during file conversion propagates."""
         source_dir = tmp_path / "delivery"
         source_dir.mkdir()
@@ -589,9 +689,13 @@ class TestConvertOneInterrupt:
 
         with pytest.raises(SystemExit):
             convert_one(
-                "d1", "http://registry",
-                converter_version="0.1.0", chunk_size=100, compression="zstd",
-                http_module=http, convert_fn=raises_exit,
+                "d1",
+                "http://registry",
+                converter_version="0.1.0",
+                chunk_size=100,
+                compression="zstd",
+                http_module=http,
+                convert_fn=raises_exit,
             )
 
         assert http.patches == []
@@ -610,15 +714,20 @@ class TestConvertOneFailure:
 
         return http, raises
 
-    def test_parse_error_in_single_file_total_failure(self, tmp_path):
+    def test_convert_one_parse_error_total_failure(self, tmp_path):
         """Single file fails -> total_failure path (multi_file_failure)."""
         from pyreadstat import ReadstatError
+
         http, raises = self._setup_failing(tmp_path, ReadstatError("bad sas"))
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=raises,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=raises,
         )
 
         assert result.outcome == "failure"
@@ -634,7 +743,7 @@ class TestConvertOneFailure:
         event_type, _, payload = http.events[0]
         assert event_type == "conversion.failed"
 
-    def test_no_retry_after_failure(self, tmp_path):
+    def test_convert_one_no_retry_after_failure(self, tmp_path):
         """No retry: single failure -> total_failure."""
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
@@ -648,13 +757,17 @@ class TestConvertOneFailure:
             raise RuntimeError("one shot")
 
         convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=counting_raise,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=counting_raise,
         )
         assert call_count["n"] == 1
 
-    def test_error_message_truncated_to_500_chars(self, tmp_path):
+    def test_convert_one_error_message_truncated(self, tmp_path):
         """Error message in per-file error dict capped at 500 chars."""
         source_dir = tmp_path / "msoc"
         source_dir.mkdir()
@@ -667,9 +780,13 @@ class TestConvertOneFailure:
             raise ValueError(huge_message)
 
         convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
-            http_module=http, convert_fn=raises_huge,
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=raises_huge,
         )
 
         # Individual file error is truncated at 500 chars
@@ -682,7 +799,7 @@ class TestConvertOneFailure:
 class TestConvertOneLogging:
     """AC8.1, AC8.2: Per-file and summary logging."""
 
-    def test_per_file_success_logging(self, tmp_path, caplog):
+    def test_convert_one_per_file_success_logging(self, tmp_path, caplog):
         """AC8.1: Per-file success logged with sas_filename."""
         import logging
 
@@ -691,28 +808,39 @@ class TestConvertOneLogging:
         (source_dir / "data.sas7bdat").write_bytes(b"")
         http = _StubHttp(_make_delivery(str(source_dir)))
 
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"x")
             return ConversionMetadata(
-                row_count=5, column_count=1, column_labels={}, value_labels={},
-                sas_encoding="UTF-8", bytes_written=1, wrote_at=fake_wrote_at,
+                row_count=5,
+                column_count=1,
+                column_labels={},
+                value_labels={},
+                sas_encoding="UTF-8",
+                bytes_written=1,
+                wrote_at=fake_wrote_at,
             )
 
         caplog.set_level(logging.INFO, logger="converter")
         convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
-            http_module=http, convert_fn=fake_convert,
+            http_module=http,
+            convert_fn=fake_convert,
         )
 
-        file_logs = [r for r in caplog.records if getattr(r, "sas_filename", None) == "data.sas7bdat"]
+        file_logs = [
+            r for r in caplog.records if getattr(r, "sas_filename", None) == "data.sas7bdat"
+        ]
         assert len(file_logs) >= 1, "per-file log with sas_filename not found"
 
-    def test_summary_delivery_logging(self, tmp_path, caplog):
+    def test_convert_one_summary_delivery_logging(self, tmp_path, caplog):
         """AC8.2: Delivery-level summary with aggregate counts."""
         import logging
 
@@ -722,23 +850,32 @@ class TestConvertOneLogging:
         (source_dir / "f2.sas7bdat").write_bytes(b"")
         http = _StubHttp(_make_delivery(str(source_dir)))
 
-        fake_wrote_at = datetime(2026, 4, 16, tzinfo=timezone.utc)
+        fake_wrote_at = datetime(2026, 4, 16, tzinfo=UTC)
 
         def fake_convert(src, out, **kwargs):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"x")
             rows = 5 if src.stem == "f1" else 10
             return ConversionMetadata(
-                row_count=rows, column_count=1, column_labels={}, value_labels={},
-                sas_encoding="UTF-8", bytes_written=1, wrote_at=fake_wrote_at,
+                row_count=rows,
+                column_count=1,
+                column_labels={},
+                value_labels={},
+                sas_encoding="UTF-8",
+                bytes_written=1,
+                wrote_at=fake_wrote_at,
             )
 
         caplog.set_level(logging.INFO, logger="converter")
         convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
-            http_module=http, convert_fn=fake_convert,
+            http_module=http,
+            convert_fn=fake_convert,
         )
 
         # Look for summary log with file_count and total_rows
@@ -748,8 +885,11 @@ class TestConvertOneLogging:
         assert summary.total_rows == 15
 
 
+@pytest.mark.integration
 class TestConvertOneIntegration:
-    def test_multiple_real_sas_files_to_parquet(self, tmp_path, sas_fixture_factory, sav_chunk_iter_factory):
+    def test_convert_one_multiple_real_sas_files(
+        self, tmp_path, sas_fixture_factory, sav_chunk_iter_factory
+    ):
         """AC2.1, AC7.1: Multiple SAS files convert, output_path is directory."""
         source_dir = tmp_path / "dpid" / "packages" / "req" / "v1" / "msoc"
         source_dir.mkdir(parents=True)
@@ -769,8 +909,11 @@ class TestConvertOneIntegration:
         http = _StubHttp(_make_delivery(str(source_dir)))
 
         result = convert_one(
-            "d1", "http://registry",
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             http_module=http,
             convert_fn=lambda src, out, **kwargs: _convert_sas_with_sav_chunks(
                 src, out, sav_chunk_iter_factory, **kwargs
@@ -806,16 +949,92 @@ class TestConvertOneIntegration:
         assert payload["failed_count"] == 0
 
 
+class TestEngineExcInfoLogging:
+    """GH23 phase 2: PATCH and emit failures must include exc_info in WARNING records."""
+
+    def _make_failing_setup(self, tmp_path):
+        source_dir = tmp_path / "delivery"
+        source_dir.mkdir()
+        (source_dir / "data.sas7bdat").write_bytes(b"")
+
+        def always_fail(src, out, **kwargs):
+            raise RuntimeError(f"convert boom: {src.name}")
+
+        return source_dir, always_fail
+
+    def test_patch_failure_warning_has_exc_info(self, tmp_path, caplog):
+        import logging
+
+        source_dir, always_fail = self._make_failing_setup(tmp_path)
+        http = _StubHttp(_make_delivery(str(source_dir)))
+
+        def patch_raises(api_url, delivery_id, updates, token=None):
+            raise RuntimeError("boom-patch")
+
+        http.patch_delivery = patch_raises
+
+        caplog.set_level(logging.WARNING, logger="pipeline.converter.engine")
+        convert_one(
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=always_fail,
+        )
+
+        records = [
+            r for r in caplog.records if r.message == "failed to PATCH conversion_error to registry"
+        ]
+        assert records, "expected PATCH failure warning"
+        rec = records[0]
+        assert rec.exc_info is not None
+        assert rec.exc_info[0] is RuntimeError
+
+    def test_emit_failure_warning_has_exc_info(self, tmp_path, caplog):
+        import logging
+
+        source_dir, always_fail = self._make_failing_setup(tmp_path)
+        http = _StubHttp(_make_delivery(str(source_dir)))
+
+        def emit_raises(api_url, event_type, delivery_id, payload, token=None):
+            raise RuntimeError("boom-emit")
+
+        http.emit_event = emit_raises
+
+        caplog.set_level(logging.WARNING, logger="pipeline.converter.engine")
+        convert_one(
+            "d1",
+            "http://registry",
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
+            http_module=http,
+            convert_fn=always_fail,
+        )
+
+        records = [
+            r for r in caplog.records if r.message == "failed to emit conversion.failed event"
+        ]
+        assert records, "expected emit failure warning"
+        rec = records[0]
+        assert rec.exc_info is not None
+        assert rec.exc_info[0] is RuntimeError
+
+
 def _convert_sas_with_sav_chunks(src, out, chunk_iter_factory, **kwargs):
     """
     Adapter that calls convert_sas_to_parquet with a custom chunk iterator
     for test SAV files instead of real SAS7BDAT files.
     """
     from pipeline.converter.convert import convert_sas_to_parquet
+
     return convert_sas_to_parquet(
-        src, out,
-        chunk_size=kwargs.get('chunk_size', 100_000),
-        compression=kwargs.get('compression', 'zstd'),
-        converter_version=kwargs.get('converter_version', '0.1.0'),
+        src,
+        out,
+        chunk_size=kwargs.get("chunk_size", 100_000),
+        compression=kwargs.get("compression", "zstd"),
+        converter_version=kwargs.get("converter_version", "0.1.0"),
         chunk_iter_factory=chunk_iter_factory,
     )

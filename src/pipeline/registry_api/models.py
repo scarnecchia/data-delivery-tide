@@ -1,8 +1,23 @@
 # pattern: Functional Core
 
-from typing import Literal
+import json
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+METADATA_MAX_BYTES = 65_536  # 64KB
+
+
+def _validate_metadata_size(v: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Reject metadata dicts that exceed METADATA_MAX_BYTES when serialized."""
+    if v is not None:
+        serialized = json.dumps(v)
+        if len(serialized.encode("utf-8")) > METADATA_MAX_BYTES:
+            raise ValueError(
+                f"metadata exceeds maximum size of {METADATA_MAX_BYTES} bytes "
+                f"({len(serialized.encode('utf-8'))} bytes serialized)"
+            )
+    return v
 
 
 class DeliveryCreate(BaseModel):
@@ -18,10 +33,15 @@ class DeliveryCreate(BaseModel):
     lexicon_id: str
     status: str
     source_path: str
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
     file_count: int | None = None
     total_bytes: int | None = None
     fingerprint: str | None = None
+
+    @field_validator("metadata")
+    @classmethod
+    def check_metadata_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _validate_metadata_size(v)
 
 
 class DeliveryUpdate(BaseModel):
@@ -30,7 +50,12 @@ class DeliveryUpdate(BaseModel):
     parquet_converted_at: str | None = None
     output_path: str | None = None
     status: str | None = None
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("metadata")
+    @classmethod
+    def check_metadata_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _validate_metadata_size(v)
 
 
 class DeliveryResponse(BaseModel):
@@ -46,7 +71,7 @@ class DeliveryResponse(BaseModel):
     scan_root: str
     lexicon_id: str
     status: str
-    metadata: dict | None = None
+    metadata: dict[str, Any] | None = None
     first_seen_at: str
     parquet_converted_at: str | None = None
     file_count: int | None = None
@@ -70,8 +95,31 @@ class DeliveryFilters(BaseModel):
     converted: bool | None = None
     version: str | None = None
     scan_root: str | None = None
-    after: str | None = None
-    limit: int | None = None
+    limit: int = 100
+    offset: int = 0
+
+    @field_validator("limit")
+    @classmethod
+    def clamp_limit(cls, v: int) -> int:
+        if v < 1:
+            return 1
+        return min(v, 1000)
+
+    @field_validator("offset")
+    @classmethod
+    def check_offset(cls, v: int) -> int:
+        if v < 0:
+            return 0
+        return v
+
+
+class PaginatedDeliveryResponse(BaseModel):
+    """Paginated response for GET /deliveries."""
+
+    items: list[DeliveryResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class EventCreate(BaseModel):
@@ -79,7 +127,7 @@ class EventCreate(BaseModel):
 
     event_type: Literal["conversion.completed", "conversion.failed"]
     delivery_id: str
-    payload: dict
+    payload: dict[str, Any]
 
 
 class EventRecord(BaseModel):
@@ -93,5 +141,6 @@ class EventRecord(BaseModel):
         "conversion.failed",
     ]
     delivery_id: str
-    payload: dict
+    payload: dict[str, Any]
+    username: str | None = None
     created_at: str

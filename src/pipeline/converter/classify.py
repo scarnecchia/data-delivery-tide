@@ -5,7 +5,6 @@ from typing import Literal
 import pyarrow as pa
 from pyreadstat import PyreadstatError, ReadstatError
 
-
 ErrorClass = Literal[
     "source_missing",
     "source_permission",

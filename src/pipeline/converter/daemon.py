@@ -1,11 +1,22 @@
 # pattern: Imperative Shell
 
 import asyncio
+import contextlib
 import json
+import logging
 import os
 import signal
 import uuid
 from pathlib import Path
+from typing import Any
+
+from pipeline.config import settings
+from pipeline.converter.engine import convert_one
+from pipeline.converter.protocols import ConsumerFactoryProtocol, ConvertOneFnProtocol
+from pipeline.events.consumer import EventConsumer
+from pipeline.json_logging import get_logger
+
+logger = logging.getLogger(__name__)
 
 
 def load_last_seq(state_path: Path) -> int:
@@ -51,14 +62,8 @@ def persist_last_seq(state_path: Path, seq: int) -> None:
             try:
                 tmp.unlink()
             except OSError:
-                pass
+                logger.debug("tmp file unlink failed during cleanup", exc_info=True)
         raise
-
-
-from pipeline.config import settings
-from pipeline.converter.engine import convert_one
-from pipeline.events.consumer import EventConsumer
-from pipeline.json_logging import get_logger
 
 
 class DaemonRunner:
@@ -83,8 +88,9 @@ class DaemonRunner:
         compression: str,
         dp_id_exclusions: set[str] | None = None,
         log_dir: str | None,
-        consumer_factory=EventConsumer,
-        convert_one_fn=convert_one,
+        token: str | None = None,
+        consumer_factory: ConsumerFactoryProtocol = EventConsumer,
+        convert_one_fn: ConvertOneFnProtocol = convert_one,
     ) -> None:
         self.api_url = api_url
         self.state_path = Path(state_path)
@@ -93,6 +99,7 @@ class DaemonRunner:
         self.compression = compression
         self.dp_id_exclusions = dp_id_exclusions
         self.log_dir = log_dir
+        self.token = token
         self._consumer_factory = consumer_factory
         self._convert_one_fn = convert_one_fn
         self._stopping = False
@@ -115,7 +122,7 @@ class DaemonRunner:
         consumer_task = asyncio.create_task(consumer.run())
         self._consumer = consumer  # for signal handler to advance last_seq
 
-        def _request_shutdown():
+        def _request_shutdown() -> None:
             if self._stopping:
                 return
             self._stopping = True
@@ -127,11 +134,9 @@ class DaemonRunner:
             consumer_task.cancel()
 
         for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                loop.add_signal_handler(sig, _request_shutdown)
-            except NotImplementedError:
+            with contextlib.suppress(NotImplementedError):
                 # Windows test environments. Not a target platform.
-                pass
+                loop.add_signal_handler(sig, _request_shutdown)
 
         try:
             await consumer_task
@@ -163,7 +168,7 @@ class DaemonRunner:
         )
         return 0
 
-    async def _on_event(self, event: dict) -> None:
+    async def _on_event(self, event: dict[str, Any]) -> None:
         """
         Per-event callback: dispatch delivery.created to the engine off the
         event loop; skip other event types.
@@ -200,6 +205,7 @@ class DaemonRunner:
                     compression=self.compression,
                     dp_id_exclusions=self.dp_id_exclusions,
                     log_dir=self.log_dir,
+                    token=self.token,
                 )
             except asyncio.CancelledError:
                 # SIGTERM/SIGINT fired while we were awaiting to_thread. The
@@ -223,6 +229,7 @@ class DaemonRunner:
 
 def main() -> int:
     """Entry point for registry-convert-daemon."""
+    token = os.environ.get("REGISTRY_TOKEN")
     runner = DaemonRunner(
         api_url=settings.registry_api_url,
         state_path=Path(settings.converter_state_path),
@@ -231,5 +238,6 @@ def main() -> int:
         compression=settings.converter_compression,
         dp_id_exclusions=set(settings.dp_id_exclusions),
         log_dir=settings.log_dir,
+        token=token,
     )
     return asyncio.run(runner.run_async())

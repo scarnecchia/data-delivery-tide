@@ -1,11 +1,15 @@
 # pattern: Imperative Shell
 
 import argparse
+import os
 import sys
+from collections.abc import Generator
+from typing import Any
 
 from pipeline.config import settings
 from pipeline.converter import http as converter_http
 from pipeline.converter.engine import convert_one
+from pipeline.converter.protocols import ConvertOneFnProtocol, HttpModuleProtocol
 from pipeline.json_logging import get_logger
 
 
@@ -15,18 +19,23 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Drain unconverted deliveries from the registry to Parquet.",
     )
     parser.add_argument(
-        "--limit", type=int, default=None,
+        "--limit",
+        type=int,
+        default=None,
         help="Process at most this many deliveries total. Default: no limit.",
     )
     parser.add_argument(
-        "--shard", type=str, default=None, metavar="I/N",
+        "--shard",
+        type=str,
+        default=None,
+        metavar="I/N",
         help="Only process deliveries in shard I of N (0-indexed). "
-             "Example: --shard 0/4 picks up ~1/4 of the backlog.",
+        "Example: --shard 0/4 picks up ~1/4 of the backlog.",
     )
     parser.add_argument(
-        "--include-failed", action="store_true",
-        help="Also re-attempt deliveries with conversion_error set "
-             "(clears the error first).",
+        "--include-failed",
+        action="store_true",
+        help="Also re-attempt deliveries with conversion_error set (clears the error first).",
     )
     return parser
 
@@ -68,8 +77,9 @@ def _in_shard(delivery_id: str, shard: tuple[int, int] | None) -> bool:
 def _iter_unconverted(
     api_url: str,
     page_size: int,
-    http_module=converter_http,
-):
+    http_module: HttpModuleProtocol = converter_http,
+    token: str | None = None,
+) -> Generator[dict[str, Any], None, None]:
     """
     Generator yielding delivery dicts one at a time, paging under the covers.
 
@@ -79,11 +89,10 @@ def _iter_unconverted(
     """
     cursor = ""
     while True:
-        page = http_module.list_unconverted(api_url, after=cursor, limit=page_size)
+        page = http_module.list_unconverted(api_url, after=cursor, limit=page_size, token=token)
         if not page:
             return
-        for delivery in page:
-            yield delivery
+        yield from page
         cursor = page[-1]["delivery_id"]
 
 
@@ -97,21 +106,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    token = os.environ.get("REGISTRY_TOKEN")
+
     return _run(
-        args, shard,
+        args,
+        shard,
         http_module=converter_http,
         convert_one_fn=convert_one,
         dp_id_exclusions=set(settings.dp_id_exclusions),
+        token=token,
     )
 
 
 def _run(
-    args,
+    args: argparse.Namespace,
     shard: tuple[int, int] | None,
     *,
-    http_module,
-    convert_one_fn,
+    http_module: HttpModuleProtocol,
+    convert_one_fn: ConvertOneFnProtocol,
     dp_id_exclusions: set[str] | None = None,
+    token: str | None = None,
 ) -> int:
     """
     Orchestrate the paged walk + per-delivery engine call. Pure shell.
@@ -126,7 +140,7 @@ def _run(
 
     try:
         for delivery in _iter_unconverted(
-            api_url, settings.converter_cli_batch_size, http_module=http_module
+            api_url, settings.converter_cli_batch_size, http_module=http_module, token=token
         ):
             delivery_id = delivery["delivery_id"]
 
@@ -137,8 +151,10 @@ def _run(
                 metadata = delivery.get("metadata") or {}
                 if metadata.get("conversion_error"):
                     http_module.patch_delivery(
-                        api_url, delivery_id,
+                        api_url,
+                        delivery_id,
                         {"metadata": {"conversion_error": None}},
+                        token=token,
                     )
 
             convert_one_fn(
@@ -149,12 +165,24 @@ def _run(
                 compression=settings.converter_compression,
                 dp_id_exclusions=dp_id_exclusions,
                 log_dir=settings.log_dir,
+                token=token,
             )
 
             processed += 1
             if args.limit is not None and processed >= args.limit:
                 break
 
+    except converter_http.RegistryClientError as exc:
+        if exc.status_code == 401:
+            logger.error("registry authentication failed — set REGISTRY_TOKEN environment variable")
+        elif exc.status_code == 403:
+            logger.error("registry authorization failed — token lacks required role (needs write)")
+        else:
+            logger.error(
+                "registry client error",
+                extra={"status_code": exc.status_code, "body": exc.body},
+            )
+        return 1
     except converter_http.RegistryUnreachableError as exc:
         logger.error(
             "registry unreachable, exiting",

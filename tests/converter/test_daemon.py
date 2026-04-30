@@ -2,11 +2,13 @@
 
 import asyncio
 import json
+import logging
+import os
 import time
 
 import pytest
 
-from pipeline.converter.daemon import load_last_seq, persist_last_seq, DaemonRunner
+from pipeline.converter.daemon import DaemonRunner, load_last_seq, persist_last_seq
 
 
 class TestLoadLastSeq:
@@ -73,6 +75,37 @@ class TestPersistLastSeq:
         # Simulate restart: new process reads the same file.
         assert load_last_seq(state) == 999
 
+    def test_cleanup_unlink_failure_logs_debug(self, tmp_path, caplog, monkeypatch):
+        # GH23.AC1.3, GH23.AC1.4
+        from pathlib import Path as _Path
+
+        state = tmp_path / "state.json"
+
+        def boom_replace(*args, **kwargs):
+            raise RuntimeError("replace boom")
+
+        def boom_unlink(self, *args, **kwargs):
+            raise OSError("unlink boom")
+
+        monkeypatch.setattr(os, "replace", boom_replace)
+        monkeypatch.setattr(_Path, "unlink", boom_unlink)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.converter.daemon")
+
+        with pytest.raises(RuntimeError, match="replace boom"):
+            persist_last_seq(state, 42)
+
+        records = [
+            r
+            for r in caplog.records
+            if r.name == "pipeline.converter.daemon"
+            and r.message == "tmp file unlink failed during cleanup"
+        ]
+        assert len(records) == 1
+        assert records[0].levelno == logging.DEBUG
+        assert records[0].exc_info is not None
+        assert records[0].exc_info[0] is OSError
+
 
 class _StubConsumer:
     """
@@ -115,8 +148,11 @@ class TestDaemonRunnerCallback:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert,
@@ -145,8 +181,11 @@ class TestDaemonRunnerCallback:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert,
@@ -174,8 +213,11 @@ class TestDaemonRunnerCallback:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert_raises,
@@ -207,8 +249,11 @@ class TestDaemonRunnerCancellation:
             return _StubConsumer(api_url, on_event)
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=slow_convert_fn,
@@ -239,6 +284,7 @@ class TestDaemonRunnerResume:
         state_path.write_text(json.dumps({"last_seq": 5}))
 
         engine_calls = []
+
         def fake_convert(delivery_id, api_url, **kwargs):
             engine_calls.append(delivery_id)
 
@@ -255,8 +301,11 @@ class TestDaemonRunnerResume:
             return consumer
 
         runner = DaemonRunner(
-            api_url="http://registry", state_path=state_path,
-            converter_version="0.1.0", chunk_size=100, compression="zstd",
+            api_url="http://registry",
+            state_path=state_path,
+            converter_version="0.1.0",
+            chunk_size=100,
+            compression="zstd",
             log_dir=None,
             consumer_factory=consumer_factory,
             convert_one_fn=fake_convert,
@@ -278,5 +327,6 @@ class TestDaemonRunnerReconnect:
         # test should start to fail (through import inspection or similar).
         import pipeline.converter.daemon as daemon_mod
         import pipeline.events.consumer as consumer_mod
+
         # Sanity: the DaemonRunner default factory IS EventConsumer.
         assert daemon_mod.EventConsumer is consumer_mod.EventConsumer

@@ -1,3 +1,4 @@
+# pattern: test file
 import json
 from pathlib import Path
 
@@ -21,10 +22,12 @@ def make_lexicon_file(lexicons_dir):
     Usage:
         make_lexicon_file("soc/_base.json", {"statuses": ["pending", "passed"]})
     """
+
     def _make(relative_path: str, data: dict) -> Path:
         file_path = lexicons_dir / relative_path
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w") as f:
             json.dump(data, f)
         return file_path
+
     return _make

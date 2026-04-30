@@ -3,6 +3,8 @@ import json
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from typing import Any, cast
 
 
 class RegistryUnreachableError(Exception):
@@ -21,12 +23,20 @@ class RegistryClientError(Exception):
 _BACKOFF_SECONDS = (2, 4, 8)
 
 
-def post_delivery(api_url: str, payload: dict) -> dict:
+def post_delivery(
+    api_url: str,
+    payload: dict[str, Any],
+    token: str | None = None,
+    *,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
     """POST a delivery payload to the registry API.
 
     Args:
         api_url: Base URL of the registry API (e.g. "http://localhost:8000")
         payload: Dict matching the DeliveryCreate schema
+        token: Optional bearer token for authentication
 
     Returns:
         Response body dict (DeliveryResponse)
@@ -37,10 +47,13 @@ def post_delivery(api_url: str, payload: dict) -> dict:
     """
     url = f"{api_url.rstrip('/')}/deliveries"
     data = json.dumps(payload).encode()
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
 
@@ -48,8 +61,8 @@ def post_delivery(api_url: str, payload: dict) -> dict:
 
     for attempt in range(len(_BACKOFF_SECONDS) + 1):
         try:
-            with urllib.request.urlopen(request) as response:
-                return json.loads(response.read().decode())
+            with urlopen(request) as response:
+                return cast("dict[str, Any]", json.loads(response.read().decode()))
         except urllib.error.HTTPError as exc:
             if 400 <= exc.code < 500:
                 body = exc.read().decode()
@@ -61,7 +74,7 @@ def post_delivery(api_url: str, payload: dict) -> dict:
             last_error = exc
 
         if attempt < len(_BACKOFF_SECONDS):
-            time.sleep(_BACKOFF_SECONDS[attempt])
+            sleep(_BACKOFF_SECONDS[attempt])
 
     raise RegistryUnreachableError(
         f"registry API unreachable after {len(_BACKOFF_SECONDS) + 1} attempts: {last_error}"

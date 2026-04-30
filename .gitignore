@@ -32,3 +32,4 @@ docs/decks/
 
 # Git worktrees
 .worktrees/
+docs/security-review.md

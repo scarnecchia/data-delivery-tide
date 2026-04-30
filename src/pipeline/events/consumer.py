@@ -4,9 +4,10 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,12 @@ class EventConsumer:
     def __init__(
         self,
         api_url: str,
-        on_event: Callable[[dict], Awaitable[None]],
+        on_event: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.on_event = on_event
         self._last_seq: int = 0
-        self._ws_buffer: list[dict] = []
+        self._ws_buffer: list[dict[str, Any]] = []
 
     async def run(self) -> None:
         """
@@ -53,7 +54,7 @@ class EventConsumer:
                 logger.warning("Disconnected from %s, reconnecting...", ws_url)
                 continue
 
-    async def _session(self, websocket) -> None:
+    async def _session(self, websocket: ClientConnection) -> None:
         """
         Handle a single WebSocket session: catch up, then listen.
 
@@ -73,8 +74,10 @@ class EventConsumer:
             buffer_task.cancel()
             try:
                 await buffer_task
-            except (asyncio.CancelledError, ConnectionClosed, Exception):
+            except (asyncio.CancelledError, ConnectionClosed):
                 pass
+            except Exception:
+                logger.debug("buffer task raised unexpected exception", exc_info=True)
 
             for event in self._ws_buffer:
                 if event["seq"] > self._last_seq:
@@ -91,10 +94,12 @@ class EventConsumer:
                 buffer_task.cancel()
                 try:
                     await buffer_task
-                except (asyncio.CancelledError, ConnectionClosed, Exception):
+                except (asyncio.CancelledError, ConnectionClosed):
                     pass
+                except Exception:
+                    logger.debug("buffer task raised unexpected exception", exc_info=True)
 
-    async def _buffer_ws(self, websocket) -> None:
+    async def _buffer_ws(self, websocket: ClientConnection) -> None:
         """Buffer incoming WS events while catch-up is in progress."""
         try:
             async for raw in websocket:
@@ -104,9 +109,16 @@ class EventConsumer:
         except ConnectionClosed:
             raise
 
-    async def _catch_up(self) -> None:
-        """Fetch missed events via REST and process them."""
-        async with httpx.AsyncClient() as client:
+    async def _catch_up(
+        self, *, http_client_factory: Callable[..., Any] = httpx.AsyncClient
+    ) -> None:
+        """Fetch missed events via REST and process them.
+
+        ``http_client_factory`` is a zero-argument callable returning an async
+        context manager that yields an httpx-compatible client. Production
+        callers leave it at the default; tests inject fakes.
+        """
+        async with http_client_factory() as client:
             while True:
                 resp = await client.get(
                     f"{self.api_url}/events",

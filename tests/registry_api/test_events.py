@@ -1,11 +1,38 @@
+# pattern: test file
 import asyncio
 import threading
 import time
-from unittest.mock import AsyncMock
 
 import pytest
 
 from pipeline.registry_api.events import ConnectionManager, manager
+
+
+class FakeWebSocket:
+    """Minimal stand-in for a Starlette/FastAPI WebSocket.
+
+    Implements only the subset of the protocol used by ConnectionManager:
+    `accept()` and `send_json(data)`. Records all activity for assertion.
+    """
+
+    def __init__(
+        self,
+        *,
+        fail_on_send: bool = False,
+        send_exception: BaseException | None = None,
+    ) -> None:
+        self.accepted: bool = False
+        self.sent: list[dict] = []
+        self._fail_on_send = fail_on_send
+        self._send_exception = send_exception or RuntimeError("Connection closed")
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, data: dict) -> None:
+        if self._fail_on_send:
+            raise self._send_exception
+        self.sent.append(data)
 
 
 class TestConnectionManager:
@@ -15,30 +42,30 @@ class TestConnectionManager:
     async def test_connect_adds_websocket_to_active_connections(self):
         """Test that connect() accepts a WebSocket and adds it to active_connections."""
         manager = ConnectionManager()
-        mock_ws = AsyncMock()
+        fake_ws = FakeWebSocket()
 
-        await manager.connect(mock_ws)
+        await manager.connect(fake_ws)
 
-        assert mock_ws in manager.active_connections
-        mock_ws.accept.assert_called_once()
+        assert fake_ws in manager.active_connections
+        assert fake_ws.accepted is True
 
     def test_disconnect_removes_websocket_from_active_connections(self):
         """Test that disconnect() removes a WebSocket from active_connections."""
         manager = ConnectionManager()
-        mock_ws = AsyncMock()
-        manager.active_connections.add(mock_ws)
+        fake_ws = FakeWebSocket()
+        manager.active_connections.add(fake_ws)
 
-        manager.disconnect(mock_ws)
+        manager.disconnect(fake_ws)
 
-        assert mock_ws not in manager.active_connections
+        assert fake_ws not in manager.active_connections
 
     def test_disconnect_with_unknown_websocket_does_not_raise(self):
         """Test that disconnect() with unknown WebSocket does not raise (discard semantics)."""
         manager = ConnectionManager()
-        mock_ws = AsyncMock()
+        fake_ws = FakeWebSocket()
 
         # Should not raise
-        manager.disconnect(mock_ws)
+        manager.disconnect(fake_ws)
 
         assert len(manager.active_connections) == 0
 
@@ -54,119 +81,103 @@ class TestConnectionManager:
     async def test_broadcast_sends_to_all_connections(self):
         """Test that broadcast() sends event to all active connections."""
         manager = ConnectionManager()
-        mock_ws1 = AsyncMock()
-        mock_ws2 = AsyncMock()
-        manager.active_connections.add(mock_ws1)
-        manager.active_connections.add(mock_ws2)
+        fake_ws1 = FakeWebSocket()
+        fake_ws2 = FakeWebSocket()
+        manager.active_connections.add(fake_ws1)
+        manager.active_connections.add(fake_ws2)
 
         await manager.broadcast({"event": "test"})
 
-        mock_ws1.send_json.assert_called_once_with({"event": "test"})
-        mock_ws2.send_json.assert_called_once_with({"event": "test"})
+        assert fake_ws1.sent == [{"event": "test"}]
+        assert fake_ws2.sent == [{"event": "test"}]
 
     @pytest.mark.asyncio
     async def test_broadcast_removes_dead_connection(self):
         """Test that broadcast() removes dead connections without crashing."""
         manager = ConnectionManager()
-        mock_ws_good = AsyncMock()
-        mock_ws_dead = AsyncMock()
-        mock_ws_dead.send_json.side_effect = RuntimeError("Connection closed")
-        manager.active_connections.add(mock_ws_good)
-        manager.active_connections.add(mock_ws_dead)
+        fake_good = FakeWebSocket()
+        fake_dead = FakeWebSocket(fail_on_send=True)
+        manager.active_connections.add(fake_good)
+        manager.active_connections.add(fake_dead)
 
         await manager.broadcast({"test": "data"})
 
         # Dead connection should be removed
-        assert mock_ws_dead not in manager.active_connections
+        assert fake_dead not in manager.active_connections
         # Good connection should remain
-        assert mock_ws_good in manager.active_connections
+        assert fake_good in manager.active_connections
         # Good connection should have received the broadcast
-        mock_ws_good.send_json.assert_called_once_with({"test": "data"})
+        assert fake_good.sent == [{"test": "data"}]
 
     @pytest.mark.asyncio
     async def test_broadcast_with_multiple_dead_connections(self):
         """Test broadcast() handles multiple dead connections gracefully."""
         manager = ConnectionManager()
-        mock_ws_good = AsyncMock()
-        mock_ws_dead1 = AsyncMock()
-        mock_ws_dead2 = AsyncMock()
+        fake_good = FakeWebSocket()
+        fake_dead1 = FakeWebSocket(
+            fail_on_send=True,
+            send_exception=Exception("Connection lost"),
+        )
+        fake_dead2 = FakeWebSocket(
+            fail_on_send=True,
+            send_exception=Exception("Connection lost"),
+        )
 
-        mock_ws_dead1.send_json.side_effect = Exception("Connection lost")
-        mock_ws_dead2.send_json.side_effect = Exception("Connection lost")
-
-        manager.active_connections.add(mock_ws_good)
-        manager.active_connections.add(mock_ws_dead1)
-        manager.active_connections.add(mock_ws_dead2)
+        manager.active_connections.add(fake_good)
+        manager.active_connections.add(fake_dead1)
+        manager.active_connections.add(fake_dead2)
 
         await manager.broadcast({"test": "data"})
 
         # Both dead connections should be removed
-        assert mock_ws_dead1 not in manager.active_connections
-        assert mock_ws_dead2 not in manager.active_connections
+        assert fake_dead1 not in manager.active_connections
+        assert fake_dead2 not in manager.active_connections
         # Good connection should remain
-        assert mock_ws_good in manager.active_connections
+        assert fake_good in manager.active_connections
 
     @pytest.mark.asyncio
     async def test_broadcast_to_multiple_connections_ac31(self):
-        """Test event-stream.AC3.1: Two connected clients both receive the same broadcast.
-
-        This unit test verifies that broadcast() sends the same message to multiple
-        connections without error. Real WebSocket integration is tested separately
-        via test_broadcast_to_single_client.
-        """
+        """Test event-stream.AC3.1: Two connected clients both receive the same broadcast."""
         test_manager = ConnectionManager()
-        mock_ws1 = AsyncMock()
-        mock_ws2 = AsyncMock()
-        test_manager.active_connections.add(mock_ws1)
-        test_manager.active_connections.add(mock_ws2)
+        fake_ws1 = FakeWebSocket()
+        fake_ws2 = FakeWebSocket()
+        test_manager.active_connections.add(fake_ws1)
+        test_manager.active_connections.add(fake_ws2)
 
         await test_manager.broadcast({"type": "event", "content": "test"})
 
-        # Both connections should have received the broadcast
-        mock_ws1.send_json.assert_called_once_with({"type": "event", "content": "test"})
-        mock_ws2.send_json.assert_called_once_with({"type": "event", "content": "test"})
+        assert fake_ws1.sent == [{"type": "event", "content": "test"}]
+        assert fake_ws2.sent == [{"type": "event", "content": "test"}]
 
     def test_disconnect_does_not_affect_other_connections_ac32(self):
-        """Test event-stream.AC3.2: Disconnecting one client doesn't affect others.
-
-        This unit test verifies that disconnecting one WebSocket doesn't remove
-        other connections from the active set or affect future broadcasts.
-        """
+        """Test event-stream.AC3.2: Disconnecting one client doesn't affect others."""
         test_manager = ConnectionManager()
-        mock_ws1 = AsyncMock()
-        mock_ws2 = AsyncMock()
-        test_manager.active_connections.add(mock_ws1)
-        test_manager.active_connections.add(mock_ws2)
+        fake_ws1 = FakeWebSocket()
+        fake_ws2 = FakeWebSocket()
+        test_manager.active_connections.add(fake_ws1)
+        test_manager.active_connections.add(fake_ws2)
 
-        # Disconnect first client
-        test_manager.disconnect(mock_ws1)
+        test_manager.disconnect(fake_ws1)
 
-        # Second client should still be in active_connections
-        assert mock_ws1 not in test_manager.active_connections
-        assert mock_ws2 in test_manager.active_connections
+        assert fake_ws1 not in test_manager.active_connections
+        assert fake_ws2 in test_manager.active_connections
         assert len(test_manager.active_connections) == 1
 
     @pytest.mark.asyncio
     async def test_broadcast_persists_across_calls(self):
-        """Test that broadcast calls accumulate messages for connected clients.
-
-        This verifies that multiple broadcasts don't interfere with each other and
-        a connected client receives all messages sent while connected.
-        """
+        """Test that broadcast calls accumulate messages for connected clients."""
         test_manager = ConnectionManager()
-        mock_ws = AsyncMock()
-        test_manager.active_connections.add(mock_ws)
+        fake_ws = FakeWebSocket()
+        test_manager.active_connections.add(fake_ws)
 
-        # Send 3 sequential broadcasts
         for i in range(3):
             await test_manager.broadcast({"id": i, "count": i + 1})
 
-        # Verify all 3 were sent to the client
-        assert mock_ws.send_json.call_count == 3
-        calls = mock_ws.send_json.call_args_list
-        assert calls[0][0][0] == {"id": 0, "count": 1}
-        assert calls[1][0][0] == {"id": 1, "count": 2}
-        assert calls[2][0][0] == {"id": 2, "count": 3}
+        assert fake_ws.sent == [
+            {"id": 0, "count": 1},
+            {"id": 1, "count": 2},
+            {"id": 2, "count": 3},
+        ]
 
 
 class TestWebSocketEndpoint:
@@ -179,16 +190,16 @@ class TestWebSocketEndpoint:
         yield
         manager.active_connections.clear()
 
-    def test_websocket_connect_accepted(self, client):
+    def test_websocket_connect_accepted(self, client, auth_headers):
         """Test that WebSocket connection is accepted."""
-        with client.websocket_connect("/ws/events") as ws:
+        with client.websocket_connect("/ws/events?token=test-integration-token") as ws:
             # If we get here, connection was accepted
             assert ws is not None
 
-    def test_websocket_disconnect_removes_connection(self, client):
+    def test_websocket_disconnect_removes_connection(self, client, auth_headers):
         """Test event-stream.AC3.2: Disconnect removes connection from active set."""
         # Connect a client
-        with client.websocket_connect("/ws/events"):
+        with client.websocket_connect("/ws/events?token=test-integration-token"):
             initial_count = len(manager.active_connections)
             assert initial_count >= 1
 
@@ -197,9 +208,9 @@ class TestWebSocketEndpoint:
         final_count = len(manager.active_connections)
         assert final_count == initial_count - 1
 
-    def test_broadcast_to_single_client(self, client):
+    def test_broadcast_to_single_client(self, client, auth_headers):
         """Test that a single connected client receives a broadcast."""
-        with client.websocket_connect("/ws/events") as ws:
+        with client.websocket_connect("/ws/events?token=test-integration-token") as ws:
             # Verify connection is open
             assert ws is not None
 
@@ -217,11 +228,12 @@ class TestWebSocketEndpoint:
 
             assert data == {"type": "test", "data": "hello"}
 
-    def test_dead_connection_cleanup_ac33(self, client):
+    def test_dead_connection_cleanup_ac33(self, client, auth_headers):
         """Test event-stream.AC3.3: Dead connection is cleaned up without crashing."""
+
         def connect_and_close():
             """Connect a client, then close the connection."""
-            ws = client.websocket_connect("/ws/events")
+            ws = client.websocket_connect("/ws/events?token=test-integration-token")
             ws.__enter__()
             ws.__exit__(None, None, None)
             # Connection is now closed/dead
@@ -244,3 +256,63 @@ class TestWebSocketEndpoint:
 
         assert broadcast_succeeded, "Broadcast should not crash with dead connections"
 
+
+# ---- GH23 phase 4: failed send_json logged at DEBUG ----
+
+import logging
+
+
+class TestBroadcastExcInfoLogging:
+    """GH23.AC4: failed send_json logs DEBUG with exc_info before marking dead."""
+
+    @pytest.mark.asyncio
+    async def test_failed_send_logs_debug_with_exc_info(self, caplog):
+        manager = ConnectionManager()
+        bad = FakeWebSocket(fail_on_send=True, send_exception=RuntimeError("boom"))
+        manager.active_connections.add(bad)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
+        await manager.broadcast({"seq": 1})
+
+        debug_records = [
+            r
+            for r in caplog.records
+            if r.name == "pipeline.registry_api.events"
+            and r.levelno == logging.DEBUG
+            and r.message == "WebSocket send failed, marking connection dead"
+        ]
+        assert len(debug_records) == 1
+        assert debug_records[0].exc_info is not None
+        assert debug_records[0].exc_info[0] is RuntimeError
+
+    @pytest.mark.asyncio
+    async def test_failed_send_still_warns_and_removes(self, caplog):
+        manager = ConnectionManager()
+        bad = FakeWebSocket(fail_on_send=True, send_exception=RuntimeError("boom"))
+        manager.active_connections.add(bad)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
+        await manager.broadcast({"seq": 1})
+
+        warn_records = [
+            r
+            for r in caplog.records
+            if r.name == "pipeline.registry_api.events"
+            and r.levelno == logging.WARNING
+            and r.message == "Removed dead WebSocket connection during broadcast"
+        ]
+        assert len(warn_records) == 1
+        assert bad not in manager.active_connections
+
+    @pytest.mark.asyncio
+    async def test_successful_send_emits_no_records(self, caplog):
+        manager = ConnectionManager()
+        good = FakeWebSocket()
+        manager.active_connections.add(good)
+
+        caplog.set_level(logging.DEBUG, logger="pipeline.registry_api.events")
+        await manager.broadcast({"seq": 1})
+
+        records = [r for r in caplog.records if r.name == "pipeline.registry_api.events"]
+        assert records == []
+        assert good in manager.active_connections

@@ -1,19 +1,22 @@
+# pattern: test file
 import hashlib
 import sqlite3
+
 import pytest
 
 from pipeline.registry_api.db import (
-    make_delivery_id,
-    init_db,
-    get_connection,
-    upsert_delivery,
-    get_delivery,
-    list_deliveries,
-    get_actionable,
-    update_delivery,
-    insert_event,
-    get_events_after,
     delivery_exists,
+    get_actionable,
+    get_connection,
+    get_delivery,
+    get_events_after,
+    get_token_by_hash,
+    init_db,
+    insert_event,
+    list_deliveries,
+    make_delivery_id,
+    update_delivery,
+    upsert_delivery,
 )
 
 
@@ -59,9 +62,7 @@ class TestInitDb:
         init_db(memory_db)
 
         cursor = memory_db.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='deliveries'"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='deliveries'")
         result = cursor.fetchone()
 
         assert result is not None
@@ -152,11 +153,11 @@ class TestMigrateEventsCheckConstraint:
         cursor = memory_db.cursor()
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("conversion.completed", "delivery-1", '{}', "2026-01-01T00:00:00Z"),
+            ("conversion.completed", "delivery-1", "{}", "2026-01-01T00:00:00Z"),
         )
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("conversion.failed", "delivery-2", '{}', "2026-01-01T00:00:00Z"),
+            ("conversion.failed", "delivery-2", "{}", "2026-01-01T00:00:00Z"),
         )
 
         cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.completed'")
@@ -183,7 +184,7 @@ class TestMigrateEventsCheckConstraint:
         # Insert an old-style event
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("delivery.created", "delivery-old", '{}', "2026-01-01T00:00:00Z"),
+            ("delivery.created", "delivery-old", "{}", "2026-01-01T00:00:00Z"),
         )
         memory_db.commit()
 
@@ -199,11 +200,11 @@ class TestMigrateEventsCheckConstraint:
         # Verify new event types now work
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("conversion.completed", "delivery-new", '{}', "2026-01-01T00:00:00Z"),
+            ("conversion.completed", "delivery-new", "{}", "2026-01-01T00:00:00Z"),
         )
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("conversion.failed", "delivery-failed", '{}', "2026-01-01T00:00:00Z"),
+            ("conversion.failed", "delivery-failed", "{}", "2026-01-01T00:00:00Z"),
         )
 
         cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.completed'")
@@ -218,11 +219,11 @@ class TestMigrateEventsCheckConstraint:
         cursor = memory_db.cursor()
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("delivery.created", "delivery-1", '{}', "2026-01-01T00:00:00Z"),
+            ("delivery.created", "delivery-1", "{}", "2026-01-01T00:00:00Z"),
         )
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("conversion.completed", "delivery-2", '{}', "2026-01-01T00:00:00Z"),
+            ("conversion.completed", "delivery-2", "{}", "2026-01-01T00:00:00Z"),
         )
 
         memory_db.commit()
@@ -239,7 +240,7 @@ class TestMigrateEventsCheckConstraint:
         # Verify new events still work
         cursor.execute(
             "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-            ("conversion.failed", "delivery-3", '{}', "2026-01-01T00:00:00Z"),
+            ("conversion.failed", "delivery-3", "{}", "2026-01-01T00:00:00Z"),
         )
 
         cursor.execute("SELECT COUNT(*) FROM events WHERE event_type = 'conversion.failed'")
@@ -253,7 +254,7 @@ class TestMigrateEventsCheckConstraint:
         with pytest.raises(sqlite3.IntegrityError):
             cursor.execute(
                 "INSERT INTO events (event_type, delivery_id, payload, created_at) VALUES (?, ?, ?, ?)",
-                ("nonsense", "delivery-1", '{}', "2026-01-01T00:00:00Z"),
+                ("nonsense", "delivery-1", "{}", "2026-01-01T00:00:00Z"),
             )
 
 
@@ -304,6 +305,126 @@ class TestGetConnection:
         conn.close()
 
 
+class TestTokensTable:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database for testing."""
+        conn = sqlite3.connect(":memory:")
+        yield conn
+        conn.close()
+
+    def test_init_db_creates_tokens_table(self, memory_db):
+        """Test init_db creates the tokens table."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tokens'")
+        result = cursor.fetchone()
+
+        assert result is not None
+        assert result[0] == "tokens"
+
+    def test_tokens_table_has_expected_columns(self, memory_db):
+        """Test tokens table has all expected columns."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute("PRAGMA table_info(tokens)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        expected_columns = {
+            "token_hash",
+            "username",
+            "role",
+            "created_at",
+            "revoked_at",
+        }
+
+        assert columns == expected_columns
+
+    def test_tokens_table_role_check_constraint(self, memory_db):
+        """Test tokens table rejects invalid role values."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+                ("hash1", "user1", "superadmin", "2026-01-01T00:00:00+00:00"),
+            )
+
+    def test_tokens_table_username_unique_constraint(self, memory_db):
+        """Test tokens table enforces unique username."""
+        init_db(memory_db)
+
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+            ("hash1", "user1", "read", "2026-01-01T00:00:00+00:00"),
+        )
+        memory_db.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+                ("hash2", "user1", "write", "2026-01-01T00:00:00+00:00"),
+            )
+
+
+class TestGetTokenByHash:
+    @pytest.fixture
+    def memory_db(self):
+        """Create an in-memory SQLite database with schema for testing."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        yield conn
+        conn.close()
+
+    def test_get_token_by_hash_returns_existing_token(self, memory_db):
+        """Test that get_token_by_hash returns correct row for existing hash."""
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+            ("abc123hash", "testuser", "read", "2026-01-01T00:00:00+00:00"),
+        )
+        memory_db.commit()
+
+        result = get_token_by_hash(memory_db, "abc123hash")
+
+        assert result is not None
+        assert result.token_hash == "abc123hash"
+        assert result.username == "testuser"
+        assert result.role == "read"
+        assert result.revoked_at is None
+
+    def test_get_token_by_hash_returns_none_for_nonexistent(self, memory_db):
+        """Test that get_token_by_hash returns None for nonexistent hash."""
+        result = get_token_by_hash(memory_db, "nonexistent")
+
+        assert result is None
+
+    def test_get_token_by_hash_returns_revoked_tokens(self, memory_db):
+        """Test that get_token_by_hash returns revoked tokens (caller filters)."""
+        cursor = memory_db.cursor()
+        cursor.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at, revoked_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                "revokedhash",
+                "olduser",
+                "write",
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-02T00:00:00+00:00",
+            ),
+        )
+        memory_db.commit()
+
+        result = get_token_by_hash(memory_db, "revokedhash")
+
+        assert result is not None
+        assert result.revoked_at is not None
+
+
 class TestUpsertDelivery:
     @pytest.fixture
     def memory_db(self):
@@ -335,26 +456,24 @@ class TestUpsertDelivery:
 
         result = upsert_delivery(memory_db, data)
 
-        assert result["delivery_id"] == make_delivery_id("/test/source")
-        assert result["request_id"] == "req-123"
-        assert result["project"] == "proj-a"
-        assert result["request_type"] == "full"
-        assert result["workplan_id"] == "wp-456"
-        assert result["dp_id"] == "dp-789"
-        assert result["version"] == "v01"
-        assert result["scan_root"] == "/scan"
-        assert result["lexicon_id"] == "qa-standard"
-        assert result["status"] == "pending"
-        assert result["file_count"] == 10
-        assert result["total_bytes"] == 1024
-        assert result["source_path"] == "/test/source"
-        assert result["fingerprint"] == "hash-abc"
-        assert result["first_seen_at"] is not None
-        assert result["last_updated_at"] is not None
+        assert result.delivery_id == make_delivery_id("/test/source")
+        assert result.request_id == "req-123"
+        assert result.project == "proj-a"
+        assert result.request_type == "full"
+        assert result.workplan_id == "wp-456"
+        assert result.dp_id == "dp-789"
+        assert result.version == "v01"
+        assert result.scan_root == "/scan"
+        assert result.lexicon_id == "qa-standard"
+        assert result.status == "pending"
+        assert result.file_count == 10
+        assert result.total_bytes == 1024
+        assert result.source_path == "/test/source"
+        assert result.fingerprint == "hash-abc"
+        assert result.first_seen_at is not None
+        assert result.last_updated_at is not None
 
-    def test_upsert_delivery_preserves_first_seen_at_on_reinsert(
-        self, memory_db, monkeypatch
-    ):
+    def test_upsert_delivery_preserves_first_seen_at_on_reinsert(self, memory_db, monkeypatch):
         """Test AC2.2: Upsert preserves first_seen_at when re-inserting existing delivery."""
         data1 = {
             "source_path": "/test/source",
@@ -377,7 +496,7 @@ class TestUpsertDelivery:
             "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
         )
         result1 = upsert_delivery(memory_db, data1)
-        first_seen_at_1 = result1["first_seen_at"]
+        first_seen_at_1 = result1.first_seen_at
 
         # Mock second call to return a different timestamp T2
         monkeypatch.setattr(
@@ -392,11 +511,9 @@ class TestUpsertDelivery:
         }
 
         result2 = upsert_delivery(memory_db, data2)
-        first_seen_at_2 = result2["first_seen_at"]
+        first_seen_at_2 = result2.first_seen_at
 
-        assert first_seen_at_1 == first_seen_at_2, (
-            "first_seen_at should be preserved on reinsert"
-        )
+        assert first_seen_at_1 == first_seen_at_2, "first_seen_at should be preserved on reinsert"
 
     def test_upsert_delivery_bumps_last_updated_at_when_fingerprint_changes(
         self, memory_db, monkeypatch
@@ -423,7 +540,7 @@ class TestUpsertDelivery:
             "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
         )
         result1 = upsert_delivery(memory_db, data1)
-        last_updated_at_1 = result1["last_updated_at"]
+        last_updated_at_1 = result1.last_updated_at
 
         # Mock second call to return a different timestamp T2
         monkeypatch.setattr(
@@ -437,7 +554,7 @@ class TestUpsertDelivery:
         }
 
         result2 = upsert_delivery(memory_db, data2)
-        last_updated_at_2 = result2["last_updated_at"]
+        last_updated_at_2 = result2.last_updated_at
 
         assert last_updated_at_1 != last_updated_at_2, (
             "last_updated_at should be updated when fingerprint changes"
@@ -469,7 +586,7 @@ class TestUpsertDelivery:
             "pipeline.registry_api.db._get_iso_now", lambda: "2026-01-01T00:00:00+00:00"
         )
         result1 = upsert_delivery(memory_db, data1)
-        last_updated_at_1 = result1["last_updated_at"]
+        last_updated_at_1 = result1.last_updated_at
 
         # Mock second call to return a different timestamp T2
         monkeypatch.setattr(
@@ -484,7 +601,7 @@ class TestUpsertDelivery:
         }
 
         result2 = upsert_delivery(memory_db, data2)
-        last_updated_at_2 = result2["last_updated_at"]
+        last_updated_at_2 = result2.last_updated_at
 
         assert last_updated_at_1 == last_updated_at_2, (
             "last_updated_at should NOT be updated when fingerprint is unchanged"
@@ -523,8 +640,8 @@ class TestGetDelivery:
         result = get_delivery(memory_db, delivery_id)
 
         assert result is not None
-        assert result["delivery_id"] == delivery_id
-        assert result["request_id"] == "req-123"
+        assert result.delivery_id == delivery_id
+        assert result.request_id == "req-123"
 
     def test_get_delivery_returns_none_for_nonexistent(self, memory_db):
         """Test that get_delivery returns None for nonexistent delivery_id."""
@@ -605,184 +722,125 @@ class TestListDeliveries:
             upsert_delivery(memory_db, d)
         return deliveries
 
-    def test_list_deliveries_empty_filters_returns_all(
-        self, memory_db, sample_deliveries
-    ):
+    def test_list_deliveries_empty_filters_returns_all(self, memory_db, sample_deliveries):
         """Test AC2.8: Empty filter set returns all deliveries."""
-        results = list_deliveries(memory_db, {})
+        results, _ = list_deliveries(memory_db, {})
 
         assert len(results) == 4
 
     def test_list_deliveries_filter_by_dp_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by dp_id."""
-        results = list_deliveries(memory_db, {"dp_id": "dp-1"})
+        results, _ = list_deliveries(memory_db, {"dp_id": "dp-1"})
 
         assert len(results) == 3
-        assert all(r["dp_id"] == "dp-1" for r in results)
+        assert all(r.dp_id == "dp-1" for r in results)
 
     def test_list_deliveries_filter_by_project(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by project."""
-        results = list_deliveries(memory_db, {"project": "proj-a"})
+        results, _ = list_deliveries(memory_db, {"project": "proj-a"})
 
         assert len(results) == 3
-        assert all(r["project"] == "proj-a" for r in results)
+        assert all(r.project == "proj-a" for r in results)
 
     def test_list_deliveries_filter_by_request_type(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by request_type."""
-        results = list_deliveries(memory_db, {"request_type": "full"})
+        results, _ = list_deliveries(memory_db, {"request_type": "full"})
 
         assert len(results) == 3
-        assert all(r["request_type"] == "full" for r in results)
+        assert all(r.request_type == "full" for r in results)
 
     def test_list_deliveries_filter_by_workplan_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by workplan_id."""
-        results = list_deliveries(memory_db, {"workplan_id": "wp-100"})
+        results, _ = list_deliveries(memory_db, {"workplan_id": "wp-100"})
 
         assert len(results) == 2
-        assert all(r["workplan_id"] == "wp-100" for r in results)
+        assert all(r.workplan_id == "wp-100" for r in results)
 
     def test_list_deliveries_filter_by_request_id(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by request_id."""
-        results = list_deliveries(memory_db, {"request_id": "req-1"})
+        results, _ = list_deliveries(memory_db, {"request_id": "req-1"})
 
         assert len(results) == 1
-        assert results[0]["request_id"] == "req-1"
+        assert results[0].request_id == "req-1"
 
     def test_list_deliveries_filter_by_status(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by status."""
-        results = list_deliveries(memory_db, {"status": "passed"})
+        results, _ = list_deliveries(memory_db, {"status": "passed"})
 
         assert len(results) == 2
-        assert all(r["status"] == "passed" for r in results)
+        assert all(r.status == "passed" for r in results)
 
     def test_list_deliveries_filter_by_scan_root(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by scan_root."""
-        results = list_deliveries(memory_db, {"scan_root": "/scan/1"})
+        results, _ = list_deliveries(memory_db, {"scan_root": "/scan/1"})
 
         assert len(results) == 1
-        assert results[0]["scan_root"] == "/scan/1"
+        assert results[0].scan_root == "/scan/1"
 
-    def test_list_deliveries_filter_by_converted_true(
-        self, memory_db, sample_deliveries
-    ):
+    def test_list_deliveries_filter_by_converted_true(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by converted=True."""
-        results = list_deliveries(memory_db, {"converted": True})
+        results, _ = list_deliveries(memory_db, {"converted": True})
 
         assert len(results) == 1
-        assert results[0]["parquet_converted_at"] is not None
+        assert results[0].parquet_converted_at is not None
 
-    def test_list_deliveries_filter_by_converted_false(
-        self, memory_db, sample_deliveries
-    ):
+    def test_list_deliveries_filter_by_converted_false(self, memory_db, sample_deliveries):
         """Test AC2.5: list_deliveries filters by converted=False."""
-        results = list_deliveries(memory_db, {"converted": False})
+        results, _ = list_deliveries(memory_db, {"converted": False})
 
         assert len(results) == 3
-        assert all(r["parquet_converted_at"] is None for r in results)
+        assert all(r.parquet_converted_at is None for r in results)
 
     def test_list_deliveries_version_latest(self, memory_db, sample_deliveries):
         """Test AC2.6: version=latest returns highest version per (dp_id, workplan_id)."""
-        results = list_deliveries(
+        results, _ = list_deliveries(
             memory_db, {"version": "latest", "workplan_id": "wp-200", "dp_id": "dp-1"}
         )
 
         assert len(results) == 1
-        assert results[0]["version"] == "v03"
+        assert results[0].version == "v03"
 
-    def test_list_deliveries_multiple_filters_and_semantics(
-        self, memory_db, sample_deliveries
-    ):
+    def test_list_deliveries_multiple_filters_and_semantics(self, memory_db, sample_deliveries):
         """Test AC2.7: Multiple filters combine with AND semantics."""
-        results = list_deliveries(
-            memory_db, {"project": "proj-a", "status": "passed"}
-        )
+        results, _ = list_deliveries(memory_db, {"project": "proj-a", "status": "passed"})
 
         assert len(results) == 1
-        assert results[0]["project"] == "proj-a"
-        assert results[0]["status"] == "passed"
-
-    def test_list_deliveries_ordering_by_delivery_id(
-        self, memory_db, sample_deliveries
-    ):
-        """AC7.1: list_deliveries returns rows sorted by delivery_id ascending."""
-        results = list_deliveries(memory_db, {})
-
-        # All 4 results should be present and ordered by delivery_id
-        assert len(results) == 4
-        delivery_ids = [r["delivery_id"] for r in results]
-        assert delivery_ids == sorted(delivery_ids), (
-            "Results should be ordered by delivery_id ascending"
-        )
-
-    def test_list_deliveries_after_keyset_pagination(
-        self, memory_db, sample_deliveries
-    ):
-        """AC7.1 after: list_deliveries with after= returns rows strictly greater than cursor."""
-        results_all = list_deliveries(memory_db, {})
-        cursor_id = results_all[1]["delivery_id"]
-
-        results_after = list_deliveries(memory_db, {"after": cursor_id})
-
-        # Should return rows 2, 3 (indices after 1)
-        assert len(results_after) == 2
-        for r in results_after:
-            assert r["delivery_id"] > cursor_id, (
-                "All rows after should have delivery_id > cursor"
-            )
+        assert results[0].project == "proj-a"
+        assert results[0].status == "passed"
 
     def test_list_deliveries_limit(self, memory_db, sample_deliveries):
         """AC7.1 limit: list_deliveries with limit= returns at most N rows."""
-        results = list_deliveries(memory_db, {"limit": 2})
+        results, total = list_deliveries(memory_db, {"limit": 2})
 
         assert len(results) == 2
-        # Verify they are the two smallest delivery_ids
-        all_results = list_deliveries(memory_db, {})
-        expected_ids = [all_results[0]["delivery_id"], all_results[1]["delivery_id"]]
-        actual_ids = [r["delivery_id"] for r in results]
-        assert actual_ids == expected_ids
+        assert total == 4
 
-    def test_list_deliveries_after_and_limit_combined(
-        self, memory_db, sample_deliveries
-    ):
-        """AC7.1 combined: after= and limit= both work together."""
-        results_all = list_deliveries(memory_db, {})
-        cursor_id = results_all[0]["delivery_id"]
+    def test_list_deliveries_offset(self, memory_db, sample_deliveries):
+        """AC7.1 offset: list_deliveries with offset= skips rows."""
+        results, total = list_deliveries(memory_db, {"limit": 2, "offset": 2})
 
-        results = list_deliveries(memory_db, {"after": cursor_id, "limit": 2})
-
-        # Should return at most 2 rows, all strictly > cursor_id
         assert len(results) == 2
-        assert all(r["delivery_id"] > cursor_id for r in results)
-        # Should be rows at indices 1 and 2
-        assert results[0]["delivery_id"] == results_all[1]["delivery_id"]
-        assert results[1]["delivery_id"] == results_all[2]["delivery_id"]
+        assert total == 4
 
-    def test_list_deliveries_limit_capped_at_1000(
-        self, memory_db, sample_deliveries
-    ):
+    def test_list_deliveries_limit_capped_at_1000(self, memory_db, sample_deliveries):
         """AC7.1 cap: limit larger than 1000 is capped, returns all available rows without error."""
-        # With only 4 rows seeded, requesting 5000 should return all 4
-        results = list_deliveries(memory_db, {"limit": 5000})
+        results, total = list_deliveries(memory_db, {"limit": 5000})
 
         assert len(results) == 4, "Should return all 4 available rows"
+        assert total == 4
 
-    def test_list_deliveries_after_with_converted_filter(
-        self, memory_db, sample_deliveries
-    ):
-        """AC7.1 after with filters: pagination works with other filters like converted=."""
-        results_all = list_deliveries(memory_db, {"converted": False})
-        # Should have 3 unconverted rows
-        assert len(results_all) == 3
+    def test_list_deliveries_offset_with_converted_filter(self, memory_db, sample_deliveries):
+        """AC7.1 offset with filters: pagination works with other filters like converted=."""
+        results_all, total = list_deliveries(memory_db, {"converted": False})
+        assert total == 3
 
-        cursor_id = results_all[0]["delivery_id"]
-        results_after = list_deliveries(
-            memory_db, {"converted": False, "after": cursor_id, "limit": 2}
+        results_page, total2 = list_deliveries(
+            memory_db, {"converted": False, "limit": 2, "offset": 0}
         )
 
-        # Should return at most 2 unconverted rows strictly > cursor_id
-        assert len(results_after) == 2
-        assert all(r["parquet_converted_at"] is None for r in results_after)
-        assert all(r["delivery_id"] > cursor_id for r in results_after)
+        assert len(results_page) == 2
+        assert total2 == 3
+        assert all(r.parquet_converted_at is None for r in results_page)
 
 
 class TestGetActionable:
@@ -818,8 +876,8 @@ class TestGetActionable:
         results = get_actionable(memory_db, {"qa-standard": ["passed"]})
 
         assert len(results) == 1
-        assert results[0]["status"] == "passed"
-        assert results[0]["parquet_converted_at"] is None
+        assert results[0].status == "passed"
+        assert results[0].parquet_converted_at is None
 
     def test_get_actionable_excludes_pending(self, memory_db):
         """Test get_actionable excludes deliveries with status=pending."""
@@ -899,7 +957,7 @@ class TestUpdateDelivery:
 
     def test_update_delivery_updates_specified_fields(self, memory_db, sample_delivery):
         """Test update_delivery updates only specified fields."""
-        delivery_id = sample_delivery["delivery_id"]
+        delivery_id = sample_delivery.delivery_id
 
         result = update_delivery(
             memory_db,
@@ -910,10 +968,10 @@ class TestUpdateDelivery:
             },
         )
 
-        assert result["status"] == "passed"
-        assert result["metadata"] == {"passed_at": "2026-01-01T00:00:00+00:00"}
+        assert result.status == "passed"
+        assert result.metadata == {"passed_at": "2026-01-01T00:00:00+00:00"}
         # Other fields unchanged
-        assert result["request_id"] == "req-123"
+        assert result.request_id == "req-123"
 
     def test_update_delivery_returns_none_for_nonexistent(self, memory_db):
         """Test update_delivery returns None for nonexistent delivery_id."""
@@ -923,14 +981,14 @@ class TestUpdateDelivery:
 
     def test_update_delivery_empty_dict_is_noop(self, memory_db, sample_delivery):
         """Test update_delivery with empty dict is a no-op (returns unchanged row)."""
-        delivery_id = sample_delivery["delivery_id"]
-        original_status = sample_delivery["status"]
+        delivery_id = sample_delivery.delivery_id
+        original_status = sample_delivery.status
 
         result = update_delivery(memory_db, delivery_id, {})
 
         assert result is not None
-        assert result["delivery_id"] == delivery_id
-        assert result["status"] == original_status
+        assert result.delivery_id == delivery_id
+        assert result.status == original_status
 
 
 class TestInsertEvent:
@@ -954,12 +1012,12 @@ class TestInsertEvent:
             payload=payload,
         )
 
-        assert result["event_type"] == "delivery.created"
-        assert result["delivery_id"] == "abc123"
-        assert result["payload"] == payload
-        assert result["seq"] is not None
-        assert isinstance(result["seq"], int)
-        assert result["created_at"] is not None
+        assert result.event_type == "delivery.created"
+        assert result.delivery_id == "abc123"
+        assert result.payload == payload
+        assert result.seq is not None
+        assert isinstance(result.seq, int)
+        assert result.created_at is not None
 
     def test_insert_event_ac4_1_monotonic_sequence(self, memory_db):
         """Test event-stream.AC4.1: Each event has seq higher than all previous events."""
@@ -979,7 +1037,7 @@ class TestInsertEvent:
             payload=payload2,
         )
 
-        assert result2["seq"] > result1["seq"]
+        assert result2.seq > result1.seq
 
     def test_insert_event_ac4_2_payload_matches_broadcast(self, memory_db):
         """Test event-stream.AC4.2: Event payload matches broadcast payload."""
@@ -992,7 +1050,7 @@ class TestInsertEvent:
             payload=payload,
         )
 
-        assert result["payload"] == payload
+        assert result.payload == payload
 
     def test_insert_event_accepts_delivery_created(self, memory_db):
         """Test insert_event accepts 'delivery.created' event type."""
@@ -1003,7 +1061,7 @@ class TestInsertEvent:
             payload={},
         )
 
-        assert result["event_type"] == "delivery.created"
+        assert result.event_type == "delivery.created"
 
     def test_insert_event_accepts_delivery_status_changed(self, memory_db):
         """Test insert_event accepts 'delivery.status_changed' event type."""
@@ -1014,7 +1072,7 @@ class TestInsertEvent:
             payload={},
         )
 
-        assert result["event_type"] == "delivery.status_changed"
+        assert result.event_type == "delivery.status_changed"
 
     def test_insert_event_rejects_invalid_event_type(self, memory_db):
         """Test insert_event with invalid event_type raises sqlite3.IntegrityError (CHECK constraint)."""
@@ -1039,7 +1097,7 @@ class TestInsertEvent:
 
         # Verify it's actually persisted by fetching it back
         cursor = memory_db.cursor()
-        cursor.execute("SELECT * FROM events WHERE seq = ?", (result["seq"],))
+        cursor.execute("SELECT * FROM events WHERE seq = ?", (result.seq,))
         row = cursor.fetchone()
 
         assert row is not None
@@ -1075,8 +1133,8 @@ class TestGetEventsAfter:
         results = get_events_after(memory_db, after_seq=1)
 
         assert len(results) == 2
-        assert results[0]["seq"] == sample_events[1]["seq"]
-        assert results[1]["seq"] == sample_events[2]["seq"]
+        assert results[0].seq == sample_events[1].seq
+        assert results[1].seq == sample_events[2].seq
 
     def test_get_events_after_ac5_2_respects_limit(self, memory_db):
         """Test event-stream.AC5.2: Returns at most limit events."""
@@ -1092,7 +1150,7 @@ class TestGetEventsAfter:
         """Test get_events_after returns results ordered by seq ASC."""
         results = get_events_after(memory_db, after_seq=0)
 
-        seqs = [r["seq"] for r in results]
+        seqs = [r.seq for r in results]
         assert seqs == sorted(seqs)
 
     def test_get_events_after_limit_capped_at_1000(self, memory_db):
@@ -1120,8 +1178,8 @@ class TestGetEventsAfter:
         results = get_events_after(memory_db, after_seq=0)
 
         assert len(results) == 1
-        assert results[0]["payload"] == payload
-        assert isinstance(results[0]["payload"], dict)
+        assert results[0].payload == payload
+        assert isinstance(results[0].payload, dict)
 
 
 class TestDeliveryExists:
@@ -1195,9 +1253,9 @@ class TestLexiconSchema:
 
         result = upsert_delivery(memory_db, data)
 
-        assert result["lexicon_id"] == "qa-standard"
-        assert result["status"] == "pending"
-        assert result["metadata"] is not None
+        assert result.lexicon_id == "qa-standard"
+        assert result.status == "pending"
+        assert result.metadata is not None
 
     def test_ac3_2_metadata_json_roundtrip(self, memory_db):
         """AC3.2 Success: metadata JSON round-trips correctly through upsert and query."""
@@ -1220,12 +1278,12 @@ class TestLexiconSchema:
 
         # Upsert the delivery
         upsert_result = upsert_delivery(memory_db, data)
-        assert upsert_result["metadata"] == metadata_in
+        assert upsert_result.metadata == metadata_in
 
         # Query it back
         delivery_id = make_delivery_id("/test/delivery-ac3-2")
         fetched = get_delivery(memory_db, delivery_id)
-        assert fetched["metadata"] == metadata_in
+        assert fetched.metadata == metadata_in
 
     def test_ac3_3_actionable_query_returns_matching_statuses(self, memory_db):
         """AC3.3 Success: Actionable query returns deliveries matching per-lexicon actionable_statuses."""
@@ -1268,8 +1326,8 @@ class TestLexiconSchema:
         results = get_actionable(memory_db, {"qa-standard": ["passed"]})
 
         assert len(results) == 1
-        assert results[0]["status"] == "passed"
-        assert results[0]["source_path"] == "/test/ac3-3-passed"
+        assert results[0].status == "passed"
+        assert results[0].source_path == "/test/ac3-3-passed"
 
     def test_ac3_4_actionable_across_multiple_lexicons(self, memory_db):
         """AC3.4 Success: Actionable query works across multiple lexicons with different actionable statuses."""
@@ -1336,7 +1394,7 @@ class TestLexiconSchema:
 
         # Should return: 1 from qa-standard (passed) + 1 from qa-extended (review-pending)
         assert len(results) == 2
-        statuses = {r["status"] for r in results}
+        statuses = {r.status for r in results}
         assert "passed" in statuses
         assert "review-pending" in statuses
 
@@ -1395,15 +1453,15 @@ class TestLexiconSchema:
         )
 
         # Filter by lexicon_id
-        results_standard = list_deliveries(memory_db, {"lexicon_id": "qa-standard"})
-        results_extended = list_deliveries(memory_db, {"lexicon_id": "qa-extended"})
+        results_standard, _ = list_deliveries(memory_db, {"lexicon_id": "qa-standard"})
+        results_extended, _ = list_deliveries(memory_db, {"lexicon_id": "qa-extended"})
 
         # Verify filtering works
         assert len(results_standard) == 2
-        assert all(r["lexicon_id"] == "qa-standard" for r in results_standard)
+        assert all(r.lexicon_id == "qa-standard" for r in results_standard)
 
         assert len(results_extended) == 1
-        assert all(r["lexicon_id"] == "qa-extended" for r in results_extended)
+        assert all(r.lexicon_id == "qa-extended" for r in results_extended)
 
     def test_ac3_5_list_deliveries_filter_by_status(self, memory_db):
         """AC3.5 Success: List/filter deliveries by status."""
@@ -1427,16 +1485,16 @@ class TestLexiconSchema:
             )
 
         # Filter by status
-        pending_results = list_deliveries(memory_db, {"status": "pending"})
-        passed_results = list_deliveries(memory_db, {"status": "passed"})
-        failed_results = list_deliveries(memory_db, {"status": "failed"})
+        pending_results, _ = list_deliveries(memory_db, {"status": "pending"})
+        passed_results, _ = list_deliveries(memory_db, {"status": "passed"})
+        failed_results, _ = list_deliveries(memory_db, {"status": "failed"})
 
         # Verify filtering works
         assert len(pending_results) == 2
-        assert all(r["status"] == "pending" for r in pending_results)
+        assert all(r.status == "pending" for r in pending_results)
 
         assert len(passed_results) == 1
-        assert all(r["status"] == "passed" for r in passed_results)
+        assert all(r.status == "passed" for r in passed_results)
 
         assert len(failed_results) == 1
-        assert all(r["status"] == "failed" for r in failed_results)
+        assert all(r.status == "failed" for r in failed_results)

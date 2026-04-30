@@ -1,12 +1,14 @@
+# pattern: test file
+import hashlib
 import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline.registry_api.db import init_db, get_db
-from pipeline.registry_api.main import app
+from pipeline.config import ScanRoot
 from pipeline.lexicons.models import Lexicon, MetadataField
-
+from pipeline.registry_api.db import get_db, init_db
+from pipeline.registry_api.main import app
 
 TEST_LEXICON = Lexicon(
     id="soc.qar",
@@ -65,7 +67,52 @@ def client(test_db):
 
     app.dependency_overrides[get_db] = override_get_db
     app.state.lexicons = {"soc.qar": TEST_LEXICON, "test.sub": TEST_SUB_LEXICON}
+    app.state.scan_roots = [
+        ScanRoot(path="/data", label="Test Data", lexicon="soc.qar"),
+        ScanRoot(path="/source", label="Test Source", lexicon="soc.qar"),
+        ScanRoot(path="/requests/qa", label="QA Packages", lexicon="soc.qar"),
+        ScanRoot(path="/scan", label="Scans", lexicon="soc.qar"),
+        ScanRoot(path="/test", label="Tests", lexicon="soc.qar"),
+    ]
 
     yield TestClient(app)
 
     app.dependency_overrides.clear()
+
+
+TEST_TOKEN_RAW = "test-integration-token"
+TEST_TOKEN_HASH = hashlib.sha256(TEST_TOKEN_RAW.encode()).hexdigest()
+
+
+@pytest.fixture
+def auth_headers(test_db):
+    """
+    Seed a write-role token into the test database and return auth headers.
+
+    Provides headers with a valid write-role bearer token for use in route tests.
+    """
+    cursor = test_db.cursor()
+    cursor.execute(
+        "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+        (TEST_TOKEN_HASH, "test-writer", "write", "2026-01-01T00:00:00+00:00"),
+    )
+    test_db.commit()
+    return {"Authorization": f"Bearer {TEST_TOKEN_RAW}"}
+
+
+@pytest.fixture
+def read_auth_headers(test_db):
+    """
+    Seed a read-role token into the test database and return auth headers.
+
+    Provides headers with a valid read-role bearer token for role enforcement tests.
+    """
+    read_token = "test-read-token"
+    read_hash = hashlib.sha256(read_token.encode()).hexdigest()
+    cursor = test_db.cursor()
+    cursor.execute(
+        "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+        (read_hash, "test-reader", "read", "2026-01-01T00:00:00+00:00"),
+    )
+    test_db.commit()
+    return {"Authorization": f"Bearer {read_token}"}

@@ -1,3 +1,4 @@
+# pattern: test file
 """Test that hardcoded QA status references don't exist in the codebase.
 
 This test acts as a static analysis gate to prevent hardcoded qa_status and
@@ -33,10 +34,9 @@ def test_no_hardcoded_qa_references() -> None:
             if re.search(rf"\b{re.escape(pattern)}\b", content):
                 found_references.append((str(py_file), pattern))
 
-    assert (
-        not found_references
-    ), f"Found hardcoded QA references that must use lexicon system:\n" + "\n".join(
-        f"  {path}: {pattern}" for path, pattern in found_references
+    assert not found_references, (
+        "Found hardcoded QA references that must use lexicon system:\n"
+        + "\n".join(f"  {path}: {pattern}" for path, pattern in found_references)
     )
 
 
@@ -62,6 +62,4 @@ def test_no_hardcoded_qa_references_via_grep() -> None:
         text=True,
     )
 
-    assert (
-        result.returncode == 1
-    ), f"Found hardcoded QA references:\n{result.stdout}"
+    assert result.returncode == 1, f"Found hardcoded QA references:\n{result.stdout}"

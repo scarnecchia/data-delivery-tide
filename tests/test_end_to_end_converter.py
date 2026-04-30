@@ -55,7 +55,9 @@ def end_to_end_env(tmp_path, monkeypatch):
 
     # 3. Scan root tree: one parent delivery with a real SAS file.
     scan_root = tmp_path / "scan"
-    parent_src = scan_root / "dpid_abc" / "packages" / "req001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+    parent_src = (
+        scan_root / "dpid_abc" / "packages" / "req001" / "soc_qar_wp001_mkscnr_v01" / "msoc"
+    )
     parent_src.mkdir(parents=True)
 
     # Write test files using SAV format (since pyreadstat.write_sas7bdat doesn't exist),
@@ -71,7 +73,11 @@ def end_to_end_env(tmp_path, monkeypatch):
 
     # 4. Config.
     config = PipelineConfig(
-        scan_roots=[ScanRoot(path=str(scan_root), label="test", lexicon="soc.qar", target="packages")],
+        scan_roots=[
+            ScanRoot(
+                path=str(scan_root.resolve()), label="test", lexicon="soc.qar", target="packages"
+            )
+        ],
         registry_api_url="http://testserver",  # TestClient base URL
         output_root=str(tmp_path / "output"),
         schema_path=str(tmp_path / "schema.json"),
@@ -92,6 +98,7 @@ def end_to_end_env(tmp_path, monkeypatch):
 
     # Monkey-patch pipeline.config.settings so crawler/engine see our config.
     import pipeline.config as config_mod
+
     monkeypatch.setattr(config_mod, "_settings", config)
 
     # 5. Use the module-level FastAPI app.
@@ -112,9 +119,29 @@ def end_to_end_env(tmp_path, monkeypatch):
     # the dict; teardown runs at test exit to exit the context manager.
     with TestClient(registry_main.app) as client:
         monkeypatch.setattr(
-            registry_main.app.state, "lexicons",
+            registry_main.app.state,
+            "lexicons",
             load_all_lexicons(str(lex_dir)),
         )
+        monkeypatch.setattr(
+            registry_main.app.state,
+            "scan_roots",
+            config.scan_roots,
+        )
+        # Seed a write-role token for auth
+        import hashlib
+        import sqlite3 as _sqlite3
+
+        e2e_token = "e2e-test-token"
+        e2e_hash = hashlib.sha256(e2e_token.encode()).hexdigest()
+        conn = _sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO tokens (token_hash, username, role, created_at) VALUES (?, ?, ?, ?)",
+            (e2e_hash, "e2e-writer", "write", "2026-01-01T00:00:00+00:00"),
+        )
+        conn.commit()
+        conn.close()
+
         yield {
             "tmp_path": tmp_path,
             "db_path": db_path,
@@ -122,6 +149,7 @@ def end_to_end_env(tmp_path, monkeypatch):
             "sub_src": sub_src,
             "config": config,
             "client": client,
+            "token": e2e_token,
         }
 
 
@@ -132,44 +160,53 @@ class _TestClientHttpAdapter:
     pipeline.converter.http.
     """
 
-    def __init__(self, client: TestClient):
+    def __init__(self, client: TestClient, token: str | None = None):
         self.client = client
+        self._headers = {"Authorization": f"Bearer {token}"} if token else {}
         # Engine catches this exception class; alias to a real one.
         from pipeline.converter.http import RegistryUnreachableError
+
         self.RegistryUnreachableError = RegistryUnreachableError
 
-    def get_delivery(self, api_url, delivery_id):
-        r = self.client.get(f"/deliveries/{delivery_id}")
+    def get_delivery(self, api_url, delivery_id, token=None):
+        r = self.client.get(f"/deliveries/{delivery_id}", headers=self._headers)
         r.raise_for_status()
         return r.json()
 
-    def patch_delivery(self, api_url, delivery_id, updates):
-        r = self.client.patch(f"/deliveries/{delivery_id}", json=updates)
+    def patch_delivery(self, api_url, delivery_id, updates, token=None):
+        r = self.client.patch(f"/deliveries/{delivery_id}", json=updates, headers=self._headers)
         r.raise_for_status()
         return r.json()
 
-    def emit_event(self, api_url, event_type, delivery_id, payload):
-        r = self.client.post("/events", json={
-            "event_type": event_type,
-            "delivery_id": delivery_id,
-            "payload": payload,
-        })
-        r.raise_for_status()
-        return r.json()
-
-    def list_unconverted(self, api_url, after="", limit=200):
-        r = self.client.get(
-            f"/deliveries?converted=false&after={after}&limit={limit}"
+    def emit_event(self, api_url, event_type, delivery_id, payload, token=None):
+        r = self.client.post(
+            "/events",
+            json={
+                "event_type": event_type,
+                "delivery_id": delivery_id,
+                "payload": payload,
+            },
+            headers=self._headers,
         )
         r.raise_for_status()
         return r.json()
 
+    def list_unconverted(self, api_url, after="", limit=200, token=None):
+        r = self.client.get(
+            f"/deliveries?converted=false&limit={limit}&offset=0",
+            headers=self._headers,
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data["items"]
 
+
+@pytest.mark.integration
 class TestEndToEndConverter:
     def test_crawler_to_converter_full_chain(self, end_to_end_env, monkeypatch):
         # AC10.1
-        from pipeline.crawler.main import crawl
         from pipeline.converter.engine import convert_one
+        from pipeline.crawler.main import crawl
         from pipeline.json_logging import get_logger
 
         env = end_to_end_env
@@ -179,8 +216,9 @@ class TestEndToEndConverter:
         # which creates a local name in the main module. Patching
         # `pipeline.crawler.http.post_delivery` would NOT affect the call at
         # crawler/main.py:269 — the name is already bound in `main`'s namespace.
-        def _patched_post(api_url, payload):
-            r = env["client"].post("/deliveries", json=payload)
+        def _patched_post(api_url, payload, token=None):
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            r = env["client"].post("/deliveries", json=payload, headers=headers)
             r.raise_for_status()
             return r.json()
 
@@ -189,12 +227,13 @@ class TestEndToEndConverter:
         # crawl() signature is `crawl(config, logger) -> int` (see
         # src/pipeline/crawler/main.py). Build a logger and pass both.
         test_logger = get_logger("test-crawler", log_dir=None)
-        crawl_rc = crawl(env["config"], test_logger)
+        crawl_rc = crawl(env["config"], test_logger, token=env["token"])
         assert crawl_rc >= 2, f"crawl processed {crawl_rc} deliveries, expected at least 2"
 
+        auth = {"Authorization": f"Bearer {env['token']}"}
         # Crawler registered two deliveries: parent + sub.
-        rows_resp = env["client"].get("/deliveries?converted=false")
-        rows = rows_resp.json()
+        rows_resp = env["client"].get("/deliveries?converted=false", headers=auth)
+        rows = rows_resp.json()["items"]
         assert len(rows) == 2, f"expected parent + sub, got {len(rows)}: {rows}"
 
         parent_row = next(r for r in rows if r["source_path"] == str(env["parent_src"]))
@@ -213,15 +252,16 @@ class TestEndToEndConverter:
 
         def _convert_with_sav(src, out, *, chunk_size, compression, converter_version):
             return real_convert(
-                src, out,
+                src,
+                out,
                 chunk_size=chunk_size,
                 compression=compression,
                 converter_version=converter_version,
-                chunk_iter_factory=_sav_chunk_iter_factory
+                chunk_iter_factory=_sav_chunk_iter_factory,
             )
 
         # Run engine for each.
-        adapter = _TestClientHttpAdapter(env["client"])
+        adapter = _TestClientHttpAdapter(env["client"], token=env["token"])
         for row in (parent_row, sub_row):
             result = convert_one(
                 row["delivery_id"],
@@ -231,7 +271,7 @@ class TestEndToEndConverter:
                 compression="zstd",
                 log_dir=None,
                 http_module=adapter,
-                convert_fn=_convert_with_sav
+                convert_fn=_convert_with_sav,
             )
             assert result.outcome == "success", (
                 f"convert_one outcome was {result.outcome} for delivery {row['delivery_id']}; "
@@ -251,11 +291,15 @@ class TestEndToEndConverter:
         assert sub_table.num_rows == 2
 
         # Registry rows reflect conversion (output_path is now directory, not file).
-        updated_parent = env["client"].get(f"/deliveries/{parent_row['delivery_id']}").json()
+        updated_parent = (
+            env["client"].get(f"/deliveries/{parent_row['delivery_id']}", headers=auth).json()
+        )
         assert updated_parent["parquet_converted_at"] is not None
         assert updated_parent["output_path"] == str(parent_out.parent)
 
-        updated_sub = env["client"].get(f"/deliveries/{sub_row['delivery_id']}").json()
+        updated_sub = (
+            env["client"].get(f"/deliveries/{sub_row['delivery_id']}", headers=auth).json()
+        )
         assert updated_sub["parquet_converted_at"] is not None
         assert updated_sub["output_path"] == str(sub_out.parent)
 
@@ -263,8 +307,7 @@ class TestEndToEndConverter:
         conn = sqlite3.connect(str(env["db_path"]))
         conn.row_factory = sqlite3.Row
         rows_events = conn.execute(
-            "SELECT event_type, delivery_id FROM events "
-            "WHERE event_type = 'conversion.completed'"
+            "SELECT event_type, delivery_id FROM events WHERE event_type = 'conversion.completed'"
         ).fetchall()
         conn.close()
         completed_ids = {r["delivery_id"] for r in rows_events}

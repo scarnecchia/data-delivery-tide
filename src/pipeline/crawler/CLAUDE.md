@@ -8,7 +8,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 
 ## Contracts
 
-- **Expects**: `pipeline.config.settings` with `scan_roots` (each with `path`, `label`, `target`, and `lexicon` fields), `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, `registry_api_url`, `log_dir`
+- **Expects**: `pipeline.config.settings` with `scan_roots` (each with `path`, `label`, `target`, and `lexicon` fields), `dp_id_exclusions`, `crawl_manifest_dir`, `crawler_version`, `registry_api_url`, `log_dir`. Reads `REGISTRY_TOKEN` env var for bearer auth (required when registry auth is enabled).
 - **Produces**: JSON crawl manifests in `crawl_manifest_dir` (one per delivery, keyed by delivery_id). Error manifests in `crawl_manifest_dir/errors/`.
 - **Calls**: `POST /deliveries` on the registry API for each resolved delivery with `lexicon_id` and lexicon-derived `status`
 - **Guarantees**: Two-pass crawl -- manifests are written before any registry POST. Status derivation via lexicon hooks happens between passes. `walk_roots` enforces canonical 5-level traversal constrained by `target` field: only directories whose names match lexicon.dir_map keys under each dpid are descended. After discovering a terminal directory match, the crawler checks the lexicon's `sub_dirs` field for known subdirectories and registers sub-deliveries if found.
@@ -25,7 +25,7 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 - `parser.py` -- path parsing and status derivation (Functional Core)
 - `fingerprint.py` -- deterministic SHA-256 fingerprint from file inventory (Functional Core)
 - `manifest.py` -- builds crawl manifest and error manifest dicts, generates delivery_id (Functional Core)
-- `http.py` -- registry API client with exponential backoff retry (Imperative Shell)
+- `http.py` -- registry API client with exponential backoff retry and optional bearer auth (Imperative Shell)
 - `main.py` -- orchestrator: walk_roots, inventory_files, crawl(), main() entry point (Imperative Shell)
 
 ## Invariants
@@ -50,4 +50,6 @@ Walks configured scan roots to discover healthcare data deliveries encoded in di
 - dp_id_exclusions filtering is enforced at two layers: `walk_roots` skips excluded dpid directories at the folder level, and `parse_path` checks the dp_id extracted from the version directory name (returning None for excluded dp_ids -- callers must handle the None case)
 - All manifests in a single crawl run share the same crawled_at timestamp (marks the run, not individual processing)
 - The http client uses stdlib urllib, not requests/httpx -- intentional to avoid runtime dependencies
+- `main()` catches `RegistryClientError` for 401/403 and logs actionable messages (set REGISTRY_TOKEN, check role). Other 4xx errors log the full error. All exit with code 1.
+- `REGISTRY_TOKEN` is read in `main()` and threaded through `crawl()` to `post_delivery()` -- the token is optional at each layer for backwards compatibility
 - `inventory_files` uses `os.scandir()` (direct children only), so parent file inventory naturally excludes sub-directory contents — no special filtering needed when sub-deliveries are discovered
