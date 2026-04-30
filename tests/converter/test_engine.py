@@ -19,14 +19,14 @@ class _StubHttp:
         self.patches: list[tuple[str, dict]] = []
         self.events: list[tuple[str, str, dict]] = []
 
-    def get_delivery(self, api_url, delivery_id):
+    def get_delivery(self, api_url, delivery_id, token=None):
         return self.delivery
 
-    def patch_delivery(self, api_url, delivery_id, updates):
+    def patch_delivery(self, api_url, delivery_id, updates, token=None):
         self.patches.append((delivery_id, updates))
         return self.delivery
 
-    def emit_event(self, api_url, event_type, delivery_id, payload):
+    def emit_event(self, api_url, event_type, delivery_id, payload, token=None):
         self.events.append((event_type, delivery_id, payload))
         return {"seq": 1, "event_type": event_type, "delivery_id": delivery_id, "payload": payload}
 
@@ -968,7 +968,7 @@ class TestEngineExcInfoLogging:
         source_dir, always_fail = self._make_failing_setup(tmp_path)
         http = _StubHttp(_make_delivery(str(source_dir)))
 
-        def patch_raises(api_url, delivery_id, updates):
+        def patch_raises(api_url, delivery_id, updates, token=None):
             raise RuntimeError("boom-patch")
 
         http.patch_delivery = patch_raises
@@ -998,7 +998,7 @@ class TestEngineExcInfoLogging:
         source_dir, always_fail = self._make_failing_setup(tmp_path)
         http = _StubHttp(_make_delivery(str(source_dir)))
 
-        def emit_raises(api_url, event_type, delivery_id, payload):
+        def emit_raises(api_url, event_type, delivery_id, payload, token=None):
             raise RuntimeError("boom-emit")
 
         http.emit_event = emit_raises

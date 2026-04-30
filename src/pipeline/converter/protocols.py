@@ -23,18 +23,25 @@ if TYPE_CHECKING:
 class HttpModuleProtocol(Protocol):
     """Shape of `pipeline.converter.http` as consumed by engine + cli."""
 
-    def get_delivery(self, api_url: str, delivery_id: str) -> dict[str, Any]: ...
+    def get_delivery(
+        self, api_url: str, delivery_id: str, token: str | None = None
+    ) -> dict[str, Any]: ...
 
     def patch_delivery(
-        self, api_url: str, delivery_id: str, updates: dict[str, Any]
+        self, api_url: str, delivery_id: str, updates: dict[str, Any], token: str | None = None
     ) -> dict[str, Any]: ...
 
     def list_unconverted(
-        self, api_url: str, after: str = "", limit: int = 200
+        self, api_url: str, after: str = "", limit: int = 200, token: str | None = None
     ) -> list[dict[str, Any]]: ...
 
     def emit_event(
-        self, api_url: str, event_type: str, delivery_id: str, payload: dict[str, Any]
+        self,
+        api_url: str,
+        event_type: str,
+        delivery_id: str,
+        payload: dict[str, Any],
+        token: str | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -51,6 +58,7 @@ class ConvertOneFnProtocol(Protocol):
         compression: str,
         dp_id_exclusions: set[str] | None = ...,
         log_dir: str | None = ...,
+        token: str | None = ...,
     ) -> ConversionResult: ...
 
 

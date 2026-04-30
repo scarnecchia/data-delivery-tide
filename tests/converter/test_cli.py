@@ -79,13 +79,13 @@ class _StubCliHttp:
         self.call_count = 0
         self.RegistryUnreachableError = RegistryUnreachableError
 
-    def list_unconverted(self, api_url, after, limit):
+    def list_unconverted(self, api_url, after, limit, token=None):
         self.call_count += 1
         if not self.pages:
             return []
         return self.pages.pop(0)
 
-    def patch_delivery(self, api_url, delivery_id, updates):
+    def patch_delivery(self, api_url, delivery_id, updates, token=None):
         self.patches.append((delivery_id, updates))
         return {}
 

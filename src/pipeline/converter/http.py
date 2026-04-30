@@ -26,10 +26,13 @@ _BACKOFF_SECONDS = (2, 4, 8)
 def _request_with_retry(
     request: urllib.request.Request,
     *,
+    token: str | None = None,
     urlopen: Callable[..., Any] = urllib.request.urlopen,
     sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     """Execute a urllib Request with exponential backoff on 5xx/network errors."""
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
     last_error: Exception | None = None
 
     for attempt in range(len(_BACKOFF_SECONDS) + 1):
@@ -55,6 +58,7 @@ def _request_with_retry(
 def get_delivery(
     api_url: str,
     delivery_id: str,
+    token: str | None = None,
     *,
     urlopen: Callable[..., Any] = urllib.request.urlopen,
     sleep: Callable[[float], None] = time.sleep,
@@ -66,13 +70,14 @@ def get_delivery(
     """
     url = f"{api_url.rstrip('/')}/deliveries/{delivery_id}"
     request = urllib.request.Request(url, method="GET")
-    return _request_with_retry(request, urlopen=urlopen, sleep=sleep)
+    return _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep)
 
 
 def patch_delivery(
     api_url: str,
     delivery_id: str,
     updates: dict[str, Any],
+    token: str | None = None,
     *,
     urlopen: Callable[..., Any] = urllib.request.urlopen,
     sleep: Callable[[float], None] = time.sleep,
@@ -90,13 +95,14 @@ def patch_delivery(
         headers={"Content-Type": "application/json"},
         method="PATCH",
     )
-    return _request_with_retry(request, urlopen=urlopen, sleep=sleep)
+    return _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep)
 
 
 def list_unconverted(
     api_url: str,
     after: str = "",
     limit: int = 200,
+    token: str | None = None,
     *,
     urlopen: Callable[..., Any] = urllib.request.urlopen,
     sleep: Callable[[float], None] = time.sleep,
@@ -111,7 +117,10 @@ def list_unconverted(
     params = f"converted=false&after={after}&limit={limit}"
     url = f"{api_url.rstrip('/')}/deliveries?{params}"
     request = urllib.request.Request(url, method="GET")
-    return cast("list[dict[str, Any]]", _request_with_retry(request, urlopen=urlopen, sleep=sleep))
+    return cast(
+        "list[dict[str, Any]]",
+        _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep),
+    )
 
 
 def emit_event(
@@ -119,6 +128,7 @@ def emit_event(
     event_type: str,
     delivery_id: str,
     payload: dict[str, Any],
+    token: str | None = None,
     *,
     urlopen: Callable[..., Any] = urllib.request.urlopen,
     sleep: Callable[[float], None] = time.sleep,
@@ -143,4 +153,4 @@ def emit_event(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    return _request_with_retry(request, urlopen=urlopen, sleep=sleep)
+    return _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep)

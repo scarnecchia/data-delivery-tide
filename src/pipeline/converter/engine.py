@@ -73,12 +73,13 @@ def convert_one(
     compression: str,
     dp_id_exclusions: set[str] | None = None,
     log_dir: str | None = None,
+    token: str | None = None,
     http_module: HttpModuleProtocol = converter_http,
     convert_fn: ConvertSasToParquetFnProtocol = convert_sas_to_parquet,
 ) -> ConversionResult:
     logger = get_logger("converter", log_dir=log_dir)
 
-    delivery = http_module.get_delivery(api_url, delivery_id)
+    delivery = http_module.get_delivery(api_url, delivery_id, token=token)
     source_path_str = delivery["source_path"]
 
     # Skip guard 0: dp_id is in the exclusion set.
@@ -215,7 +216,7 @@ def convert_one(
             },
         }
         try:
-            http_module.patch_delivery(api_url, delivery_id, patch_body)
+            http_module.patch_delivery(api_url, delivery_id, patch_body, token=token)
         except Exception:
             logger.warning(
                 "failed to PATCH conversion_error to registry",
@@ -230,7 +231,9 @@ def convert_one(
             "at": now,
         }
         try:
-            http_module.emit_event(api_url, "conversion.failed", delivery_id, event_payload)
+            http_module.emit_event(
+                api_url, "conversion.failed", delivery_id, event_payload, token=token
+            )
         except Exception:
             logger.warning(
                 "failed to emit conversion.failed event",
@@ -267,7 +270,7 @@ def convert_one(
             name: _failure_to_wire(f) for name, f in failures.items()
         }
 
-    http_module.patch_delivery(api_url, delivery_id, patch_body)
+    http_module.patch_delivery(api_url, delivery_id, patch_body, token=token)
 
     completion_payload: dict[str, Any] = {
         "delivery_id": delivery_id,
@@ -278,7 +281,9 @@ def convert_one(
         "failed_count": len(failures),
         "wrote_at": wrote_at,
     }
-    http_module.emit_event(api_url, "conversion.completed", delivery_id, completion_payload)
+    http_module.emit_event(
+        api_url, "conversion.completed", delivery_id, completion_payload, token=token
+    )
 
     logger.info(
         "converted",

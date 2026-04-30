@@ -88,6 +88,7 @@ class DaemonRunner:
         compression: str,
         dp_id_exclusions: set[str] | None = None,
         log_dir: str | None,
+        token: str | None = None,
         consumer_factory: ConsumerFactoryProtocol = EventConsumer,
         convert_one_fn: ConvertOneFnProtocol = convert_one,
     ) -> None:
@@ -98,6 +99,7 @@ class DaemonRunner:
         self.compression = compression
         self.dp_id_exclusions = dp_id_exclusions
         self.log_dir = log_dir
+        self.token = token
         self._consumer_factory = consumer_factory
         self._convert_one_fn = convert_one_fn
         self._stopping = False
@@ -203,6 +205,7 @@ class DaemonRunner:
                     compression=self.compression,
                     dp_id_exclusions=self.dp_id_exclusions,
                     log_dir=self.log_dir,
+                    token=self.token,
                 )
             except asyncio.CancelledError:
                 # SIGTERM/SIGINT fired while we were awaiting to_thread. The
@@ -226,6 +229,7 @@ class DaemonRunner:
 
 def main() -> int:
     """Entry point for registry-convert-daemon."""
+    token = os.environ.get("REGISTRY_TOKEN")
     runner = DaemonRunner(
         api_url=settings.registry_api_url,
         state_path=Path(settings.converter_state_path),
@@ -234,5 +238,6 @@ def main() -> int:
         compression=settings.converter_compression,
         dp_id_exclusions=set(settings.dp_id_exclusions),
         log_dir=settings.log_dir,
+        token=token,
     )
     return asyncio.run(runner.run_async())

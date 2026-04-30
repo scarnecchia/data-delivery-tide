@@ -168,17 +168,17 @@ class _TestClientHttpAdapter:
 
         self.RegistryUnreachableError = RegistryUnreachableError
 
-    def get_delivery(self, api_url, delivery_id):
+    def get_delivery(self, api_url, delivery_id, token=None):
         r = self.client.get(f"/deliveries/{delivery_id}", headers=self._headers)
         r.raise_for_status()
         return r.json()
 
-    def patch_delivery(self, api_url, delivery_id, updates):
+    def patch_delivery(self, api_url, delivery_id, updates, token=None):
         r = self.client.patch(f"/deliveries/{delivery_id}", json=updates, headers=self._headers)
         r.raise_for_status()
         return r.json()
 
-    def emit_event(self, api_url, event_type, delivery_id, payload):
+    def emit_event(self, api_url, event_type, delivery_id, payload, token=None):
         r = self.client.post(
             "/events",
             json={
@@ -191,7 +191,7 @@ class _TestClientHttpAdapter:
         r.raise_for_status()
         return r.json()
 
-    def list_unconverted(self, api_url, after="", limit=200):
+    def list_unconverted(self, api_url, after="", limit=200, token=None):
         r = self.client.get(
             f"/deliveries?converted=false&limit={limit}&offset=0",
             headers=self._headers,

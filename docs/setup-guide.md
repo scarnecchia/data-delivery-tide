@@ -196,6 +196,37 @@ Make sure the user running the pipeline has:
 - **Write access** to `converter_state_path` parent directory
 - **Write access** to the Parquet output locations (which are subdirectories of the source paths, at `{source_path}/parquet/`)
 
+### Security Hardening
+
+The pipeline stores authentication tokens and delivery metadata in its SQLite database, and uses the lexicon configuration directory to load derive-hook functions at runtime. Both must be protected from unauthorized access.
+
+After initial setup, restrict ownership and permissions on these paths:
+
+```bash
+# Database file and WAL sidecars — readable/writable only by the service user
+chown $SERVICE_USER:$SERVICE_GROUP pipeline/registry.db pipeline/registry.db-wal pipeline/registry.db-shm
+chmod 600 pipeline/registry.db pipeline/registry.db-wal pipeline/registry.db-shm
+
+# Lexicons directory — the loader imports hook functions referenced in these
+# JSON files. Write access here is equivalent to code execution as the service
+# user. Restrict to owner-only.
+chown -R $SERVICE_USER:$SERVICE_GROUP pipeline/lexicons/
+chmod 700 pipeline/lexicons/
+chmod 600 pipeline/lexicons/**/*.json
+
+# Environment file containing REGISTRY_TOKEN — already mentioned in section 7
+chmod 600 /etc/pipeline/.env
+chown $SERVICE_USER:$SERVICE_GROUP /etc/pipeline/.env
+```
+
+Replace `$SERVICE_USER` and `$SERVICE_GROUP` with the actual user and group that run the pipeline processes.
+
+**Why this matters:**
+
+- The database contains hashed authentication tokens. Read access to the `.db` file lets an attacker extract token hashes; write access lets them insert their own.
+- The lexicons directory controls which Python functions the loader executes via `importlib.import_module`. Write access to lexicon JSON files is equivalent to arbitrary code execution under the service account.
+- The `.env` file contains raw bearer tokens. It must never be world-readable.
+
 ---
 
 ## 4. Authentication — Creating Users and Tokens
