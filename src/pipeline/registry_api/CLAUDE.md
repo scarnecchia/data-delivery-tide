@@ -1,6 +1,6 @@
 # Registry API
 
-Last verified: 2026-04-17
+Last verified: 2026-04-30
 
 ## Purpose
 
@@ -12,7 +12,7 @@ Single source of truth for delivery state. Tracks which data partner deliveries 
   - Public (no auth):
     - `GET /health` -- health check
   - Protected (bearer token required, any role):
-    - `GET /deliveries` -- list with filters (dp_id, project, status, lexicon_id, version="latest", etc.); supports offset pagination via `limit=` and `offset=`
+    - `GET /deliveries` -- list with filters (dp_id, project, status, lexicon_id, version="latest", etc.); supports cursor-based pagination via `after=` (delivery_id cursor) and offset pagination via `offset=`; results ordered by delivery_id; `limit=` controls page size (default 100, max 1000)
     - `GET /deliveries/actionable` -- status matches lexicon's actionable_statuses and not yet converted
     - `GET /deliveries/{delivery_id}` -- single delivery by ID
     - `GET /events?after={seq}&limit={n}` -- catch-up endpoint for events after a sequence number (limit default 100, max 1000)

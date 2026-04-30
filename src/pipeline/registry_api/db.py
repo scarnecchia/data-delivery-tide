@@ -446,12 +446,16 @@ def list_deliveries(
             where_clauses.append("version = ?")
             params.append(filters["version"])
 
+    if "after" in filters and filters["after"]:
+        where_clauses.append("delivery_id > ?")
+        params.append(filters["after"])
+
     # Build WHERE string
     where_str = ""
     if where_clauses:
         where_str = " WHERE " + " AND ".join(where_clauses)
 
-    # Get total count
+    # Get total count (reflects cursor filter so callers know remaining rows)
     count_query = f"SELECT COUNT(*) FROM deliveries{where_str}"
     cursor.execute(count_query, params)
     total = cursor.fetchone()[0]
@@ -460,7 +464,7 @@ def list_deliveries(
     limit = filters.get("limit", 100)
     offset = filters.get("offset", 0)
 
-    query = f"SELECT * FROM deliveries{where_str} LIMIT ? OFFSET ?"
+    query = f"SELECT * FROM deliveries{where_str} ORDER BY delivery_id LIMIT ? OFFSET ?"
     cursor.execute(query, params + [limit, offset])
     rows = cursor.fetchall()
     return [_record_from_row(row) for row in rows], total

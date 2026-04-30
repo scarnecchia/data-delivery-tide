@@ -117,10 +117,8 @@ def list_unconverted(
     params = f"converted=false&after={after}&limit={limit}"
     url = f"{api_url.rstrip('/')}/deliveries?{params}"
     request = urllib.request.Request(url, method="GET")
-    return cast(
-        "list[dict[str, Any]]",
-        _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep),
-    )
+    response = _request_with_retry(request, token=token, urlopen=urlopen, sleep=sleep)
+    return cast("list[dict[str, Any]]", response["items"])
 
 
 def emit_event(

@@ -104,7 +104,13 @@ class TestPatchDelivery:
 
 class TestListUnconverted:
     def test_returns_list_of_delivery_dicts(self):
-        fake = FakeUrlopen([[{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]])
+        paginated = {
+            "items": [{"delivery_id": "aaa"}, {"delivery_id": "bbb"}],
+            "total": 2,
+            "limit": 200,
+            "offset": 0,
+        }
+        fake = FakeUrlopen([paginated])
         sleep = FakeSleep()
         result = list_unconverted(
             "http://localhost:8000",
@@ -115,8 +121,22 @@ class TestListUnconverted:
         )
         assert result == [{"delivery_id": "aaa"}, {"delivery_id": "bbb"}]
 
+    def test_empty_items_returns_empty_list(self):
+        paginated = {"items": [], "total": 0, "limit": 200, "offset": 0}
+        fake = FakeUrlopen([paginated])
+        sleep = FakeSleep()
+        result = list_unconverted(
+            "http://localhost:8000",
+            after="",
+            limit=200,
+            urlopen=fake,
+            sleep=sleep,
+        )
+        assert result == []
+
     def test_builds_correct_query_string(self):
-        fake = FakeUrlopen([[]])
+        paginated = {"items": [], "total": 0, "limit": 50, "offset": 0}
+        fake = FakeUrlopen([paginated])
         sleep = FakeSleep()
         list_unconverted(
             "http://localhost:8000",

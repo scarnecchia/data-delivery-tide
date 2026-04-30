@@ -95,6 +95,7 @@ class DeliveryFilters(BaseModel):
     converted: bool | None = None
     version: str | None = None
     scan_root: str | None = None
+    after: str | None = None
     limit: int = 100
     offset: int = 0
 
