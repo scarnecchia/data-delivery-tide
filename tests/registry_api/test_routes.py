@@ -1664,6 +1664,44 @@ class TestPagination:
         data = response.json()
         assert data["offset"] == 0
 
+    def test_cursor_pagination_after(self, client, auth_headers):
+        """after= returns only deliveries with delivery_id > cursor, ordered."""
+        for i in range(5):
+            payload = make_delivery_payload(source_path=f"/data/cursor-{i}")
+            client.post("/deliveries", json=payload, headers=auth_headers)
+
+        all_resp = client.get("/deliveries?limit=100", headers=auth_headers)
+        all_items = all_resp.json()["items"]
+        all_ids = [item["delivery_id"] for item in all_items]
+        assert all_ids == sorted(all_ids), "results must be ordered by delivery_id"
+
+        cursor = all_ids[1]
+        page_resp = client.get(f"/deliveries?after={cursor}&limit=100", headers=auth_headers)
+        page_data = page_resp.json()
+        page_ids = [item["delivery_id"] for item in page_data["items"]]
+
+        assert all(pid > cursor for pid in page_ids)
+        assert len(page_ids) == page_data["total"]
+
+    def test_cursor_pagination_after_with_filter(self, client, auth_headers):
+        """after= works combined with other filters."""
+        for i in range(3):
+            payload = make_delivery_payload(source_path=f"/data/cursor-filter-{i}", dp_id="dp-cur")
+            client.post("/deliveries", json=payload, headers=auth_headers)
+
+        all_resp = client.get("/deliveries?dp_id=dp-cur&limit=100", headers=auth_headers)
+        all_items = all_resp.json()["items"]
+        assert len(all_items) == 3
+
+        cursor = all_items[0]["delivery_id"]
+        page_resp = client.get(
+            f"/deliveries?dp_id=dp-cur&after={cursor}&limit=100", headers=auth_headers
+        )
+        page_items = page_resp.json()["items"]
+        assert len(page_items) == 2
+        assert all(item["delivery_id"] > cursor for item in page_items)
+        assert all(item["dp_id"] == "dp-cur" for item in page_items)
+
 
 class TestSourcePathValidation:
     """Test source_path validation against scan_roots (Issue #10)."""

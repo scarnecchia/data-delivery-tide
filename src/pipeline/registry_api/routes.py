@@ -137,10 +137,13 @@ async def list_all_deliveries(
       scan_root: exact match
     - converted: boolean, True = converted, False = not converted
     - version: exact match or "latest" for highest version per (dp_id, workplan_id)
+    - after: cursor-based pagination — return only delivery_id > after (default: none)
     - limit: max results per page (default 100, max 1000)
     - offset: number of results to skip (default 0)
 
-    Response includes items, total count, limit, and offset for pagination.
+    Results are ordered by delivery_id. Supports both cursor-based (after + limit) and
+    offset-based (offset + limit) pagination. Response includes items, total count,
+    limit, and offset.
     """
     filter_dict = filters.model_dump(exclude_none=True)
     items, total = list_deliveries(db, filter_dict)

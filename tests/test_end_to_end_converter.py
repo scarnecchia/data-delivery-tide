@@ -192,8 +192,11 @@ class _TestClientHttpAdapter:
         return r.json()
 
     def list_unconverted(self, api_url, after="", limit=200, token=None):
+        params = f"converted=false&limit={limit}"
+        if after:
+            params += f"&after={after}"
         r = self.client.get(
-            f"/deliveries?converted=false&limit={limit}&offset=0",
+            f"/deliveries?{params}",
             headers=self._headers,
         )
         r.raise_for_status()

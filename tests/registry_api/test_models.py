@@ -294,6 +294,7 @@ class TestDeliveryFilters:
         assert model.converted is None
         assert model.version is None
         assert model.scan_root is None
+        assert model.after is None
 
     def test_delivery_filters_with_single_filter(self):
         """Test DeliveryFilters with a single filter field set."""
