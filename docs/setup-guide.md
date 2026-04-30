@@ -26,30 +26,7 @@ Check your Python version:
 python3 --version
 ```
 
-You need Python 3.11 or higher. If your system has an older version, install a newer one:
-
-```bash
-# RHEL 8/9
-sudo dnf install python3.11
-
-# If python3.11 installs alongside the system python, use python3.11 explicitly
-# in all commands below instead of python3
-```
-
-### Build Tools
-
-Some dependencies (notably `pyreadstat`) compile native extensions. You need a C compiler and Python development headers:
-
-```bash
-# RHEL
-sudo dnf install gcc gcc-c++ python3.11-devel
-```
-
-### Git
-
-```bash
-sudo dnf install git
-```
+You need Python 3.11 or higher. If your system has an older version, install a newer one.
 
 ---
 
